@@ -186,7 +186,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 richColors: true
             });
             setAccessToken(result.access_token)
-            await fetchUser()
+            // Do not call fetchUser() here: this closure captures the
+            // pre-login (empty) access token, so /me would go out without
+            // Authorization, fail with 401, and fall back to a refresh
+            // round-trip that login should not depend on. The
+            // [accessToken] effect below re-runs with the fresh token and
+            // fetches the user; DashboardLayout shows Loading until then.
             navigate('/dashboard');
 
         } catch (e) {
