@@ -1,7 +1,7 @@
 import { Loading } from "@/components/shared/loading";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { getApiClient } from "@/lib/utils";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 
 
@@ -11,6 +11,13 @@ export function MagicLinkLoginValidate() {
 
     const [showError, setShowError] = useState(false);
     const [loading, setLoading] = useState(true);
+    // The magic link token is single-use, but React StrictMode runs
+    // effects setup -> cleanup -> setup in dev, so without this guard
+    // the effect below would send the token twice: the second call
+    // fails and shows the "invalid link" error next to the dashboard
+    // navigation. Same guard as activation.tsx; keyed by token and
+    // user id so a genuinely different link still runs.
+    const attemptedLinkRef = useRef<string | null>(null);
     async function validateMagicLink() {
         setShowError(false);
         const apiClient = getApiClient();
@@ -31,6 +38,11 @@ export function MagicLinkLoginValidate() {
         const token = params.get("token");
         const userId = params.get("user_id");
         if (token && userId) {
+            const linkKey = `${token}:${userId}`;
+            if (attemptedLinkRef.current === linkKey) {
+                return;
+            }
+            attemptedLinkRef.current = linkKey;
             setLoading(false);
             validateMagicLink()
         }
