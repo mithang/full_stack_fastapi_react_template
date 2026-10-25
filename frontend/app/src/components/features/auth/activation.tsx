@@ -11,7 +11,7 @@ export function Activation() {
     const tenantId = searchParams.get('tenant_id');
     const navigate = useNavigate();
     useEffect(() => {
-        console.log("Activating account for user:", userId, "with token:", token, "and tenantId:", tenantId);
+        console.log("Activating account for user:", userId);
         async function activate() {
             if (!userId && !token) {
                 navigate('/login');
