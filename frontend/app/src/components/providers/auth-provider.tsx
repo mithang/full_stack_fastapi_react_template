@@ -61,6 +61,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         } catch (error) {
             console.error("Failed to refresh token:", error);
+            // Drop the stale client session too, not just the route: this
+            // path runs when fetchUser already failed, so the token in
+            // state is known-bad, and leaving it (plus the user) set
+            // while navigating to /login mirrors the stale-state bug
+            // fixed for sidebar logout. Clearing the token re-runs the
+            // effect below, which retries via the refresh cookie; if
+            // that cookie is still valid the session self-heals, and if
+            // not the refresh fails again with state already empty, so
+            // this cannot loop.
+            setUser(null);
+            setAccessToken("");
             navigate("/login");
         }
     }, []);
