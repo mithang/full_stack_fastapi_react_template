@@ -1,7 +1,13 @@
 const pollingDelayInMilliSeconds = 10 * 1000 * 60;
 let tenantId: string | null = null;
+// Empty = same-origin, matching getApiBaseUrl()'s default. The classic
+// worker cannot import utils, so the provider passes the base URL here.
+let apiBaseUrl = "";
 
-self.addEventListener("message", (event: MessageEvent<{ tenantId: string }>) => {
+self.addEventListener("message", (event: MessageEvent<{ tenantId: string | null; apiBaseUrl?: string }>) => {
+    if (event.data && typeof event.data.apiBaseUrl === "string") {
+        apiBaseUrl = event.data.apiBaseUrl;
+    }
     if (event.data && event.data.tenantId) {
         console.log("Worker received tenantId:", event.data.tenantId);
         tenantId = event.data.tenantId;
@@ -11,7 +17,7 @@ self.addEventListener("message", (event: MessageEvent<{ tenantId: string }>) => 
     }
 });
 setInterval(async () => {
-    const url = "/api/v1/account/refresh";
+    const url = `${apiBaseUrl}/api/v1/account/refresh`;
     console.log("Worker fetching new token with tenantId:", tenantId);
     const response = await fetch(url, {
         method: "POST",

@@ -1,6 +1,7 @@
 import { CreateUserDto, Gender, Permission, TokenSetDto, type MeResponseDto } from "@/api";
 import { useProfileImage } from "@/hooks/use-profile-image";
 import {
+    getApiBaseUrl,
     getApiClient,
     getTenant,
 } from "@/lib/utils";
@@ -215,14 +216,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             console.log("tenant_set event received in auth provider");
             const tenant = getTenant();
             if (tenant) {
-                worker.postMessage({ tenantId: tenant.id });
+                worker.postMessage({ tenantId: tenant.id, apiBaseUrl: getApiBaseUrl() });
             }
 
         })
 
         window.addEventListener("tenant_removed", () => {
             console.log("tenant_removed event received in auth provider");
-            worker.postMessage({ tenantId: null });
+            worker.postMessage({ tenantId: null, apiBaseUrl: getApiBaseUrl() });
         })
 
     }, [])
