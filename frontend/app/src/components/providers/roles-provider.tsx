@@ -128,7 +128,13 @@ export function RolesProvider({ children }: RolesProviderProps) {
                 await refreshRoles();
             } catch (error) {
                 console.error("Error cloning role:", error);
-                toast.error("Failed to clone role", {
+                // A backend response (ApiError, which carries a numeric
+                // status) means the server answered and rejected the
+                // clone; a failure with no status is a network error,
+                // not a bad role, and must not send the user re-trying
+                // a clone that never reached the server.
+                const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+                toast.error(hasStatus ? "Failed to clone role" : "Unable to reach the server. Check your connection and try again.", {
                     richColors: true,
                     position: "top-right",
                 });
