@@ -2,6 +2,7 @@ import os
 from fastapi import FastAPI, APIRouter, Request, status
 from contextlib import asynccontextmanager
 
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from api.common.exceptions import ApiBaseException, ConflictException, InvalidOperationException, NotFoundException, UnauthorizedException
@@ -91,6 +92,21 @@ app.add_middleware(RedisCacheMiddleware)
 if is_tenancy_enabled(): 
     app.add_middleware(TenantMiddleware)
     logger.info("Multi-tenancy is enabled.")
+
+# CORS must run before the other middlewares for preflight OPTIONS
+# requests, so it is added last (Starlette runs last-added first).
+# Only enabled when CORS_ALLOW_ORIGINS is explicitly configured, and
+# only for those exact origins, so cookie auth is not opened up.
+_cors_origins = [o.strip() for o in settings.cors_allow_origins.split(",") if o.strip()]
+if _cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["Authorization", "Content-Type", "X-Tenant-ID"],
+    )
+    logger.info(f"CORS enabled for origins: {_cors_origins}")
 
 
 # Mount static files only if they exist (for production Docker deployment)

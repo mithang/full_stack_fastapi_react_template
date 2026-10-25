@@ -53,9 +53,14 @@ export function formatDateWithHourAndMinute(timestamp: number | null | undefined
 export function getApiClient(accessToken?: string) {
   // console.log("Getting API client with access token:", accessToken);
   const tenant = getTenant();
+  // Empty (default) = same-origin, as served by the backend.
+  // Set VITE_API_BASE_URL for a separate web origin or a mobile
+  // client that cannot rely on the Vite dev proxy or same origin.
+  const apiBase = import.meta.env.VITE_API_BASE_URL ?? '';
   if (!accessToken) {
     if (tenant) {
       return new ApiClient({
+        BASE: apiBase,
         HEADERS: {
           "X-Tenant-ID": tenant.id!
         },
@@ -63,10 +68,12 @@ export function getApiClient(accessToken?: string) {
       })
     }
     return new ApiClient({
+      BASE: apiBase,
       WITH_CREDENTIALS: true,
     });
   }
   return new ApiClient({
+    BASE: apiBase,
     HEADERS: {
       Authorization: `Bearer ${accessToken}`,
       ...tenant?.id && { "X-Tenant-ID": tenant.id }

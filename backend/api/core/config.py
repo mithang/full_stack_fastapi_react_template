@@ -42,6 +42,14 @@ class Settings(BaseSettings):
 
     fastapi_env: str = "development"  # Options: "development", "production"
 
+    # Comma-separated list of origins allowed to call the API from a
+    # different origin (separate web dev server, mobile webview, etc.).
+    # Empty = no CORS middleware (same-origin served UI only).
+    # Never use "*" here with credentials: browsers reject it and it
+    # would expose cookie-based refresh tokens to any origin.
+    # Example: "http://localhost:3000,https://app.example.com"
+    cors_allow_origins: str = ""
+
     smtp_user: str
     smtp_password: str
     smtp_host: str

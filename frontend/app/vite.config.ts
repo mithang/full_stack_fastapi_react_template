@@ -16,7 +16,9 @@ export default defineConfig({
     host: '0.0.0.0',
     proxy: {
       '/api': {
-        target: 'http://pop-os-desktop.tail4fc230.ts.net:8086',
+        // Override with VITE_BACKEND_URL for another machine / port.
+        // Default matches the backend's local API base (localhost:8000).
+        target: process.env.VITE_BACKEND_URL || 'http://localhost:8000',
       }
 
     },
