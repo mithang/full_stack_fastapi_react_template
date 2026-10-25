@@ -13,7 +13,14 @@ export function Activation() {
     useEffect(() => {
         console.log("Activating account for user:", userId);
         async function activate() {
-            if (!userId && !token) {
+            // Either parameter missing makes the link malformed: the
+            // old && only rejected a link missing BOTH, so a link with
+            // a token but no user_id (or vice versa) was sent to the
+            // backend with an empty token and failed with the generic
+            // "activation failed" toast instead of "Invalid activation
+            // link". This matches password_reset_confirmation.tsx,
+            // which already guards with ||.
+            if (!userId || !token) {
                 navigate('/login');
                 toast.error("Invalid activation link", { duration: 5000, position: "top-right", richColors: true });
                 return;
