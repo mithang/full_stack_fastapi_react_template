@@ -267,7 +267,7 @@ export function TenantSetting() {
                             {getCustomDomainStatusBadge(current_tenant.custom_domain_status)}
                             {current_tenant.custom_domain_status === "active" && (
                                 <div>
-                                    <NavLink to={`http://${current_tenant.custom_domain}`} target="_blank" rel="noopener noreferrer">
+                                    <NavLink to={`https://${current_tenant.custom_domain}`} target="_blank" rel="noopener noreferrer">
                                         https://{current_tenant.custom_domain}
                                     </NavLink>
                                 </div>
