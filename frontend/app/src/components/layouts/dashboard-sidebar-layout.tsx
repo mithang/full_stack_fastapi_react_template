@@ -64,7 +64,7 @@ export function DashboardSidebar() {
     const location = useLocation();
     const pathname = location.pathname;
     const navigate = useNavigate();
-    const { user, accessToken } = useAuthContext();
+    const { user, accessToken, logout: clearAuthState } = useAuthContext();
     const isTenant = user?.tenant_id;
     const { is_multi_tenant_enabled } = useAppConfig()
 
@@ -85,6 +85,11 @@ export function DashboardSidebar() {
             console.error("Logout failed:", error);
             toast.error("Logout failed. Please try again.", { richColors: true, position: "top-right" });
         } finally {
+            // Clear the in-memory session even if the API call failed:
+            // navigation to /login already happens unconditionally, so
+            // leaving the token/user in context would keep the app
+            // behaving as logged in after logout.
+            clearAuthState();
             setTimeout(() => {
                 navigate("/login");
             }, 1000); // Small delay to ensure toast is shown before navigation

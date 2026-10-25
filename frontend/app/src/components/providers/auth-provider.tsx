@@ -26,6 +26,7 @@ type AuthProviderState = {
     login: (data: { email: string; password: string }) => Promise<void>
     register: (data: CreateUserDto) => Promise<any>,
     resendActivationEmail: () => Promise<void>;
+    logout: () => void;
 }
 
 const authContext = createContext<AuthProviderState>({
@@ -38,6 +39,7 @@ const authContext = createContext<AuthProviderState>({
     login: async () => { },
     register: async () => { },
     resendActivationEmail: async () => { },
+    logout: () => { },
 });
 
 
@@ -141,6 +143,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     async function refreshCurrentUser() {
         await fetchUser(true); // Force refresh
+    }
+
+    function logout() {
+        // Drop the in-memory session: without this, the sidebar logout
+        // only navigated to /login while the provider still held the
+        // access token and user, so the app still behaved as logged in
+        // (and the /login effect re-fetched the user with the old token).
+        setIsLoggedInState(false);
+        setUser(null);
+        setAccessToken("");
     }
 
     async function login(data: { email: string; password: string }) {
@@ -256,7 +268,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             refreshCurrentUser,
             login,
             register,
-            resendActivationEmail
+            resendActivationEmail,
+            logout
         }}>
             {children}
         </authContext.Provider>
