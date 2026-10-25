@@ -54,7 +54,10 @@ export function getApiBaseUrl(): string {
   // Empty (default) = same-origin, as served by the backend.
   // Set VITE_API_BASE_URL for a separate web origin or a mobile
   // client that cannot rely on the Vite dev proxy or same origin.
-  return import.meta.env.VITE_API_BASE_URL ?? '';
+  // Strip trailing slashes: callers append '/api/v1/...', so a base
+  // like 'https://api.example.com/' would otherwise produce a
+  // double-slash path ('//api/v1/...') that the backend may not route.
+  return (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/+$/, '');
 }
 
 export function getApiClient(accessToken?: string) {
