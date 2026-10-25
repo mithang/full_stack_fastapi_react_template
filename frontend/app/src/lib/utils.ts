@@ -91,8 +91,30 @@ export function getApiClient(accessToken?: string) {
 
 
 export function extractErrorMessage(error: unknown): string {
-  const err = JSON.stringify(error);
-  return error instanceof Error ? JSON.parse(err).body.error : "Something went wrong.";
+  // Backend error bodies come in two shapes: the custom handler returns
+  // {"error": ...} while FastAPI HTTPException returns {"detail": ...}
+  // (a string, or a list of validation errors). The previous version only
+  // read .body.error through a JSON round-trip, so HTTPException errors
+  // surfaced as undefined and plain Errors (e.g. network failures, whose
+  // message is non-enumerable and stringifies to {}) threw inside the
+  // error handler itself, masking the real failure.
+  if (typeof error === "object" && error !== null) {
+    const body = (error as { body?: unknown }).body;
+    if (typeof body === "string" && body) return body;
+    if (typeof body === "object" && body !== null) {
+      const candidate = (body as { error?: unknown; detail?: unknown; message?: unknown }).error
+        ?? (body as { detail?: unknown }).detail
+        ?? (body as { message?: unknown }).message;
+      if (typeof candidate === "string" && candidate) return candidate;
+      if (Array.isArray(candidate)) {
+        const firstMsg = (candidate[0] as { msg?: unknown } | undefined)?.msg;
+        if (typeof firstMsg === "string" && firstMsg) return firstMsg;
+      }
+    }
+    if (error instanceof Error && error.message) return error.message;
+  }
+  if (typeof error === "string" && error) return error;
+  return "Something went wrong.";
 }
 
 export function updateThemeConfiguration(branding: BrandingDto | undefined | null) {
