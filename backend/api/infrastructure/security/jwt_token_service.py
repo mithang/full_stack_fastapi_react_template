@@ -22,7 +22,6 @@ class JwtTokenService:
             to_encode.update({"exp": expire})
 
             encoded_jwt = jwt.encode(to_encode, JWT_SECRET, algorithm=ALGORITHM)
-            logger.debug(f"Encoded JWT: {encoded_jwt}")
             return AccessTokenDto(access_token=encoded_jwt, token_type="bearer", expires_in=expire)
         except Exception as e:
             logger.error(f"Error generating access token: {str(e)}")
@@ -46,7 +45,7 @@ class JwtTokenService:
         """
             Generate access and refresh tokens.
         """
-        logger.debug(f"Generating tokens for payload: {payload}")
+        logger.debug("Generating tokens.")
         access_token = await self.get_access_token(payload)
         refresh_token = await self.get_refresh_token(payload)
         return TokenSetDto(

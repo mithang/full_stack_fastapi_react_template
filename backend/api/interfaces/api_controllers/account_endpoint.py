@@ -54,7 +54,7 @@ async def login(
         httponly=True,
         secure=settings.fastapi_env == "production",
         samesite="lax",
-        max_age=settings.refresh_token_expire_days
+        max_age=settings.refresh_token_expire_days * 24 * 60 * 60
     )
     return token_set
 
@@ -77,7 +77,7 @@ async def refresh_token(
         httponly=True,
         secure=settings.fastapi_env == "production",
         samesite="lax",
-        max_age=settings.refresh_token_expire_days
+        max_age=settings.refresh_token_expire_days * 24 * 60 * 60
     )
     return token_set
 
@@ -279,7 +279,7 @@ async def passkey_login(
             httponly=True,
             secure=settings.fastapi_env == "production",
             samesite="lax",
-            max_age=settings.refresh_token_expire_days
+            max_age=settings.refresh_token_expire_days * 24 * 60 * 60
         )
         return token_set
     except Exception as e:
@@ -342,7 +342,7 @@ async def email_magic_link_validate(
         httponly=True,
         secure=settings.fastapi_env == "production",
         samesite="lax",
-        max_age=settings.refresh_token_expire_days
+        max_age=settings.refresh_token_expire_days * 24 * 60 * 60
     )
     return token_set
 
@@ -372,7 +372,7 @@ async def sso_provider_callback(
         httponly=True,
         secure=settings.fastapi_env == "production",
         samesite="lax",
-        max_age=settings.refresh_token_expire_days
+        max_age=settings.refresh_token_expire_days * 24 * 60 * 60
     )
    
     

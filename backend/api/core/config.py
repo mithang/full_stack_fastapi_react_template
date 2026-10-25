@@ -16,7 +16,7 @@ class Settings(BaseSettings):
 
     jwt_secret: str
     access_token_expire_minutes: int = 15
-    refresh_token_expire_days: int = 7 * 24 * 60 * 60
+    refresh_token_expire_days: int = 7
 
     algorithm: str = "HS256"
     refresh_algorithm: str = "HS512"
