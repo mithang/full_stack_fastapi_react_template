@@ -108,7 +108,12 @@ export function BillingOverview() {
             await fetchPlans();
         } catch (error) {
             console.error("Error updating plan trial:", error);
-            toast.error("Failed to update trial period", { richColors: true, position: "top-right" });
+            // Network failures surface as a status-less TypeError, while HTTP
+            // failures arrive as ApiError; do not blame the trial toggle for an outage.
+            const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            toast.error(hasStatus
+                ? "Failed to update trial period"
+                : "Unable to reach the server. Check your connection and try again.", { richColors: true, position: "top-right" });
         } finally {
             setUpdatingPlanId(null);
         }
