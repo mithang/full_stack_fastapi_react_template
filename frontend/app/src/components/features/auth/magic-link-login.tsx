@@ -55,7 +55,18 @@ export function MagicLinkLogin() {
             });
         } catch (error) {
             console.error("Error sending magic link:", error);
-            toast.error("Failed to send magic link. Please try again.", {
+            // A backend response (ApiError, which carries a numeric
+            // status) means the server answered and rejected the request;
+            // a failure with no status is a network error, not a failed
+            // send, and must not send the user retrying a request the
+            // server may never have received. Mirrors the login/passkey
+            // network-error distinction: the generated client rejects
+            // network failures with a raw TypeError, while HTTP failures
+            // arrive as ApiError.
+            const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            toast.error(hasStatus
+                ? "Failed to send magic link. Please try again."
+                : "Unable to reach the server. Check your connection and try again.", {
                 richColors: true,
                 position: "top-right"
             });
