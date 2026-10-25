@@ -50,11 +50,16 @@ export function MagicLinkLoginValidate() {
 
 
     useEffect(() => {
-        if (showError) {
-            setTimeout(() => {
-                navigate("/login");
-            }, 100000)
+        if (!showError) {
+            return;
         }
+        // The alert text promises a redirect "shortly", but the old
+        // 100000 ms delay left the user staring at the error for 100
+        // seconds; 5 s matches the toast durations used elsewhere.
+        const timer = setTimeout(() => {
+            navigate("/login");
+        }, 5000);
+        return () => clearTimeout(timer);
     }, [showError])
 
 
