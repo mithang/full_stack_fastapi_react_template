@@ -29,6 +29,11 @@ type AuthProviderState = {
     onUpdateProfile: (data: UpdateProfileType) => Promise<void>;
     refreshCurrentUser: () => Promise<void>;
     accessToken: string,
+    // Adopt an already-issued access token (e.g. passkey login returns
+    // one): the [accessToken] effect below then fetches the user with
+    // it, instead of the caller discarding it and depending on a
+    // refresh round-trip.
+    loginWithToken: (accessToken: string) => void;
     login: (data: { email: string; password: string }) => Promise<void>
     register: (data: CreateUserDto) => Promise<any>,
     resendActivationEmail: () => Promise<void>;
@@ -42,6 +47,7 @@ const authContext = createContext<AuthProviderState>({
     onUpdateProfile: async () => { },
     refreshCurrentUser: async () => { },
     accessToken: "",
+    loginWithToken: () => { },
     login: async () => { },
     register: async () => { },
     resendActivationEmail: async () => { },
@@ -174,6 +180,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setIsLoggedInState(false);
         setUser(null);
         setAccessToken("");
+    }
+
+    function loginWithToken(token: string) {
+        // Same pattern as login() below: do not fetch the user here
+        // with a stale closure token. Setting the token re-runs the
+        // [accessToken] effect, which fetches the user with it, and
+        // DashboardLayout shows Loading until then.
+        setAccessToken(token);
     }
 
     async function login(data: { email: string; password: string }) {
@@ -334,6 +348,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             can,
             onUpdateProfile,
             refreshCurrentUser,
+            loginWithToken,
             login,
             register,
             resendActivationEmail,

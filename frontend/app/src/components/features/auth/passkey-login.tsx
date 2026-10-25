@@ -29,7 +29,7 @@ type PasskeyEmailForm = z.infer<typeof passkeyEmailSchema>;
 
 export function PasskeyLogin() {
     const navigate = useNavigate();
-    const { refreshCurrentUser } = useAuthContext();
+    const { loginWithToken } = useAuthContext();
     const [isLoading, setIsLoading] = useState(false);
     const [showEmailDialog, setShowEmailDialog] = useState(false);
 
@@ -52,13 +52,21 @@ export function PasskeyLogin() {
         })
         const loginOptsRes = JSON.parse(loginOpts);
         const authResp = await startAuthentication(loginOptsRes);
-        await apiClient.account.passkeyLoginApiV1AccountPasskeyLoginPost({
+        const tokenSet = await apiClient.account.passkeyLoginApiV1AccountPasskeyLoginPost({
             requestBody: {
                 credential: authResp,
                 email: email
             }
         })
-        await refreshCurrentUser();
+        // Use the issued access token directly: the old code discarded
+        // it and called refreshCurrentUser(), whose fetchUser closure
+        // held the pre-login (empty) token, so /me failed and the flow
+        // depended on a refresh round-trip — and a refresh failure raced
+        // navigate("/login") against the navigate("/dashboard") below
+        // (the stale-token class fixed for password login in an earlier
+        // iteration). loginWithToken lets the [accessToken] effect fetch
+        // the user with the fresh token instead.
+        loginWithToken(tokenSet.access_token);
         navigate("/dashboard");
     }
 
