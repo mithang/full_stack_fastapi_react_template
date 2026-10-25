@@ -104,6 +104,12 @@ export function AppConfigProvider({ children }: AppConfigProviderProps) {
 
 
     const redirectToTenantDomain = useCallback((tenant: TenantDto) => {
+        // environment is a dependency, not []: the initial appConfig
+        // hardcodes "development", so an empty dependency array would
+        // capture http + :3000 forever and, in production, redirect a
+        // tenant selection / login to http://<domain>:3000 instead of
+        // https://<domain> even after the config fetch reports
+        // environment "production".
         const protocol = appConfig.environment === "development" ? "http" : "https";
         const port = appConfig.environment === "development" ? ":3000" : "";
         console.debug("Redirecting to tenant domain if needed:", tenant.custom_domain);
@@ -125,7 +131,7 @@ export function AppConfigProvider({ children }: AppConfigProviderProps) {
             }
         }
 
-    }, [])
+    }, [appConfig.environment])
 
     const value = {
         ...appConfig,
