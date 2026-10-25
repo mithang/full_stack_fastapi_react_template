@@ -27,13 +27,22 @@ setInterval(async () => {
             ...(tenantId && { "X-Tenant-ID": tenantId }),
         },
     });
-    const data = await response.json();
     const unauthorizedMessage = {
         message: "Unauthorized",
         code: response.status,
     };
     if (!response.ok || response.status === 401) {
+        // Check status before parsing the body: a non-JSON error body
+        // (e.g. an HTML error page) would make response.json() throw and
+        // the provider would never learn the session expired.
         return self.postMessage(unauthorizedMessage);
+    }
+    let data: unknown = {};
+    try {
+        data = await response.json();
+    } catch {
+        // Empty or non-JSON success body: nothing to forward, but the
+        // refresh itself succeeded, so do not surface a spurious error.
     }
     self.postMessage(data);
 }, pollingDelayInMilliSeconds);
