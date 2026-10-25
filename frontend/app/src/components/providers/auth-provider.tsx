@@ -97,7 +97,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const user = await auth.readUsersMeApiV1AccountMeGet();
             let imageUrl = user.image_url
             if (user.image_url) {
-                imageUrl = await getProfileImage(user.image_url);
+                // Keep a failing avatar fetch out of the auth path: this
+                // try block's catch treats any failure as an expired
+                // session and triggers a refresh (and a logout + /login
+                // redirect if the refresh fails), so an avatar 404 or
+                // network blip after a successful /me must not land
+                // there. Fall back to the raw image key instead.
+                try {
+                    imageUrl = await getProfileImage(user.image_url);
+                } catch {
+                    // Fall back to user.image_url above.
+                }
             }
             setIsLoggedInState(true);
             setUser({ ...user, image_url: imageUrl });
