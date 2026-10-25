@@ -43,7 +43,12 @@ export function Invoices() {
             setHasMore(response.has_more ?? false);
         } catch (error) {
             console.error("Error fetching invoices:", error);
-            setInvoiceError("Failed to load invoices. Please try again later.");
+            // Network failures surface as a status-less TypeError, while HTTP
+            // failures arrive as ApiError; do not blame the invoice list for an outage.
+            const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            setInvoiceError(hasStatus
+                ? "Failed to load invoices. Please try again later."
+                : "Unable to reach the server. Check your connection and try again.");
         } finally {
             setLoading(false);
         }
