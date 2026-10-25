@@ -44,7 +44,12 @@ export function ManageFeature({ open, onDismiss }: ManageFeatureTenantDialogProp
             setFeatures(tenantFeatures);
         } catch (error) {
             console.error("Error fetching features:", error);
-            toast.error("Failed to load features", { richColors: true, position: "top-right" });
+            // Same distinction as updateFeature below: a numeric
+            // status means the server answered and rejected the
+            // load; a status-less failure is a network error, not
+            // a tenant with no loadable features.
+            const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            toast.error(hasStatus ? "Failed to load features" : "Unable to reach the server. Check your connection and try again.", { richColors: true, position: "top-right" });
         } finally {
             setIsLoading(false);
         }
