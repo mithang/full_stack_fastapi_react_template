@@ -172,7 +172,12 @@ export function Products() {
             fetchProducts();
         } catch (error) {
             console.error("Error saving product:", error);
-            toast.error("Failed to save product", { richColors: true, position: "top-right" });
+            // Network failures surface as a status-less TypeError, while HTTP
+            // failures arrive as ApiError; do not blame the form for an outage.
+            const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            toast.error(hasStatus
+                ? "Failed to save product"
+                : "Unable to reach the server. Check your connection and try again.", { richColors: true, position: "top-right" });
         } finally {
             setSubmitting(false);
         }
