@@ -34,7 +34,11 @@ export function BrandingProvider({ children }: BrandingProviderProps) {
                 requestBody: data
             });
             toast.success("Branding updated successfully", { richColors: true, position: "top-right" });
-            await reloadAppConfig();
+            // Best-effort refresh: a config-fetch failure must not turn a
+            // successful update into a "Failed to update branding" error.
+            await reloadAppConfig().catch((error) => {
+                console.warn("Failed to refresh app config after branding update", error);
+            });
         } catch (error) {
             console.error("Failed to update branding", error);
             toast.error("Failed to update branding", { richColors: true, position: "top-right" });
@@ -52,7 +56,11 @@ export function BrandingProvider({ children }: BrandingProviderProps) {
                 },
             });
             toast.success("Logo uploaded successfully", { richColors: true, position: "top-right" });
-            await reloadAppConfig();
+            // Best-effort refresh: a config-fetch failure must not turn a
+            // successful upload into a "Failed to upload logo" error.
+            await reloadAppConfig().catch((error) => {
+                console.warn("Failed to refresh app config after logo upload", error);
+            });
         } catch (error) {
             console.error("Failed to upload logo", error);
             toast.error("Failed to upload logo", { richColors: true, position: "top-right" });
