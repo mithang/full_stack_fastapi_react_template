@@ -149,7 +149,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             toast.success("Profile updated successfully", {
                 richColors: true
             });
-            await fetchUser();
+            // Force the refresh: fetchUser() without force early-returns
+            // once isLoggedInState is true in its closure (which it is
+            // after any worker token refresh recreates it), so a plain
+            // call would leave the displayed profile stale until reload.
+            await fetchUser(true);
         } catch (error) {
             console.error("Error updating profile:", error);
             toast.error("Failed to update profile", {
