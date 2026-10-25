@@ -12,6 +12,7 @@ export function MagicLinkLoginValidate() {
     const { loginWithToken } = useAuthContext();
 
     const [showError, setShowError] = useState(false);
+    const [isNetworkError, setIsNetworkError] = useState(false);
     const [loading, setLoading] = useState(true);
     // The magic link token is single-use, but React StrictMode runs
     // effects setup -> cleanup -> setup in dev, so without this guard
@@ -22,6 +23,7 @@ export function MagicLinkLoginValidate() {
     const attemptedLinkRef = useRef<string | null>(null);
     async function validateMagicLink() {
         setShowError(false);
+        setIsNetworkError(false);
         const apiClient = getApiClient();
         try {
             const tokenSet = await apiClient.account.emailMagicLinkValidateApiV1AccountEmailMagicLinkValidateGet({
@@ -40,6 +42,15 @@ export function MagicLinkLoginValidate() {
             loginWithToken(tokenSet.access_token);
             navigate("/dashboard");
         } catch (error) {
+            // A backend outage / offline browser must not be reported as
+            // an invalid or expired link, which would send users to
+            // request a new link for a connection problem. Mirrors the
+            // login/passkey/magic-link/activation network-error
+            // distinction: the generated client rejects network failures
+            // with a raw TypeError, while HTTP failures arrive as ApiError
+            // with a numeric status.
+            const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            setIsNetworkError(!hasStatus);
             setShowError(true);
         }
 
@@ -89,9 +100,11 @@ export function MagicLinkLoginValidate() {
         return (
             <div className="h-[calc(100rem-80rem)] flex flex-col justify-center items-center">
                 <Alert variant="destructive">
-                    <AlertTitle>Invalid or expired magic link</AlertTitle>
+                    <AlertTitle>{isNetworkError ? "Unable to reach the server" : "Invalid or expired magic link"}</AlertTitle>
                     <AlertDescription>
-                        The magic link you used is either invalid or has expired. Please request a new magic link to log in.
+                        {isNetworkError
+                            ? "Could not reach the server. Check your connection and try again."
+                            : "The magic link you used is either invalid or has expired. Please request a new magic link to log in."}
                         You will be redirected to the login page shortly.
                     </AlertDescription>
                 </Alert>
