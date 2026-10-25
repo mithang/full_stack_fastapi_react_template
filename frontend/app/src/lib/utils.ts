@@ -50,13 +50,17 @@ export function formatDateWithHourAndMinute(timestamp: number | null | undefined
   }).format(new Date(timestamp * 1000));
 };
 
-export function getApiClient(accessToken?: string) {
-  // console.log("Getting API client with access token:", accessToken);
-  const tenant = getTenant();
+export function getApiBaseUrl(): string {
   // Empty (default) = same-origin, as served by the backend.
   // Set VITE_API_BASE_URL for a separate web origin or a mobile
   // client that cannot rely on the Vite dev proxy or same origin.
-  const apiBase = import.meta.env.VITE_API_BASE_URL ?? '';
+  return import.meta.env.VITE_API_BASE_URL ?? '';
+}
+
+export function getApiClient(accessToken?: string) {
+  // console.log("Getting API client with access token:", accessToken);
+  const tenant = getTenant();
+  const apiBase = getApiBaseUrl();
   if (!accessToken) {
     if (tenant) {
       return new ApiClient({

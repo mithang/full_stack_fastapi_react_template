@@ -6,7 +6,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Badge } from '@/components/ui/badge'
 import { Loading } from '@/components/shared/loading'
-import { cn, getApiClient, getTenant } from '@/lib/utils'
+import { cn, getApiBaseUrl, getApiClient, getTenant } from '@/lib/utils'
 import { Send, Bot, User, Sparkles, Copy, RefreshCw, Trash2, InfoIcon } from 'lucide-react'
 import { useAuthContext } from '@/components/providers/auth-provider'
 import { ListLocalAIModels } from '@/components/shared/list-local-ai-models'
@@ -263,7 +263,7 @@ export function AIChat() {
                 model_name: selectedModel?.name,
                 session_id: sessionId
             }
-            const response = await fetch('/api/v1/ai/ask', {
+            const response = await fetch(`${getApiBaseUrl()}/api/v1/ai/ask`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
