@@ -41,7 +41,14 @@ export function BrandingProvider({ children }: BrandingProviderProps) {
             });
         } catch (error) {
             console.error("Failed to update branding", error);
-            toast.error("Failed to update branding", { richColors: true, position: "top-right" });
+            // A backend response (ApiError, which carries a numeric status)
+            // means the server answered; a failure with no status is a
+            // network error, not a failed branding update, and must not send
+            // the admin to re-enter branding that never reached the server.
+            const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            toast.error(hasStatus
+                ? "Failed to update branding"
+                : "Unable to reach the server. Check your connection and try again.", { richColors: true, position: "top-right" });
         }
     }
 
