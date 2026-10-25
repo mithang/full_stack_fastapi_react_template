@@ -54,7 +54,16 @@ export function PasswordResetRequest() {
             })
             toast.success("If the email is registered, you will receive password reset instructions.", { duration: 5000, position: "top-right", richColors: true });
         } catch (error) {
-            setError("Invalid email");
+            // A backend response (ApiError, which carries a numeric
+            // status) means the server answered and rejected the request;
+            // a failure with no status is a network error, not an invalid
+            // email, and must not send the user retyping a valid address.
+            // The generated client rejects network failures with a raw
+            // TypeError, while HTTP failures arrive as ApiError.
+            const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            setError(hasStatus
+                ? "Invalid email"
+                : "Unable to reach the server. Check your connection and try again.");
         }
         finally {
             setIsLoading(false);
