@@ -95,7 +95,12 @@ export function AIChat() {
             setAvailableAIModels(response)
         } catch (error) {
             console.error("Failed to fetch available AI models:", error)
-            toast.error("Failed to fetch available AI models", { description: "AI chat won't work.", richColors: true, position: "top-right" })
+            // A backend response (ApiError, which carries a numeric
+            // status) means the server answered and rejected the
+            // request; a failure with no status is a network error,
+            // not a bad model list, and must not be reported as one.
+            const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            toast.error(hasStatus ? "Failed to fetch available AI models" : "Unable to reach the server. Check your connection and try again.", { description: "AI chat won't work.", richColors: true, position: "top-right" })
         }
     }
 
