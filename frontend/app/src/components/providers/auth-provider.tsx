@@ -221,6 +221,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     useEffect(() => {
         const worker = new Worker(new URL('../../worker.ts', import.meta.url));
+        // Seed the worker with the already-selected tenant and API base
+        // URL: it otherwise starts with tenantId null / same-origin base
+        // and only learns them on a later tenant_set/tenant_removed
+        // event, so after a page reload its refresh calls would go out
+        // without X-Tenant-ID (and to the frontend origin on a separately
+        // hosted frontend) until the tenant was re-selected.
+        worker.postMessage({ tenantId: getTenant()?.id ?? null, apiBaseUrl: getApiBaseUrl() });
         worker.addEventListener("message", (event: MessageEvent<TokenSetDto | { type: string } | { message: string; code: number }>) => {
             console.log("AuthProvider received message from worker:", event.data);
             if (event.data && 'access_token' in event.data) {
