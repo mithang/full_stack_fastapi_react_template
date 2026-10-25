@@ -70,7 +70,13 @@ export default function SSOConfigurationProvider({ children }: SSOConfigurationP
         }
     }
     async function refreshSSOConfigurations() {
-        await reloadAppConfig();
+        // Best-effort refresh after a successful mutation (same pattern as
+        // the branding provider): reloadAppConfig throws when the config
+        // fetch fails, and that must not land in the CRUD callers' catch
+        // and report a successful SSO change as failed.
+        await reloadAppConfig().catch((error) => {
+            console.error("Failed to refresh app config after SSO configuration change:", error);
+        });
         await fetchAllSSOProviders();
     }
     async function createSSOConfiguration(params: CreateSSOSettingsDto) {
