@@ -159,7 +159,14 @@ export default function SSOConfigurationProvider({ children }: SSOConfigurationP
             await refreshSSOConfigurations();
         } catch (error) {
             console.error("Failed to update SSO configuration:", error);
-            toast.error("Failed to update SSO configuration", { richColors: true, position: "top-right" });
+            // A backend response (ApiError, which carries a numeric status)
+            // means the server answered; a failure with no status is a
+            // network error, not a failed SSO update, and must not send
+            // the admin to re-enter settings that never reached the server.
+            const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            toast.error(hasStatus
+                ? "Failed to update SSO configuration"
+                : "Unable to reach the server. Check your connection and try again.", { richColors: true, position: "top-right" });
         }
     }
 
