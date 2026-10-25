@@ -30,7 +30,15 @@ export function NonActiveTenantView() {
     }, [current_tenant, navigate]);
 
     const handleRefresh = () => {
-        reloadAppConfig();
+        // Floating (no caller awaits it): reloadAppConfig throws when
+        // the configuration fetch fails, so catch it here rather than
+        // surfacing an unhandled rejection. A failed refresh simply
+        // leaves the inactive view in place for another attempt; the
+        // is_active effect above redirects to /dashboard once a
+        // refresh reports the tenant active.
+        reloadAppConfig().catch((error) => {
+            console.warn("Failed to refresh app configuration", error);
+        });
     };
 
     const handleGoBack = () => {
