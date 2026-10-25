@@ -137,7 +137,7 @@ export function PasswordResetConfirmation() {
                                 )}
                             />
                             <div className="flex justify-between items-center mt-1 mb-4">
-                                <div className="text-sm text-muted-foreground">Failed to reset password.</div>
+                                <div className="text-sm text-muted-foreground">Having trouble with your reset link?</div>
                                 <NavLink to="/forgot-password" className="text-sm text-primary underline hover:text-primary/80">Request Again</NavLink>
                             </div>
                             <Button type="submit" className="w-full" disabled={isLoading}>
