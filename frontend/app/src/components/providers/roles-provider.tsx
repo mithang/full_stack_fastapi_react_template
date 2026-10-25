@@ -158,10 +158,15 @@ export function RolesProvider({ children }: RolesProviderProps) {
             });
             await refreshRoles();
         } catch (error) {
-
-            toast.error("Failed to delete role", {
+            // A backend response (ApiError, which carries a numeric
+            // status) means the server answered and rejected the
+            // delete; a failure with no status is a network error,
+            // not a bad role, and must not send the user re-checking
+            // assignments for a delete that never reached the server.
+            const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            toast.error(hasStatus ? "Failed to delete role" : "Unable to reach the server. Check your connection and try again.", {
                 richColors: true,
-                description: "Check if the role is assigned to any users",
+                description: hasStatus ? "Check if the role is assigned to any users" : undefined,
                 position: "top-right",
                 duration: 3000,
             });
