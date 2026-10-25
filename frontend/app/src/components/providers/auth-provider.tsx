@@ -302,6 +302,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     }, [])
 
+    // pathname is a dependency, not just accessToken: without it,
+    // navigating from a public route (where this effect early-returns)
+    // to a protected route with an unchanged token never re-ran the
+    // effect, so fetchUser never fired and DashboardLayout showed its
+    // Loading state forever instead of fetching the user / redirecting
+    // to /login via the refresh fallback.
     useEffect(() => {
         if (notProtectedRoutes.includes(pathname)) {
             return;
@@ -315,7 +321,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         }
 
-    }, [accessToken]);
+    }, [accessToken, pathname]);
 
 
 
