@@ -39,14 +39,31 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
     const canManageSettings = can('manage:storage_settings') || can('full:access');
 
     async function fetchSettings() {
+        // A failure of either endpoint used to reject this whole fetch:
+        // loading stayed true forever (no finally), the floating call
+        // from the effect surfaced as an unhandled rejection, and the
+        // reset/configure callers — which toast success before calling
+        // this — would then report "Failed to reset/configure" for an
+        // action that had actually succeeded. Handle the failure here
+        // (toast + clear loading) and do not rethrow, so callers keep
+        // their accurate success toasts.
         setLoading(true);
-        const [storages, availables] = await Promise.all([
-            apiClient.storageSettings.getStorageSettingsApiV1StorageGet(),
-            apiClient.storageSettings.getAvailableProvidersApiV1StorageAvailableGet()
-        ]);
-        setStorages(storages);
-        setAvailableStorages(availables);
-        setLoading(false);
+        try {
+            const [storages, availables] = await Promise.all([
+                apiClient.storageSettings.getStorageSettingsApiV1StorageGet(),
+                apiClient.storageSettings.getAvailableProvidersApiV1StorageAvailableGet()
+            ]);
+            setStorages(storages);
+            setAvailableStorages(availables);
+        } catch (error) {
+            toast.error("Failed to load storage settings", {
+                description: (error as Error).message,
+                richColors: true,
+                position: "top-right",
+            });
+        } finally {
+            setLoading(false);
+        }
     }
 
     async function onResetStorage(storageId: string) {
