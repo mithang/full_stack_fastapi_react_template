@@ -19,14 +19,25 @@ self.addEventListener("message", (event: MessageEvent<{ tenantId: string | null;
 setInterval(async () => {
     const url = `${apiBaseUrl}/api/v1/account/refresh`;
     console.log("Worker fetching new token with tenantId:", tenantId);
-    const response = await fetch(url, {
-        method: "POST",
-        credentials: "include",
-        headers: {
-            "Content-Type": "application/json",
-            ...(tenantId && { "X-Tenant-ID": tenantId }),
-        },
-    });
+    let response: Response;
+    try {
+        response = await fetch(url, {
+            method: "POST",
+            credentials: "include",
+            headers: {
+                "Content-Type": "application/json",
+                ...(tenantId && { "X-Tenant-ID": tenantId }),
+            },
+        });
+    } catch (error) {
+        // Network failure (offline, backend down): fetch rejects rather
+        // than returning a response, so without this the interval callback
+        // threw an unhandled rejection. This is not an expired session, so
+        // do NOT post an unauthorized message (that would log the user out
+        // on a transient outage); the next tick retries the refresh.
+        console.error("Worker token refresh network error:", error);
+        return;
+    }
     const unauthorizedMessage = {
         message: "Unauthorized",
         code: response.status,
