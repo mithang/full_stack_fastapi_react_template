@@ -106,7 +106,14 @@ export function NotificationBanner() {
                 toast.success("Notification banner created successfully", { richColors: true, position: "top-right" });
             }
 
-            Promise.all([fetchNotificationBanner(), reloadAppConfig()]);
+            // Awaited (with its own catch) rather than floating: reloadAppConfig
+            // throws when the configuration fetch fails, and a floating promise
+            // would surface that as an unhandled rejection. The banner save
+            // itself already succeeded, so a refresh failure must not fall
+            // through to the "Failed to save" toast below.
+            await Promise.all([fetchNotificationBanner(), reloadAppConfig()]).catch((error) => {
+                console.warn("Failed to refresh banner after save:", error);
+            });
         } catch (error: unknown) {
             const errMsg = extractErrorMessage(error);
             console.error("Error saving notification banner:", errMsg);
