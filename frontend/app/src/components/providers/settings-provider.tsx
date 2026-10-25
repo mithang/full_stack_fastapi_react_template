@@ -116,8 +116,15 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
             });
             await fetchSettings();
         } catch (error) {
+            // A backend response (ApiError, which carries a numeric status)
+            // means the server answered; a failure with no status is a
+            // network error, not a failed storage configuration, and must
+            // not leave the admin with only a raw fetch error to act on.
+            const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
             toast.error(`Storage: ${settings.provider}`, {
-                description: (error as Error).message,
+                description: hasStatus
+                    ? (error as Error).message
+                    : "Unable to reach the server. Check your connection and try again.",
                 richColors: true,
                 position: "top-right",
             });
