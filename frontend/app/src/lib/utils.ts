@@ -20,7 +20,16 @@ export function setTenant(tenant: TenantDto | null) {
 
 export function getTenant(): TenantDto | null {
   const tenant = localStorage.getItem("_tenant");
-  return tenant ? JSON.parse(tenant) : null;
+  if (!tenant) return null;
+  try {
+    return JSON.parse(tenant);
+  } catch {
+    // A corrupted _tenant entry (partial write, stale schema) must not
+    // crash every API call that reads it via getApiClient: drop it and
+    // behave as if no tenant is selected, so the user can re-select one.
+    localStorage.removeItem("_tenant");
+    return null;
+  }
 }
 
 
