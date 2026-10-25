@@ -272,7 +272,24 @@ export function AIChat() {
                 },
                 body: JSON.stringify(payload)
             })
-            if (!response.ok) throw new Error(response.statusText + " Check if you have selected AI Model.")
+            if (!response.ok) {
+                let detail = ''
+                try {
+                    const text = await response.text()
+                    if (text) {
+                        try {
+                            const parsed = JSON.parse(text)
+                            const rawDetail = parsed?.error ?? parsed?.detail ?? parsed?.message
+                            detail = Array.isArray(rawDetail) ? (rawDetail[0]?.msg ?? String(rawDetail[0] ?? '')) : (typeof rawDetail === 'string' ? rawDetail : text)
+                        } catch {
+                            detail = text
+                        }
+                    }
+                } catch {
+                    // Fall through to the status-based message below.
+                }
+                throw new Error(`AI request failed (${response.status}): ${detail || response.statusText || 'Unknown error'}. Check if you have selected AI Model.`)
+            }
             if (!response.body) throw new Error('No response body.')
 
             const reader = response.body.getReader()
