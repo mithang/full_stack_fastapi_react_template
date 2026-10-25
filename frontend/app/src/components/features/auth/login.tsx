@@ -64,8 +64,17 @@ export function Login() {
         await login({
             email: data.email,
             password: data.password
-        }).catch(() => {
-            setError("Invalid email or password");
+        }).catch((error) => {
+            // A backend response (ApiError, which carries a numeric
+            // status) means the server answered and rejected the login;
+            // a failure with no status is a network error, not a wrong password,
+            // and must not send the user retyping a correct password.
+            // The generated client rejects network failures with a raw
+            // TypeError, while HTTP failures arrive as ApiError.
+            const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            setError(hasStatus
+                ? "Invalid email or password"
+                : "Unable to reach the server. Check your connection and try again.");
         }).finally(() => {
             setIsLoading(false);
         });
