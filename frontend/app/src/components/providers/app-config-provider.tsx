@@ -60,12 +60,24 @@ export function AppConfigProvider({ children }: AppConfigProviderProps) {
     });
 
     const reloadAppConfig = useCallback(async function reloadAppConfig() {
-        const [config, notificationSetting] = await Promise.all([
+        // Fetch the two pieces independently: Promise.all meant a
+        // failure of the notification-banner endpoint discarded a
+        // successfully fetched app configuration, and callers that toast
+        // success before reloading (branding, SSO, tenant DNS) then
+        // reported failure for an action that had actually succeeded.
+        // Apply each part that succeeded; only a failed configuration
+        // fetch still throws, since callers depend on the config itself.
+        const [configResult, notificationResult] = await Promise.allSettled([
             getApiClient(accessToken).appConfiguration.getAppConfigurationApiV1AppConfigurationGet(),
             getApiClient(accessToken).notifications.getNotificationBannerApiV1NotificationsBannerGet()
         ]);
-        setAppConfig(config)
-        setNotificationBannerSetting(notificationSetting);
+        if (configResult.status === "rejected") {
+            throw configResult.reason;
+        }
+        setAppConfig(configResult.value)
+        if (notificationResult.status === "fulfilled") {
+            setNotificationBannerSetting(notificationResult.value);
+        }
     }, [accessToken]);
 
 
@@ -73,13 +85,24 @@ export function AppConfigProvider({ children }: AppConfigProviderProps) {
 
     useEffect(() => {
         const fetchConfig = async () => {
-            const [config, notificationSetting] = await Promise.all([
+            // Same split as reloadAppConfig above: a banner-endpoint
+            // failure must not discard the configuration (tenant
+            // selection and redirects depend on it), and a rejected
+            // fetch must not surface as an unhandled rejection from
+            // this effect, which has no caller to catch it.
+            const [configResult, notificationResult] = await Promise.allSettled([
                 getApiClient(accessToken).appConfiguration.getAppConfigurationApiV1AppConfigurationGet(),
                 getApiClient(accessToken).notifications.getNotificationBannerApiV1NotificationsBannerGet()
             ]);
-            setAppConfig(config)
-            setNotificationBannerSetting(notificationSetting);
-            if (config.is_multi_tenant_enabled === false) {
+            if (configResult.status === "rejected") {
+                console.error("Failed to fetch app configuration", configResult.reason);
+                return;
+            }
+            setAppConfig(configResult.value)
+            if (notificationResult.status === "fulfilled") {
+                setNotificationBannerSetting(notificationResult.value);
+            }
+            if (configResult.value.is_multi_tenant_enabled === false) {
                 setTenant(null);
             }
 
