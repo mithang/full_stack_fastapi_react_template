@@ -135,7 +135,12 @@ export function Profile() {
 
         } catch (error) {
             console.error('Error uploading image:', error)
-            toast.error('Failed to upload image')
+            // Network failures surface as a status-less TypeError, while HTTP
+            // failures arrive as ApiError; do not blame the upload for an outage.
+            const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            toast.error(hasStatus
+                ? 'Failed to upload image'
+                : 'Unable to reach the server. Check your connection and try again.')
             setImagePreview(null)
         } finally {
             setUploadingImage(false)
