@@ -32,8 +32,17 @@ export function AIChatProvider({ children }: AIChatProviderProps) {
     const apiClient = getApiClient(accessToken)
     const isChatFeatureEnabled = featureCheck.requireFeature("chat");
     async function fetchAllSessions() {
-        const response = await apiClient.ai.getHistoryApiV1AiHistoryGet();
-        setSessions(response);
+        try {
+            const response = await apiClient.ai.getHistoryApiV1AiHistoryGet();
+            setSessions(response);
+        } catch (error: unknown) {
+            // History refresh is best-effort: a failure here must not
+            // surface as an unhandled rejection from the provider's
+            // floating effect call, nor wipe a just-streamed answer
+            // (ai-chat.tsx awaits this inside its send-message try).
+            // Keep the previous sessions and log only.
+            console.error("Failed to fetch chat sessions:", extractErrorMessage(error));
+        }
     }
 
     async function onDeleteSession(sessionId: string) {
