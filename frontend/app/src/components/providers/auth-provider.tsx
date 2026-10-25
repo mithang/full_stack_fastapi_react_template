@@ -241,7 +241,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     setIsLoggedInState(false);
                     setUser(null);
                     setAccessToken("");
-                    navigate("/login");
+                    // Do not bounce public routes to /login: the worker
+                    // polls regardless of route, but the fetchUser effect
+                    // above deliberately skips notProtectedRoutes, so a
+                    // stale-cookie 401 while visiting /register (or a
+                    // password-reset page) must not yank the user away.
+                    // window.location is read live because this effect's
+                    // closure captures only the mount-time pathname.
+                    if (!notProtectedRoutes.includes(window.location.pathname)) {
+                        navigate("/login");
+                    }
                 }
             }
 
