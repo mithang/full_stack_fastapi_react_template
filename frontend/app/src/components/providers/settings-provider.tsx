@@ -77,7 +77,14 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
             });
             await fetchSettings();
         } catch (error) {
-            toast.error("Failed to reset storage", {
+            // A backend response (ApiError, which carries a numeric status)
+            // means the server answered; a failure with no status is a
+            // network error, not a failed storage reset, and must not send
+            // the admin to re-check a reset that never reached the server.
+            const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            toast.error(hasStatus
+                ? "Failed to reset storage"
+                : "Unable to reach the server. Check your connection and try again.", {
                 description: (error as Error).message,
                 richColors: true,
                 position: "top-right",
