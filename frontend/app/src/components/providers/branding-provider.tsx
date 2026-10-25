@@ -70,7 +70,14 @@ export function BrandingProvider({ children }: BrandingProviderProps) {
             });
         } catch (error) {
             console.error("Failed to upload logo", error);
-            toast.error("Failed to upload logo", { richColors: true, position: "top-right" });
+            // A backend response (ApiError, which carries a numeric status)
+            // means the server answered; a failure with no status is a
+            // network error, not a failed logo upload, and must not send
+            // the admin to re-select a logo that never reached the server.
+            const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            toast.error(hasStatus
+                ? "Failed to upload logo"
+                : "Unable to reach the server. Check your connection and try again.", { richColors: true, position: "top-right" });
         }
     }
 
