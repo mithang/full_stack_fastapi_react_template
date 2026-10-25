@@ -3,7 +3,7 @@ import { providerConfig } from "@/components/features/sso-configurations/sso-pro
 import { Button } from "@/components/ui/button";
 import { IconBrandAuth0 } from "@tabler/icons-react";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
-import { cn } from "@/lib/utils";
+import { cn, getApiBaseUrl } from "@/lib/utils";
 
 export function SSOLoginDialog() {
     const { enabled_sso_providers } = useAppConfig()
@@ -30,7 +30,7 @@ export function SSOLoginDialog() {
                         "sm:grid-cols-2": enabled_sso_providers.length > 1,
                     })}>
                         {enabled_sso_providers.map((provider) => (
-                            <a href={`/api/v1/account/sso/${provider}/login`} className="flex items-center space-x-2 bg-primary/90 dark:bg-primary p-1 text-primary-foreground justify-center rounded-2xl dark:hover:bg-primary/90 hover:bg-primary/80 transition-all w-full px-3">
+                            <a href={`${getApiBaseUrl()}/api/v1/account/sso/${provider}/login`} className="flex items-center space-x-2 bg-primary/90 dark:bg-primary p-1 text-primary-foreground justify-center rounded-2xl dark:hover:bg-primary/90 hover:bg-primary/80 transition-all w-full px-3">
                                 {renderIcon(providerConfig[provider])}
                                 <span className="capitalize text-md">Continue with {provider}</span>
                             </a>
