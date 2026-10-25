@@ -168,7 +168,17 @@ export function UsersProvider({ children }: UsersProviderProps) {
             await refreshUsers();
         } catch (error) {
             console.error("Error deleting user:", error);
-            toast.error("Failed to delete user", {
+            // A backend response (ApiError, which carries a numeric status)
+            // means the server answered and rejected the delete; a failure
+            // with no status is a network error, not a failed delete, and
+            // must not send the admin re-checking user assignments for a
+            // connection problem. Mirrors onDeleteRole in roles-provider.tsx:
+            // the generated client rejects network failures with a raw
+            // TypeError, while HTTP failures arrive as ApiError.
+            const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            toast.error(hasStatus
+                ? "Failed to delete user"
+                : "Unable to reach the server. Check your connection and try again.", {
                 richColors: true,
                 position: "top-right",
             });
