@@ -80,7 +80,19 @@ export function PasswordResetConfirmation() {
             }, 1000);
 
         } catch (error) {
-            setError("Failed to reset password. The link may be invalid or expired.");
+            // A backend response (ApiError, which carries a numeric
+            // status) means the server answered and rejected the reset
+            // — the link may indeed be invalid or expired. A failure
+            // with no status is a network error, not a bad link, and
+            // must not send the user requesting a new link for a
+            // connection problem. Mirrors the login/passkey/magic-link/
+            // password-reset-request/register network-error distinction:
+            // the generated client rejects network failures with a
+            // raw TypeError, while HTTP failures arrive as ApiError.
+            const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            setError(hasStatus
+                ? "Failed to reset password. The link may be invalid or expired."
+                : "Unable to reach the server. Check your connection and try again.");
         } finally {
             setIsLoading(false);
         }
