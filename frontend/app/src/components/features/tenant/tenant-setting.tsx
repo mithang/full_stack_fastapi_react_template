@@ -74,7 +74,13 @@ export function TenantSetting() {
                 description: response.message || "The status may take a few minutes to update if DNS changes were recently made."
             });
             setTimeout(async () => {
-                await reloadAppConfig();
+                try {
+                    await reloadAppConfig();
+                } catch (error) {
+                    // Best-effort refresh: the DNS check already succeeded, so a
+                    // config-refresh failure must not surface as an unhandled rejection.
+                    console.warn("Failed to refresh app configuration after tenant DNS check:", error);
+                }
             }, 2000); // Slight delay to ensure backend has processed the status update
 
         } catch (error: any) {
@@ -154,7 +160,13 @@ export function TenantSetting() {
             });
             setShowCustomDomainForm(false);
             setTimeout(async () => {
-                await reloadAppConfig();
+                try {
+                    await reloadAppConfig();
+                } catch (error) {
+                    // Best-effort refresh: the DNS update already succeeded, so a
+                    // config-refresh failure must not surface as an unhandled rejection.
+                    console.warn("Failed to refresh app configuration after tenant DNS update:", error);
+                }
             }, 2000); // Slight delay to ensure backend has processed the status update
 
         } catch (error: any) {
