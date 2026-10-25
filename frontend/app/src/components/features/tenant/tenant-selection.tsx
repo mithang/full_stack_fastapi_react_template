@@ -77,7 +77,16 @@ export function TenantSelection({
                 setTenant(null)
             }
         } catch (error) {
-            setError("We can't find the tenant you're looking for. Please check the name and try again.")
+            // A backend response (ApiError, which carries a numeric status)
+            // means the server answered and found no such tenant; a failure
+            // with no status is a network error, not a wrong tenant name, and
+            // must not send the user retyping a correct name. The generated
+            // client rejects network failures with a raw TypeError, while
+            // HTTP failures arrive as ApiError.
+            const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            setError(hasStatus
+                ? "We can't find the tenant you're looking for. Please check the name and try again."
+                : "Unable to reach the server. Check your connection and try again.")
             onTenantSelect?.(null)
             setTenant(null)
         } finally {
