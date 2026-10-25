@@ -87,7 +87,16 @@ async def logout(
     current_user: CurrentUser,
     auth_service: AuthService = Depends(get_auth_service)
 ):
-    response.delete_cookie("refresh_token")
+    # Mirror the attributes used when the cookie was set (login/refresh):
+    # a deletion Set-Cookie without Secure cannot clear a Secure cookie
+    # in production, leaving a stale refresh token in the browser.
+    response.delete_cookie(
+        "refresh_token",
+        path="/",
+        secure=settings.fastapi_env == "production",
+        httponly=True,
+        samesite="lax",
+    )
     await auth_service.logout(user_id=str(current_user.id), tenant_id=str(current_user.tenant_id) if current_user.tenant_id else None)
     return status.HTTP_200_OK
 
