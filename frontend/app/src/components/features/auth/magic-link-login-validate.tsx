@@ -3,11 +3,13 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { getApiClient } from "@/lib/utils";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
+import { useAuthContext } from "@/components/providers/auth-provider";
 
 
 export function MagicLinkLoginValidate() {
     const [params] = useSearchParams(window.location.search);
     const navigate = useNavigate();
+    const { loginWithToken } = useAuthContext();
 
     const [showError, setShowError] = useState(false);
     const [loading, setLoading] = useState(true);
@@ -22,12 +24,20 @@ export function MagicLinkLoginValidate() {
         setShowError(false);
         const apiClient = getApiClient();
         try {
-            await apiClient.account.emailMagicLinkValidateApiV1AccountEmailMagicLinkValidateGet({
+            const tokenSet = await apiClient.account.emailMagicLinkValidateApiV1AccountEmailMagicLinkValidateGet({
                 token: params.get("token") || "",
                 userId: params.get("user_id") || "",
                 ...(params.get("tenant_id") && { tenantId: params.get("tenant_id") })
             });
 
+            // Use the issued access token directly: the old code discarded
+            // it and navigated to /dashboard, so the session depended on
+            // a refresh round-trip via the cookie — and a refresh failure
+            // raced navigate("/login") against navigate("/dashboard")
+            // (the stale-token class fixed for password login and passkey
+            // login in earlier iterations). loginWithToken lets the
+            // [accessToken] effect fetch the user with the fresh token.
+            loginWithToken(tokenSet.access_token);
             navigate("/dashboard");
         } catch (error) {
             setShowError(true);
