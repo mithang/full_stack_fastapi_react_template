@@ -137,7 +137,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             });
         } catch (error) {
             console.error("Failed to resend activation email:", error);
-            toast.error("Failed to resend activation email", {
+            // A backend response (ApiError, which carries a numeric status)
+            // means the server answered and rejected the resend; a failure
+            // with no status is a network error, not a failed resend, and
+            // must not send the user requesting another activation email
+            // for a connection problem. The generated client rejects network
+            // failures with a raw TypeError, while HTTP failures arrive as ApiError.
+            const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            toast.error(hasStatus
+                ? "Failed to resend activation email"
+                : "Unable to reach the server. Check your connection and try again.", {
                 richColors: true,
                 position: "top-right"
             });
