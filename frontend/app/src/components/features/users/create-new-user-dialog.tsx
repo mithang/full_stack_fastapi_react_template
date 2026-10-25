@@ -54,7 +54,9 @@ export function CreateNewUserDialog({ open, onDismiss }: CreateNewUserDialogProp
     });
 
     const onSubmit = async (data: CreateUserFormInputs) => {
-        console.log("Form Data Submitted: ", data);
+        // Do not log the submitted form data: it contains the new user's
+        // plaintext password, which would be exposed in the browser
+        // console (readable by extensions / anyone with console access).
         setIsLoading(true);
         try {
             await onCreateNewUser({
