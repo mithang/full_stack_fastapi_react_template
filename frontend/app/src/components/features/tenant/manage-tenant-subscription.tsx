@@ -39,7 +39,12 @@ export function ManageTenantSubscription({ open, onDismiss }: ManageTenantSubscr
             onSelectTenant()
         }
         catch (error) {
-            toast.error("Failed to activate trial plan for tenant.", {
+            // Network failures surface as a status-less TypeError, while HTTP
+            // failures arrive as ApiError; do not blame the trial activation for an outage.
+            const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            toast.error(hasStatus
+                ? "Failed to activate trial plan for tenant."
+                : "Unable to reach the server. Check your connection and try again.", {
                 richColors: true,
                 position: "top-right"
             });
