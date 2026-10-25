@@ -42,22 +42,30 @@ export default function SSOConfigurationProvider({ children }: SSOConfigurationP
     const canManageSSOSettings = can('full:access');
 
     async function fetchAllSSOProviders() {
-        try {
-            const apiClient = getApiClient(accessToken);
-            const [availableProvidersResponse, ssoProvidersResponse] = await Promise.all([
-                apiClient.ssoSettings.getAvailableSsoProvidersApiV1SsosAvailableProvidersGet(),
-                apiClient.ssoSettings.listApiV1SsosGet()
-            ]);
-            // setAvailableProviders(availableProvidersResponse);
-            setProviders(ssoProvidersResponse.items);
-            const notEnabledProviders = ssoProvidersResponse.items.filter(item => !item.enabled).map(item => item.provider)
-            const filteredProviders = availableProvidersResponse
-                .filter(item => !enabled_sso_providers?.includes(item))
-                .filter(provider_name => !notEnabledProviders.includes(provider_name));
+        const apiClient = getApiClient(accessToken);
+        // The two fetches are independent: Promise.all meant a failure of
+        // either endpoint discarded the other list too, so a failing
+        // available-providers endpoint hid the configured providers.
+        const [availableResult, ssoResult] = await Promise.allSettled([
+            apiClient.ssoSettings.getAvailableSsoProvidersApiV1SsosAvailableProvidersGet(),
+            apiClient.ssoSettings.listApiV1SsosGet()
+        ]);
+        if (ssoResult.status === "fulfilled") {
+            setProviders(ssoResult.value.items);
+            if (availableResult.status === "fulfilled") {
+                const notEnabledProviders = ssoResult.value.items.filter(item => !item.enabled).map(item => item.provider)
+                const filteredProviders = availableResult.value
+                    .filter(item => !enabled_sso_providers?.includes(item))
+                    .filter(provider_name => !notEnabledProviders.includes(provider_name));
 
-            setAvailableProviders(filteredProviders);
-        } catch (error) {
-            console.error("Failed to fetch SSO providers:", error);
+                setAvailableProviders(filteredProviders);
+            } else {
+                // Best-effort list for the "add provider" dropdown: log it,
+                // but do not hide the configured providers over it.
+                console.error("Failed to fetch available SSO providers:", availableResult.reason);
+            }
+        } else {
+            console.error("Failed to fetch SSO providers:", ssoResult.reason);
             toast.error("Failed to fetch SSO providers", { richColors: true, position: "top-right" });
         }
     }
