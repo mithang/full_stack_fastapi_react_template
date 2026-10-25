@@ -102,7 +102,18 @@ export default function Register() {
             });
 
         } catch (error) {
-            toast.error("Registration failed. Please try again.", {
+            // A backend response (ApiError, which carries a numeric
+            // status) means the server answered and rejected the
+            // registration; a failure with no status is a network
+            // error, not a bad submission, and must not send the user
+            // retyping a valid form. Mirrors the login/passkey/
+            // magic-link/password-reset network-error distinction:
+            // the generated client rejects network failures with a
+            // raw TypeError, while HTTP failures arrive as ApiError.
+            const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            toast.error(hasStatus
+                ? "Registration failed. Please try again."
+                : "Unable to reach the server. Check your connection and try again.", {
                 duration: 5000,
                 position: "top-right",
                 richColors: true
