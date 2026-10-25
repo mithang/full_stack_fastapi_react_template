@@ -229,7 +229,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // hosted frontend) until the tenant was re-selected.
         worker.postMessage({ tenantId: getTenant()?.id ?? null, apiBaseUrl: getApiBaseUrl() });
         worker.addEventListener("message", (event: MessageEvent<TokenSetDto | { type: string } | { message: string; code: number }>) => {
-            console.log("AuthProvider received message from worker:", event.data);
+            // Log only the message shape, never the payload: a refreshed
+            // token message carries the bearer access token, and logging
+            // it would expose a live credential in the browser console
+            // (readable by extensions and anyone with console access).
+            console.log("AuthProvider received message from worker:", event.data && 'access_token' in event.data ? "token refresh" : event.data && 'code' in event.data ? `status ${event.data.code}` : "unknown");
             if (event.data && 'access_token' in event.data) {
                 setAccessToken(event.data.access_token);
             } else if (event.data && 'code' in event.data) {
