@@ -45,19 +45,26 @@ export function BillingOverview() {
             const allProductsPromises = [];
             for (const plan of response.plans) {
                 if (plan.product) {
-                    try {
-                        const product = getApiClient(accessToken).stripeProducts.getProductByIdApiV1ProductsProductIdGet({
+                    // The client call returns a promise, so a try/catch here
+                    // cannot catch a failed fetch; collect the promise and
+                    // settle below instead.
+                    allProductsPromises.push(
+                        getApiClient(accessToken).stripeProducts.getProductByIdApiV1ProductsProductIdGet({
                             productId: plan.product,
-                        });
-                        allProductsPromises.push(product);
-
-                    } catch (error) {
-                        console.error(`Error fetching product with ID ${plan.product}:`, error);
-                    }
-
+                        })
+                    );
                 }
             }
-            const allProducts = await Promise.all(allProductsPromises);
+            // Fetch the products independently: Promise.all meant one
+            // failed product fetch discarded every plan, even though the
+            // plan cards already fall back to "N/A" for a missing product.
+            // Keep only the products that resolved; the plans still load.
+            const productResults = await Promise.allSettled(allProductsPromises);
+            const allProducts = productResults.flatMap((result) => {
+                if (result.status === "fulfilled") return [result.value];
+                console.error("Error fetching a product for a plan:", result.reason);
+                return [];
+            });
             setProducts(allProducts);
             setPlans(response.plans);
             setHasMore(response.has_more);
