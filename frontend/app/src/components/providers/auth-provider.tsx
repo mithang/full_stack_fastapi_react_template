@@ -9,7 +9,13 @@ import { createContext, useContext, useEffect, useState, useCallback } from "rea
 import { useLocation, useNavigate } from "react-router";
 import { toast } from "sonner";
 
-const notProtectedRoutes = ["/password_reset_confirmation", "/password-reset-request", "/register", "/forgot-password", "/magic_link_login"];
+// Must match the public routes under DefaultLayout in App.tsx: the
+// fetchUser effect and the worker-401 handler both skip these. The old
+// list missed /login, /activation and /non-active (so visiting them fired
+// spurious /me + refresh calls, and a worker 401 bounced /activation and
+// /non-active visitors to /login), and carried a dead /password-reset-request
+// entry — the real route is /forgot-password, already listed.
+const notProtectedRoutes = ["/login", "/password_reset_confirmation", "/register", "/forgot-password", "/activation", "/magic_link_login", "/non-active"];
 export type UpdateProfileType = {
     firstName: string;
     lastName: string;
