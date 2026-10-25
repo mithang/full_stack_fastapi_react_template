@@ -76,7 +76,18 @@ export function CreateNewUserDialog({ open, onDismiss }: CreateNewUserDialogProp
             onDismiss();
 
         } catch (error) {
-            toast.error("User creation failed. Please try again.", {
+            // A backend response (ApiError, which carries a numeric
+            // status) means the server answered and rejected the
+            // creation; a failure with no status is a network error,
+            // not a bad form, and must not send the admin retyping a
+            // valid form. Mirrors the register/login network-error
+            // distinction: the generated client rejects network
+            // failures with a raw TypeError, while HTTP failures
+            // arrive as ApiError.
+            const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            toast.error(hasStatus
+                ? "User creation failed. Please try again."
+                : "Unable to reach the server. Check your connection and try again.", {
                 duration: 5000,
                 position: "top-right",
                 richColors: true,
