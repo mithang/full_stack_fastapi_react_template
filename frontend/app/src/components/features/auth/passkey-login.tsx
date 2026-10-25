@@ -117,8 +117,17 @@ export function PasskeyLogin() {
                 return;
             }
 
-            toast.error("Authentication failed!", {
-                description: "Please ensure you have a registered passkey. Or Try different method.",
+            // A backend response (ApiError, which carries a numeric
+            // status) means the server answered and rejected the
+            // authentication; a failure with no status is a network
+            // error, not a missing passkey, and must not send the user
+            // to try a different method for a connection problem
+            // (same distinction as the password-login fix).
+            const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            toast.error(hasStatus ? "Authentication failed!" : "Unable to reach the server.", {
+                description: hasStatus
+                    ? "Please ensure you have a registered passkey. Or Try different method."
+                    : "Check your connection and try again.",
                 richColors: true,
                 position: "top-right"
             });
