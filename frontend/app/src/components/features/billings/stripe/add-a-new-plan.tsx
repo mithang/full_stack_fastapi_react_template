@@ -72,7 +72,16 @@ export function AddANewPlan({ onPlanCreated }: AddANewPlanProps) {
             setProducts(response.products);
         } catch (error) {
             console.error("Error fetching products:", error);
-            toast.error("Failed to fetch products", { richColors: true, position: "top-right" });
+            // A backend response (ApiError, which carries a numeric status)
+            // means the server answered; a failure with no status is a
+            // network error, not a failed product load, and must not send
+            // the admin to create a product that may already exist. The
+            // generated client rejects network failures with a raw
+            // TypeError, while HTTP failures arrive as ApiError.
+            const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            toast.error(hasStatus
+                ? "Failed to fetch products"
+                : "Unable to reach the server. Check your connection and try again.", { richColors: true, position: "top-right" });
         } finally {
             setLoadingProducts(false);
         }
