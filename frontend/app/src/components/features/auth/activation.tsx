@@ -47,8 +47,17 @@ export function Activation() {
 
                 toast.success("Account activated successfully. Please login.", { duration: 5000, position: "top-right", richColors: true });
             } catch (error) {
-
-                toast.error("Account activation failed. Please try again.", { duration: 5000, position: "top-right", richColors: true });
+                // A backend outage / offline browser must not be reported
+                // as a failed activation, which would send users to
+                // request a new link for a connection problem. Mirrors the
+                // login/passkey/magic-link/password-reset/register
+                // network-error distinction: the generated client rejects
+                // network failures with a raw TypeError, while HTTP
+                // failures arrive as ApiError with a numeric status.
+                const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+                toast.error(hasStatus
+                    ? "Account activation failed. Please try again."
+                    : "Unable to reach the server. Check your connection and try again.", { duration: 5000, position: "top-right", richColors: true });
             }
             finally {
                 navigate('/login');
