@@ -391,7 +391,13 @@ export function AIChat() {
             toast.success(`Model set to ${model.name}`, { richColors: true, position: "top-right" })
         } catch (error) {
             console.error("Failed to set model preference:", error)
-            toast.error("Failed to set model preference", { richColors: true, position: "top-right" })
+            // A backend response (ApiError, which carries a numeric
+            // status) means the server answered and rejected the
+            // preference; a failure with no status is a network error,
+            // not a bad model choice, and must not send the user
+            // re-selecting a model that never reached the server.
+            const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            toast.error(hasStatus ? "Failed to set model preference" : "Unable to reach the server. Check your connection and try again.", { richColors: true, position: "top-right" })
         }
     }
 
