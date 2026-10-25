@@ -38,8 +38,17 @@ export function RoleManagePermissionDialog({ open, onDismiss }: RoleManagePermis
             refreshRoles();
         } catch (error) {
             console.error("Error updating role:", error);
-            toast.error("Failed to update role", {
-                description: "There was an error updating the permissions.",
+            // A backend response (ApiError, which carries a numeric
+            // status) means the server answered and rejected the
+            // update; a failure with no status is a network error,
+            // not a bad permission selection, and must not send the
+            // admin re-trying a valid selection. Mirrors the
+            // role-update network-error distinction: the generated
+            // client rejects network failures with a raw TypeError,
+            // while HTTP failures arrive as ApiError.
+            const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            toast.error(hasStatus ? "Failed to update role" : "Unable to reach the server. Check your connection and try again.", {
+                description: hasStatus ? "There was an error updating the permissions." : undefined,
                 richColors: true,
                 position: "top-right"
             });
