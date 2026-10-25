@@ -73,7 +73,16 @@ export function ManageFeature({ open, onDismiss }: ManageFeatureTenantDialogProp
             );
         } catch (error) {
             console.error("Error updating feature:", error);
-            toast.error(`Failed to update feature '${featureName}'.`, {
+            // A backend response (ApiError, which carries a numeric
+            // status) means the server answered and rejected the
+            // update; a failure with no status is a network error,
+            // not a bad feature toggle, and must not send the admin
+            // re-trying a valid selection. Mirrors the role-permission
+            // network-error distinction: the generated client rejects
+            // network failures with a raw TypeError, while HTTP
+            // failures arrive as ApiError.
+            const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            toast.error(hasStatus ? `Failed to update feature '${featureName}'.` : "Unable to reach the server. Check your connection and try again.", {
                 richColors: true,
                 position: "top-right"
             });
