@@ -104,6 +104,14 @@ export function AppConfigProvider({ children }: AppConfigProviderProps) {
 
 
     const redirectToTenantDomain = useCallback((tenant: TenantDto) => {
+        // No tenant domain to redirect to: TenantDto.subdomain is
+        // nullable and custom_domain is optional, so without this guard
+        // a tenant with neither would build "https://null" (template
+        // string of null) and the else branch below would navigate
+        // there, since any hostname differs from null. Stay put instead.
+        if (!tenant.custom_domain && !tenant.subdomain) {
+            return;
+        }
         // environment is a dependency, not []: the initial appConfig
         // hardcodes "development", so an empty dependency array would
         // capture http + :3000 forever and, in production, redirect a
