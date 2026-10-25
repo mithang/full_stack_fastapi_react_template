@@ -242,19 +242,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             }
 
         });
-        window.addEventListener("tenant_set", () => {
+        // Named handlers so the cleanup below can remove them: without
+        // it, the effect's worker and listeners were never torn down.
+        // React StrictMode runs effects setup -> cleanup -> setup in
+        // dev, so each mount leaked an extra worker polling every 10
+        // minutes (and duplicate tenant listeners), all posting tokens
+        // and 401s into the provider.
+        const onTenantSet = () => {
             console.log("tenant_set event received in auth provider");
             const tenant = getTenant();
             if (tenant) {
                 worker.postMessage({ tenantId: tenant.id, apiBaseUrl: getApiBaseUrl() });
             }
 
-        })
+        };
 
-        window.addEventListener("tenant_removed", () => {
+        const onTenantRemoved = () => {
             console.log("tenant_removed event received in auth provider");
             worker.postMessage({ tenantId: null, apiBaseUrl: getApiBaseUrl() });
-        })
+        };
+
+        window.addEventListener("tenant_set", onTenantSet)
+
+        window.addEventListener("tenant_removed", onTenantRemoved)
+
+        return () => {
+            window.removeEventListener("tenant_set", onTenantSet);
+            window.removeEventListener("tenant_removed", onTenantRemoved);
+            worker.terminate();
+        };
 
     }, [])
 
