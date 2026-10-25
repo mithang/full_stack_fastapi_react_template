@@ -37,7 +37,12 @@ export function MagicLinkLoginValidate() {
     }, [params])
 
     useEffect(() => {
-        if (!params.get("token") || !params.get("user_id") && !loading) {
+        // Params come from the URL synchronously, so there is nothing to wait
+        // for: the old `&& !loading` clause could never become true here,
+        // because loading is only set to false when BOTH params are present.
+        // A link missing only user_id therefore never showed the error and
+        // spun forever. Either param missing is an invalid link.
+        if (!params.get("token") || !params.get("user_id")) {
             setShowError(true);
             return;
         }
