@@ -119,7 +119,23 @@ export default function AdvanceTable<T>({
     });
 
     useEffect(() => {
-        if (pagination.pageIndex !== currentPage) {
+        // Also normalise a skip that is not a page boundary: the page
+        // index is floor(skip / limit), but the providers fetch the raw
+        // skip, so ?skip=15&limit=10 labelled "Page 2" while showing
+        // records 16-25 instead of page 2's 11-20 (and next/prev then
+        // jumped by a full page from that misaligned offset). Rewriting
+        // the URL to the page's own offset makes the providers refetch
+        // the records the label promises; a non-numeric or negative skip
+        // is normalised the same way, since it never equals a page offset
+        // (missing skip reads as 0, which is page 0's offset, so normal
+        // navigation writes nothing extra). The rewrite lands on an
+        // already-agreeing skip, so this cannot ping-pong. The effect
+        // deliberately still runs only on pageIndex changes, so it
+        // cannot fight the back/forward sync effect below; a same-page
+        // URL edit to another misaligned skip therefore normalises on
+        // the next page change, not immediately.
+        const rawSkip = Number(searchParams.get("skip"));
+        if (pagination.pageIndex !== currentPage || rawSkip !== pagination.pageIndex * limit) {
             // Write a record offset, not the page index: page N starts at
             // record N * limit (see the currentPage derivation above).
             const skip = (pagination.pageIndex * limit).toString();
