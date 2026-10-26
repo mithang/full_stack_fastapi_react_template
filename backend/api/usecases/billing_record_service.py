@@ -444,6 +444,15 @@ class BillingRecordService:
             return None
 
         line = lines[0]
+        # Guard a non-dict line element the same way the lines data
+        # itself is guarded above: a string/int/null element would
+        # otherwise raise AttributeError inside _extract_period (which
+        # calls line.get), outside the save try/catch, turning a valid
+        # invoice.paid delivery into a 500 that Stripe retries forever.
+        # A non-dict first line is treated like no lines at all and
+        # returns None, as for an empty list.
+        if not isinstance(line, dict):
+            return None
 
         period_start, period_end = self._extract_period(line)
         price_id, product_id = self._extract_pricing(line)
