@@ -85,10 +85,19 @@ export function RolesProvider({ children }: RolesProviderProps) {
             });
         } catch (error) {
             console.error("Error fetching roles:", error);
-            if (error instanceof Error) {
+            // A backend response (ApiError, which carries a numeric status)
+            // means the server answered and rejected the fetch; a failure
+            // with no status is a network error, not a failed fetch, and
+            // must not surface a raw fetch error (e.g. "Failed to fetch")
+            // that sends the admin re-checking filters for roles that
+            // never reached the server.
+            const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            if (hasStatus && error instanceof Error) {
                 setRoleError(error.message);
-            } else {
+            } else if (hasStatus) {
                 setRoleError("Failed to fetch roles");
+            } else {
+                setRoleError("Unable to reach the server. Check your connection and try again.");
             }
 
         }
