@@ -23,6 +23,10 @@ export function TenantSelection({
     const [searchQuery, setSearchQuery] = useState('')
     const [debouncedQuery, setDebouncedQuery] = useState('')
     const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+    // Monotonic id of the latest tenant search: a slow earlier search must
+    // not overwrite a newer one (or redirect to its tenant) if it resolves
+    // after a later search has started.
+    const searchRequestIdRef = useRef(0)
     const [error, setError] = useState<string | null>(null)
     useEffect(() => {
         const tenant = getTenant();
@@ -60,12 +64,16 @@ export function TenantSelection({
         setError(null)
 
         setIsLoading(true)
+        const requestId = ++searchRequestIdRef.current
         try {
             const apiClient = getApiClient()
             const response = await apiClient.tenants.searchByNameApiV1TenantsSearchByNameNameGet({
                 name: query
             })
 
+            // A newer search has started since this one; ignore its result
+            // entirely, including the tenant-domain redirect below.
+            if (requestId !== searchRequestIdRef.current) return
 
             if (response) {
                 setSearchQuery(response.name)
@@ -77,6 +85,8 @@ export function TenantSelection({
                 setTenant(null)
             }
         } catch (error) {
+            // A newer search has started; its own result will set the state.
+            if (requestId !== searchRequestIdRef.current) return
             // A backend response (ApiError, which carries a numeric status)
             // means the server answered and found no such tenant; a failure
             // with no status is a network error, not a wrong tenant name, and
@@ -90,7 +100,9 @@ export function TenantSelection({
             onTenantSelect?.(null)
             setTenant(null)
         } finally {
-            setIsLoading(false)
+            // Only the latest search may clear the spinner; a stale one
+            // resolving first must not hide the newer search's loading state.
+            if (requestId === searchRequestIdRef.current) setIsLoading(false)
         }
     }
 
