@@ -35,6 +35,16 @@ async def create_host_checkout_session(
         url = await billing_service.create_host_check_out_session_for_tenant(frontend_url=host_main_domain, checkout_req=checkout_req)
         return CheckoutResponseDto(checkout_url=url)
 
+    # A host checkout session is created for a tenant (see
+    # create_host_check_out_session_for_tenant), so a caller without a
+    # tenant — a host user, whose tenant_id is None — previously fell
+    # through this function with no return, and FastAPI's
+    # CheckoutResponseDto validation of None failed as a 500 instead
+    # of a mapped API error. Fail fast with the same
+    # InvalidOperationException the mismatch check above uses; tenant
+    # callers return above and are unchanged.
+    raise InvalidOperationException("A tenant is required to create a host checkout session.")
+
 
 @router.post("/tenant/subscription", response_model=CheckoutResponseDto)
 async def create_tenant_checkout_session(
