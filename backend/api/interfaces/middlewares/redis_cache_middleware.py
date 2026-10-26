@@ -102,7 +102,13 @@ class RedisCacheMiddleware(BaseHTTPMiddleware):
         # reassigned subdomain to its previous tenant for the rest of the
         # TTL, where a stable record fetch (e.g. /tenants/{id}) has no such
         # mapping-change risk. It is bypassed the same way.
-        if any(request.url.path.endswith(path) for path in not_allowed_cache_paths) or "/check_subdomain/" in request.url.path or "/search_by_subdomain/" in request.url.path or token is None:
+        # Tenant-resolution GET: /api/v1/tenants/search_by_name/{name}
+        # has the identical shape and risk: the name is the lookup key, so
+        # a cached TenantDto would keep resolving a freed or recreated name
+        # to its previous tenant (including a stale is_active/custom-domain
+        # state) for the rest of the TTL. The trailing-slash segment keeps
+        # this from matching /roles/search_by_name, which takes no variable.
+        if any(request.url.path.endswith(path) for path in not_allowed_cache_paths) or "/check_subdomain/" in request.url.path or "/search_by_subdomain/" in request.url.path or "/search_by_name/" in request.url.path or token is None:
             logger.debug(f"Bypassing cache for path: {request.url.path}")
             return await call_next(request)
             
