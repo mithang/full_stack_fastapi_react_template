@@ -24,6 +24,21 @@ export function CheckoutSuccess() {
     // would otherwise never re-run and the page would sit on
     // "couldn't confirm yet" with no way back except a full reload.
     const [retryAttempt, setRetryAttempt] = useState(0);
+    // A payer whose session is gone (no refresh cookie, or an expired
+    // one) never receives a token, so the "confirming" copy below would
+    // otherwise sit forever: the worker refresh 403s (ignored by the
+    // provider) or 401s (no bounce on this public route), and no
+    // finalisation POST can run. After a generous wait — the immediate
+    // worker refresh plus the POST normally resolve in seconds — show
+    // a way out instead of an endless "confirming" message. This only
+    // adds copy; it never changes the finalisation flow, and the hint
+    // renders solely in the "confirming" branch, so a late confirmation
+    // still replaces it.
+    const [confirmingTimedOut, setConfirmingTimedOut] = useState(false);
+    useEffect(() => {
+        const timer = setTimeout(() => setConfirmingTimedOut(true), 30000);
+        return () => clearTimeout(timer);
+    }, []);
 
     // Finalise the payment server-side, mirroring the cancel page (iteration
     // 163): until now this page was a static stub, so a payer returning
@@ -88,6 +103,9 @@ export function CheckoutSuccess() {
             <div>
                 <h1>Checkout Success</h1>
                 <p>We're confirming your payment. This only takes a moment — you can also check <Link to="/billing/checkouts">your billing page</Link> for its status.</p>
+                {confirmingTimedOut && (
+                    <p>Still confirming? Your session may have expired since you checked out — please <Link to="/login">sign in again</Link>, then check your billing page for the payment status.</p>
+                )}
             </div>
         );
     }
