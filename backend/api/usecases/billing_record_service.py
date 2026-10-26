@@ -431,7 +431,19 @@ class BillingRecordService:
         # valid invoice.paid delivery into a 500 that Stripe retries
         # forever. A null data list falls through to the falsy check
         # below and returns None, as for an empty list.
-        lines = (invoice.get("lines") or {}).get("data", [])
+        # Guard a non-dict lines value the same way the metadata
+        # lookups already do: (invoice.get("lines") or {}).get(...)
+        # raises AttributeError on a truthy non-dict value (e.g. a
+        # string or list), outside the save try/catch, turning a
+        # valid invoice.paid delivery into a 500 that Stripe retries
+        # forever. A non-dict lines value is treated like no lines
+        # at all and returns None, as for an empty list.
+        lines_container = invoice.get("lines")
+        lines = (
+            lines_container.get("data", [])
+            if isinstance(lines_container, dict)
+            else []
+        )
         # Guard a non-list data value the same way the period and
         # metadata lookups already guard non-dict values: a dict data
         # value would raise KeyError on lines[0] below, and a string
