@@ -110,6 +110,19 @@ export default function AdvanceTable<T>({
         }
     }, [pagination.pageIndex]);
 
+    // Sync the page back from the URL: browser back/forward changes ?skip=
+    // and the providers refetch that page, but pagination state was only
+    // initialised from the URL once, so the "Page X of Y" label and the
+    // prev/next buttons kept the old page — a displayed-vs-applied
+    // mismatch in the same class as the action-filter fix. This effect
+    // runs only when the URL page changes (not on pagination clicks, so
+    // it cannot fight the effect above), and the functional updater makes
+    // it a no-op once the two agree, so the two directions cannot
+    // ping-pong: a click pushes the URL, then this sees them equal.
+    useEffect(() => {
+        setPagination((prev) => prev.pageIndex === currentPage ? prev : { ...prev, pageIndex: currentPage });
+    }, [currentPage]);
+
     const showPagination = items.length < total;
     const renderEmptyState = () => {
         if (items.length === 0 && total === 0 && !loading) {
