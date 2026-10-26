@@ -191,11 +191,24 @@ async def handle_invoice_paid(
     # a 500 that Stripe retries forever — the same class fixed for line
     # metadata in the billing service.
     invoice_metadata = invoice.get("metadata")
-    tenant_id = (
+    # Guard the scalar tenant_id the same way _extract_tenant_id guards
+    # its line-metadata values: the dict check above only guards the
+    # container, so a truthy non-string tenant_id (e.g. an int) would
+    # otherwise pass through here and bypass the service guard entirely
+    # — from_stripe_invoice_paid short-circuits on a truthy tenant_id
+    # and never calls _extract_tenant_id — then raise inside
+    # PydanticObjectId() in the record build, outside the save
+    # try/catch, turning a valid delivery into a 500 that Stripe
+    # retries forever. A malformed value falls back to the webhook
+    # tenant context, as an empty value already did.
+    metadata_tenant_id = (
         invoice_metadata.get("tenant_id")
         if isinstance(invoice_metadata, dict)
         else None
-    ) or tenant_id
+    )
+    if not isinstance(metadata_tenant_id, str) or not metadata_tenant_id:
+        metadata_tenant_id = None
+    tenant_id = metadata_tenant_id or tenant_id
 
     billing_record = await billing_record_service.from_stripe_invoice_paid(
         invoice=invoice, scope="tenant" if tenant_id else "host", tenant_id=tenant_id
