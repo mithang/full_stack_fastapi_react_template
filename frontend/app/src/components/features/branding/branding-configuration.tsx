@@ -158,8 +158,12 @@ export default function BrandingConfiguration() {
     };
 
     async function handleLogoUpload() {
-        await onUploadLogo(logoFile!);
-        setUploadingLogo(false);
+        setUploadingLogo(true);
+        try {
+            await onUploadLogo(logoFile!);
+        } finally {
+            setUploadingLogo(false);
+        }
     }
 
     function handleRemoveLogo() {
