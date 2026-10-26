@@ -306,9 +306,24 @@ export function AIChat() {
         }
         if (searchParams.get("session_id") && !searchParams.get("new_session")) {
             if (accessToken) {
-                startTransition(() => {
-                    fetchSelectedSessionHistory()
-                })
+                // Do not refetch history while a stream is in flight: this
+                // effect re-runs on every access-token rotation (~10
+                // minutes via the refresh worker), and the fetch would
+                // reset messages to [] and then overwrite them with
+                // server history — which cannot yet contain the live
+                // exchange (the backend persists it only after the
+                // stream closes). That wipes the streaming messages from
+                // view, and the stream's later updates then match no
+                // message id and land nowhere. The live exchange is
+                // already on screen, so skipping the refetch loses
+                // nothing; a rotation with no stream in flight still
+                // refetches as before. A session switch is unaffected:
+                // the abort above already cleared the ref for it.
+                if (!streamAbortRef.current) {
+                    startTransition(() => {
+                        fetchSelectedSessionHistory()
+                    })
+                }
             }
         } else if (!searchParams.get("session_id")) {
             // No session open: drop any messages from a session that is
