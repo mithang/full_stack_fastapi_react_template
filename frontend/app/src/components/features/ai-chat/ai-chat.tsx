@@ -176,6 +176,21 @@ export function AIChat() {
 
 
 
+    // Clear a selection whose model has disappeared from Ollama: the
+    // send guard (iteration 222) already blocks sending with a stale
+    // model, but the badge above still showed it as active and the
+    // "please select a model" alert stayed hidden (it keys off
+    // selectedModel), so the disabled Send button gave no explanation.
+    // Clearing restores both. modelsLoaded guards this: a failed models
+    // fetch leaves the previous list untouched, so only a successful
+    // refetch reporting the model as gone clears the choice.
+    useEffect(() => {
+        if (!modelsLoaded) return;
+        if (selectedModel && !availableAiModels.some((model) => model.name === selectedModel.name)) {
+            setSelectedModel(undefined)
+        }
+    }, [availableAiModels, modelsLoaded, selectedModel])
+
     // Load preferred model from user preferences
     useEffect(() => {
         // Only apply the preference while no model is selected yet: the
