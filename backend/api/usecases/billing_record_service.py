@@ -469,6 +469,19 @@ class BillingRecordService:
         if not isinstance(currency, str) or not currency:
             return None
 
+        # Guard the amount the same way the currency above guards a
+        # malformed value: invoice["amount_paid"] raises KeyError when
+        # absent, and a null/non-int value would fail BillingRecord
+        # validation — both outside the save try/catch, turning a valid
+        # invoice.paid delivery into a 500 that Stripe retries forever.
+        # Amount is Optional[int] on the record, so a malformed value
+        # falls back to None and the paid record is still persisted,
+        # as for a record with no amount at all. bool is excluded
+        # explicitly since it is an int subclass in Python.
+        amount_paid = invoice.get("amount_paid")
+        if isinstance(amount_paid, bool) or not isinstance(amount_paid, int):
+            amount_paid = None
+
         # Build Object
         return BillingRecord(
             scope=scope,
@@ -477,7 +490,7 @@ class BillingRecordService:
             user_id=None,
             payment_type="card",
             currency=currency.upper(),
-            amount=invoice["amount_paid"],
+            amount=amount_paid,
             stripe_customer_id=invoice["customer"],
             stripe_subscription_id=invoice.get("subscription"),
             stripe_session_id=None,
