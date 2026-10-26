@@ -578,8 +578,13 @@ class BillingRecordService:
         # invoice.paid delivery into a 500 that Stripe retries forever.
         # stripe_customer_id is Optional[str] on the record, so a
         # malformed value falls back to None and the paid record is
-        # still persisted, as for a record with no amount at all.
+        # still persisted, as for a record with no amount at all. An
+        # expanded customer object keeps its id, mirroring the
+        # subscription guard below: dropping it to None would lose the
+        # customer linkage for invoices fetched with expand[].
         stripe_customer_id = invoice.get("customer")
+        if isinstance(stripe_customer_id, dict):
+            stripe_customer_id = stripe_customer_id.get("id")
         if not isinstance(stripe_customer_id, str) or not stripe_customer_id:
             stripe_customer_id = None
 
