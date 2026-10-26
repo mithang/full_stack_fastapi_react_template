@@ -85,6 +85,19 @@ not_allowed_cache_paths = [
     # it. The query string (limit/skip/action) is part of the cache
     # key, so this bypass is the only way to keep the list live.
     "/api/v1/audit-logs/",
+    # Tenant SSO settings list, fetched by the SSO-configuration
+    # provider on load and on tenant change (and after the viewing
+    # admin's own CRUD, which clears only their own cache keys). A
+    # create/delete by another FULL_ACCESS admin would otherwise
+    # leave the viewing admin's list up to the TTL old — a just-
+    # deleted provider still offered in the configuration UI, or a
+    # newly enabled provider missing from it. Same stale-admin-UI
+    # class as the feature-toggle bypass above, not an enforcement
+    # fix: the SSO login/callback handlers read settings fresh.
+    # Endswith matching keeps the detail route (/ssos/{sso_id})
+    # and the static available-providers list cached, since neither
+    # path ends in "/api/v1/ssos/".
+    "/api/v1/ssos/",
 ]
 
 
