@@ -35,7 +35,14 @@ class EmailMagicLinkService:
             domain = get_host_main_domain_name()
             if user_dto.tenant_id:
                 tenant = await self.tenant_service.get_tenant_by_id(tenant_id=user_dto.tenant_id)
-                domain = tenant.custom_domain if tenant and tenant.custom_domain else tenant.subdomain
+                # get_tenant_by_id raises for an unknown tenant, so tenant is
+                # never None here; but a tenant may have neither a custom
+                # domain nor a subdomain (both nullable on the entity), in
+                # which case the old `else tenant.subdomain` produced
+                # domain=None and an unusable "https://None/..." magic link
+                # in the email. Fall back to the main domain, mirroring
+                # get_sso_redirect_uri's fallback for the same situation.
+                domain = tenant.custom_domain or tenant.subdomain or get_host_main_domain_name()
                 
             link = get_email_sharing_link(token=record.token, user_id=str(record.user_id), domain=domain, type="magic_link_login", tenant_id=str(record.tenant_id))
             html_content = magic_link_login_template(user_first_name=user_dto.first_name, magic_link=link)
