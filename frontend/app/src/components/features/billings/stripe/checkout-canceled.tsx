@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { useAuthContext } from "@/components/providers/auth-provider";
 import { getApiClient } from "@/lib/utils";
@@ -9,6 +9,15 @@ export function CheckoutCanceled() {
     const tenantId = searchParams.get("tenant_id");
     const userId = searchParams.get("user_id");
     const notifiedRef = useRef<string | null>(null);
+    // "confirming" while no token is held yet or the finalisation POST is
+    // in flight, "confirmed" once it resolves, "unconfirmed" if it fails.
+    // Mirrors the CheckoutSuccess finalisation-state copy from iteration
+    // 165: this page previously claimed a cancellation on query params
+    // alone, before any finalisation had happened (or after it had
+    // failed) — see the render below. A failed finalisation still shows
+    // no error page: the cancellation already happened at Stripe, and the
+    // billing page is the place to check its recorded status.
+    const [finalisation, setFinalisation] = useState<"confirming" | "confirmed" | "unconfirmed">("confirming");
 
     // Finalise the cancellation server-side: until now this page was a
     // static stub, so a payer returning from Stripe never POSTed to the
@@ -20,10 +29,11 @@ export function CheckoutCanceled() {
     // fetchUser effect skips it, so a fresh load has no in-memory token
     // yet — the effect re-runs when the worker refresh populates one.
     // Posting unauthenticated would only 401 and finalise nothing.
-    // Failures are swallowed deliberately: the cancellation already
+    // Failures are not turned into an error page: the cancellation already
     // happened at Stripe, so a failed finalisation just leaves the record
-    // pending (exactly as today) and must not turn this confirmation page
-    // into an error page. The guard is assigned before the await so a
+    // pending (exactly as today) — the render below shows a neutral
+    // "couldn't confirm yet" notice instead. The guard is assigned before
+    // the await so a
     // StrictMode double-invoke sends only once.
     useEffect(() => {
         if ((!tenantId && !userId) || !accessToken) return;
@@ -34,7 +44,7 @@ export function CheckoutCanceled() {
         const request = tenantId
             ? client.hostCheckoutSuccessApiV1CheckoutsHostPaymentCancelPost({ tenantId })
             : client.tenantCheckoutCanceledApiV1CheckoutsTenantPaymentCancelPost();
-        request.catch(() => undefined);
+        request.then(() => setFinalisation("confirmed")).catch(() => setFinalisation("unconfirmed"));
     }, [tenantId, userId, accessToken]);
 
     // Stripe always appends ?tenant_id= (host checkout) or ?user_id=
@@ -47,6 +57,28 @@ export function CheckoutCanceled() {
             <div>
                 <h1>Checkout Return</h1>
                 <p>We could not confirm a canceled payment from this link. If you just left a checkout, please check <Link to="/billing/checkouts">your billing page</Link> for its status.</p>
+            </div>
+        );
+    }
+
+    // The canceled copy below is only shown once the finalisation POST has
+    // resolved: before that (no token yet, or the POST in flight) the page
+    // must not claim the payment was canceled, and after a failed POST it
+    // must not claim it either — the record may still be pending.
+    if (finalisation === "confirming") {
+        return (
+            <div>
+                <h1>Checkout Canceled</h1>
+                <p>We're confirming your cancellation. This only takes a moment — you can also check <Link to="/billing/checkouts">your billing page</Link> for its status.</p>
+            </div>
+        );
+    }
+
+    if (finalisation === "unconfirmed") {
+        return (
+            <div>
+                <h1>Checkout Canceled</h1>
+                <p>We couldn't confirm your cancellation just yet. If you canceled the checkout, please check <Link to="/billing/checkouts">your billing page</Link> for its status.</p>
             </div>
         );
     }
