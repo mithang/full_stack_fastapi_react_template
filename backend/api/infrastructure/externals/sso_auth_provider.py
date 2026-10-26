@@ -1,6 +1,6 @@
 from fastapi import Request
 from api.common.exceptions import InvalidOperationException
-from api.common.utils import get_logger, get_sso_redirect_uri
+from api.common.utils import get_host_main_domain_name, get_logger, get_sso_redirect_uri
 from api.domain.entities.sso_settings import SSOProvider, SSOSettings
 import fastapi_sso
 from api.core.config import settings
@@ -20,7 +20,16 @@ class SSOAuthProvider:
         domain = None
         if sso_provider.tenant_id:
             tenant = await self.tenant_service.get_tenant_by_id(tenant_id=sso_provider.tenant_id)
-            domain = tenant.custom_domain if tenant.custom_domain else tenant.subdomain
+            # A tenant may have neither domain (both nullable on the Tenant
+            # entity, as in the passkey/magic-link cases), and SSO settings
+            # may carry no tenant at all; in either case domain would stay
+            # None and get_redirect_uri_to_app() would raise after a
+            # successful callback instead of redirecting to /dashboard.
+            # get_sso_redirect_uri already falls back this way for the
+            # provider redirect, so mirror it here.
+            domain = tenant.custom_domain or tenant.subdomain or get_host_main_domain_name()
+        else:
+            domain = get_host_main_domain_name()
 
         allow_insecure_http = settings.fastapi_env != "production"
         redirect_uri = get_sso_redirect_uri(provider_name, domain)
