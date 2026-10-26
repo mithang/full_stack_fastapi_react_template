@@ -63,4 +63,10 @@ class ProductService:
         except Exception as e:
             # Handle specific exceptions if needed
             logger.error(f"Failed to delete product: {str(e)}")
-            raise ProductNotFoundException(f"Product with ID {product_id} not found.") from e
+            # Only a Stripe 404 (unknown product id; stripe errors carry
+            # http_status) is a genuine not-found. Anything else — auth
+            # failure, Stripe outage, resolver error — is a product error,
+            # not a 404 claiming the product does not exist.
+            if getattr(e, "http_status", None) == 404:
+                raise ProductNotFoundException(f"Product with ID {product_id} not found.") from e
+            raise ProductException(f"Failed to delete product: {str(e)}") from e
