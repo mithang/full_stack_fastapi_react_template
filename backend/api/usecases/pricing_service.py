@@ -1,5 +1,5 @@
 from api.common.utils import get_logger
-from api.core.exceptions import PricingException
+from api.core.exceptions import PricingException, PricingNotFoundException
 from api.domain.dtos.pricing_dto import CreatePricingDto, PricingListDto, UpdatePricingDto
 from api.domain.entities.stripe_settings import ScopeType
 from api.infrastructure.externals.stripe_resolver import StripeResolver
@@ -45,5 +45,12 @@ class PricingService:
             })
         except Exception as e:
             logger.error(f"Error updating price {price_id}: {e}")
+            # Only a Stripe 404 (unknown price id; stripe errors carry
+            # http_status) is a genuine not-found, mirroring the
+            # product-delete and billing get/delete fixes. Anything else
+            # — auth failure, Stripe outage, resolver error — is a
+            # pricing error, not a 404 claiming the price does not exist.
+            if getattr(e, "http_status", None) == 404:
+                raise PricingNotFoundException(price_id) from e
             raise PricingException(str(e))
     
