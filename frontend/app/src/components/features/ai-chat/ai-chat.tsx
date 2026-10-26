@@ -163,11 +163,21 @@ export function AIChat() {
 
     // Load preferred model from user preferences
     useEffect(() => {
+        // Only apply the preference while no model is selected yet: the
+        // models list refetches on every access-token rotation, and the
+        // local user_preferences are not reloaded when a manual selection
+        // is saved (desktop) or made (mobile, which saves nothing), so
+        // re-applying unconditionally reverted a manual choice to the
+        // stale stored preference on the next 10-minute token refresh —
+        // and a missing preferred model cleared the manual choice to
+        // undefined. A fresh page load starts unselected, so the
+        // preference still applies there.
+        if (selectedModel) return;
         if (user_preferences?.preferences?.model_name && availableAiModels) {
             const preferredModel = availableAiModels.find(model => model.name === user_preferences.preferences.model_name)
             setSelectedModel(preferredModel)
         }
-    }, [user_preferences, availableAiModels])
+    }, [user_preferences, availableAiModels, selectedModel])
 
     useEffect(() => {
         async function fetchSelectedSessionHistory() {
