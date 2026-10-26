@@ -72,8 +72,16 @@ export function RolesProvider({ children }: RolesProviderProps) {
         setRoleError(null);
         const skip = searchParams.get("skip");
         const limit = searchParams.get("limit");
+        // Same URL-pagination guard as the audit-log provider: a
+        // non-numeric or negative ?skip=/?limit= falls back to 0/10 instead
+        // of reaching the backend as NaN/negative (FastAPI 422), matching
+        // AdvanceTable's display guards (iterations 134-135).
+        const parsedSkip = skip ? parseInt(skip) : 0;
+        const parsedLimit = limit ? parseInt(limit) : 10;
+        const safeSkip = Number.isFinite(parsedSkip) && parsedSkip >= 0 ? parsedSkip : 0;
+        const safeLimit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : 10;
         try {
-            const res = await role.listRolesApiV1RolesGet({ skip: skip ? parseInt(skip) : 0, limit: limit ? parseInt(limit) : 10 });
+            const res = await role.listRolesApiV1RolesGet({ skip: safeSkip, limit: safeLimit });
 
             setRoleResponse({
                 items: res.roles,

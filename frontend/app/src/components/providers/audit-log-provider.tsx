@@ -45,11 +45,20 @@ export function AuditLogProvider({ children }: AuditLogsProviderProps) {
         const skip = searchParams.get("skip");
         const limit = searchParams.get("limit");
         const action = searchParams.get("action") as string | null;
+        // Guard the URL pagination the same way AdvanceTable guards its
+        // display (iterations 134-135): a non-numeric or negative ?skip= /
+        // ?limit= (hand-edited URL, stale bookmark) previously reached the
+        // backend as NaN/negative — FastAPI rejects NaN as an int (422) —
+        // while the table itself displayed the page with the default limit.
+        const parsedSkip = skip ? parseInt(skip) : 0;
+        const parsedLimit = limit ? parseInt(limit) : 10;
+        const safeSkip = Number.isFinite(parsedSkip) && parsedSkip >= 0 ? parsedSkip : 0;
+        const safeLimit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : 10;
         try {
             const apiClient = getApiClient(accessToken);
             const response = await apiClient.auditLogs.listAuditLogsApiV1AuditLogsGet({
-                skip: skip ? parseInt(skip) : 0,
-                limit: limit ? parseInt(limit) : 10,
+                skip: safeSkip,
+                limit: safeLimit,
                 action: action as AuditLogActionType
             });
             setLogs({
