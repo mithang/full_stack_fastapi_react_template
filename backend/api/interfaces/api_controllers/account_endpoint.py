@@ -236,8 +236,21 @@ async def passkey_register_options(
     user_service = await auth_service.get_user_service()
     user = await user_service.find_by_email(email=email)
     user_dto = await user.to_serializable_dict()
-    result = await passkey_service.register_options(user_dto=UserDto(**user_dto))
-    
+    try:
+        result = await passkey_service.register_options(user_dto=UserDto(**user_dto))
+    except PassKeyException:
+        raise
+    except Exception as e:
+        # register_options resolves the relying party, creates the passkey
+        # record if missing, and calls the webauthn library's
+        # generate_registration_options; a tenant lookup or library error
+        # would otherwise escape as a 500 instead of the mapped 406, unlike
+        # passkey_login_options which already wraps its service call
+        # (iteration 324). find_by_email stays outside the try so
+        # unknown-email 404s are unchanged.
+        logger.error(f"Passkey registration options failed for email: {email} with error: {e}")
+        raise PassKeyException("Passkey registration failed.") from e
+
     return result
 
 
