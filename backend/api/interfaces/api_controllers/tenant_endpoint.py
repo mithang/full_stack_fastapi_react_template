@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 
 from api.common.dtos.worker_dto import WorkerPayloadDto
 from api.common.exceptions import ApiBaseException, InvalidOperationException
@@ -25,7 +25,7 @@ router = APIRouter(prefix="/tenants", tags=["Tenants"])
 
 @router.get("/", response_model=TenantListDto, status_code=status.HTTP_200_OK)
 async def list_tenants(
-    skip: int = 0, limit: int = 10,
+    skip: int = Query(0, ge=0), limit: int = Query(10, ge=1, le=100),
     service: TenantService = Depends(get_tenant_service),
     _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.HOST_MANAGE_TENANTS]))    
 ):
