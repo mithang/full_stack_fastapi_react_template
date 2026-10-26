@@ -144,7 +144,7 @@ async def password_reset_request(
     auth_service: AuthService = Depends(get_auth_service)
 ):
     try:
-        await auth_service.initate_password_reset(request.email)
+        await auth_service.initate_password_reset(request.email, domain=frontend_host)
     except Exception as e:
         logger.error(f"Password reset request for email: {request.email} wasn't successful: {e}")
     finally:
