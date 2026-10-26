@@ -3,20 +3,21 @@ let tenantId: string | null = null;
 // Empty = same-origin, matching getApiBaseUrl()'s default. The classic
 // worker cannot import utils, so the provider passes the base URL here.
 let apiBaseUrl = "";
+// The worker previously refreshed only on its 10-minute interval, so a
+// freshly loaded page held no access token until the first tick. That
+// left the checkout return pages (which finalise only once a token is
+// held) sitting on "We're confirming your payment/cancellation" for up
+// to 10 minutes after a payer returned from Stripe — a full-page
+// redirect, so the in-memory token is always gone on arrival. Refresh
+// once as soon as the provider seeds this worker instead of waiting
+// for the first tick; the interval below keeps the token alive after
+// that. Triggered from the message handler (not at script start) so
+// the seed's tenantId/apiBaseUrl are applied before the first call —
+// a refresh fired before the seed would go out without X-Tenant-ID
+// and, on a separately hosted frontend, to the frontend origin.
+let seeded = false;
 
-self.addEventListener("message", (event: MessageEvent<{ tenantId: string | null; apiBaseUrl?: string }>) => {
-    if (event.data && typeof event.data.apiBaseUrl === "string") {
-        apiBaseUrl = event.data.apiBaseUrl;
-    }
-    if (event.data && event.data.tenantId) {
-        console.log("Worker received tenantId:", event.data.tenantId);
-        tenantId = event.data.tenantId;
-    } else if (event.data && event.data.tenantId === null) {
-        console.log("Worker received tenantId removal");
-        tenantId = null;
-    }
-});
-setInterval(async () => {
+async function refreshOnce() {
     const url = `${apiBaseUrl}/api/v1/account/refresh`;
     console.log("Worker fetching new token with tenantId:", tenantId);
     let response: Response;
@@ -56,6 +57,28 @@ setInterval(async () => {
         // refresh itself succeeded, so do not surface a spurious error.
     }
     self.postMessage(data);
-}, pollingDelayInMilliSeconds);
+}
+
+self.addEventListener("message", (event: MessageEvent<{ tenantId: string | null; apiBaseUrl?: string }>) => {
+    if (event.data && typeof event.data.apiBaseUrl === "string") {
+        apiBaseUrl = event.data.apiBaseUrl;
+    }
+    if (event.data && event.data.tenantId) {
+        console.log("Worker received tenantId:", event.data.tenantId);
+        tenantId = event.data.tenantId;
+    } else if (event.data && event.data.tenantId === null) {
+        console.log("Worker received tenantId removal");
+        tenantId = null;
+    }
+    // First message is the provider's seed (posted right after the
+    // worker is constructed): refresh now, with the seeded values, and
+    // only once — later tenant_set/tenant_removed messages must not
+    // re-trigger an immediate refresh on top of the interval.
+    if (!seeded) {
+        seeded = true;
+        void refreshOnce();
+    }
+});
+setInterval(refreshOnce, pollingDelayInMilliSeconds);
 
 
