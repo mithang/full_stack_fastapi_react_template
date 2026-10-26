@@ -54,14 +54,14 @@ export function CheckoutOverview() {
         hasNext: false,
     });
 
-    const fetchCheckoutRecords = async (skip: number = 0) => {
+    const fetchCheckoutRecords = async (skip: number = 0, limit: number = pagination.limit) => {
         if (!accessToken) return;
         try {
             setLoading(true);
             setFetchError(null);
             const response = await getApiClient(accessToken).stripeCheckout.listCheckoutRecordsApiV1CheckoutsAllGet({
                 skip,
-                limit: pagination.limit,
+                limit,
             });
             setRecords(response.billing_records);
             setPagination({
@@ -98,7 +98,18 @@ export function CheckoutOverview() {
             // initialSkip above; the fetch itself overwrites pagination
             // with the backend-echoed skip, so no loop is possible here.
             const urlSkip = parseInt(new URLSearchParams(search).get("skip") || "0", 10);
-            fetchCheckoutRecords(Number.isFinite(urlSkip) && urlSkip >= 0 ? urlSkip : 0);
+            // Same gap as skip had before iteration 143, for limit: the
+            // effect read only ?skip= from the URL, so a hand-edited
+            // ?limit= was silently ignored — the fetch sent the stale
+            // state limit while the URL kept showing the edited one.
+            // Guarded the same way as initialLimit above; the fetch
+            // overwrites pagination with the backend-echoed values, so
+            // no loop is possible here.
+            const urlLimit = parseInt(new URLSearchParams(search).get("limit") || "10", 10);
+            fetchCheckoutRecords(
+                Number.isFinite(urlSkip) && urlSkip >= 0 ? urlSkip : 0,
+                Number.isFinite(urlLimit) && urlLimit > 0 ? urlLimit : 10,
+            );
         }
     }, [accessToken, search]);
 
