@@ -149,6 +149,23 @@ not_allowed_cache_paths = [
     # (/users/{user_id}) and the profile-image route cached, since
     # neither path ends in "/api/v1/users/".
     "/api/v1/users/",
+    # Tenant role list, fetched by the RolesProvider on load and on
+    # page change. Roles are created, updated, deleted, and assigned
+    # permissions by other admins, and a mutation clears only the
+    # acting admin's cache keys, so a viewing admin would otherwise
+    # keep a list up to the TTL old — a just-created role missing
+    # from the list, or a just-deleted role still offered for
+    # assignment while they review it. Same stale-viewer class as
+    # the audit-log/checkout/invoices/users bypasses, not an
+    # enforcement fix: role mutations read/write fresh. The query
+    # string (skip/limit) is part of the cache key, so this bypass
+    # is the only way to keep the list live. Endswith matching keeps
+    # the detail route (/roles/{role_id}) and the search route
+    # (/roles/search_by_name) cached, since neither path ends in
+    # "/api/v1/roles/". Full path confirmed as /api/v1 + router
+    # prefix /roles + GET "/" (api/__init__.py:130,148;
+    # role_endpoint.py:16,19).
+    "/api/v1/roles/",
     # Tenant storage settings list, fetched by the SettingsProvider
     # on load and on tenant change (and after the viewing admin's own
     # configure/reset, which clears only their own cache keys). A
