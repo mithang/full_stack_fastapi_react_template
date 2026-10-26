@@ -1,6 +1,6 @@
 from typing import Any
 from beanie import PydanticObjectId
-from pydantic import EmailStr
+from pydantic import EmailStr, ValidationError
 from api.common.exceptions import InvalidOperationException
 from api.common.utils import get_logger
 from api.core.exceptions import EmailAlreadyExistsException, UserNotFoundException
@@ -119,7 +119,14 @@ class UserService:
 
     async def retrieve_password_reset_data_by_user_id(self, user_id: str) -> UserPasswordReset | None:
         """Get password reset entry by token. Returns UserPasswordReset model or None if not found."""
-        return await self.user_password_reset_repository.single_or_none(user_id=PydanticObjectId(user_id))
+        try:
+            object_id = PydanticObjectId(user_id)
+        except ValidationError:
+            # A malformed user_id (tampered/truncated reset link) cannot match any
+            # stored record, so treat it as "no reset data" instead of escaping as
+            # a 500; the caller raises its invalid-token error for None.
+            return None
+        return await self.user_password_reset_repository.single_or_none(user_id=object_id)
 
     async def clear_password_reset_data_by_user_id(self, user_id: str) -> bool:
         """Clear password reset entry by user ID. Returns boolean."""
