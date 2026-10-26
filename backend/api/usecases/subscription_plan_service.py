@@ -25,7 +25,7 @@ class SubscriptionPlanService:
             return SubscriptionPlanDto(**result.model_dump())
         return None
 
-    async def create_trial_plan_for_tenant(self, tenant_id: str, plan_id: str):
+    async def create_trial_plan_for_tenant(self, tenant_id: str, plan_id: str) -> str:
 
         subscription_plan = CreateSubscriptionPlanDto(
             tenant_id=tenant_id,
@@ -38,3 +38,7 @@ class SubscriptionPlanService:
         result = await self.subscription_plan_repository.create_subscription_plan(subscription_plan=subscription_plan)
         if result is None:
             raise InvalidOperationException("Failed to create trial subscription plan.")
+        # Return the created plan's id: callers must not re-fetch by tenant
+        # to find it, since that lookup returns the first (oldest) plan and
+        # would point the tenant at a pre-existing plan instead of this trial.
+        return str(result)

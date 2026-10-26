@@ -267,9 +267,8 @@ async def activate_trial_plan(
     
     id = trial[0].id
     logger.debug(f"Trial plan found: {id}, activating for tenant ID: {tenant_id}")
-    await subcription_plan_service.create_trial_plan_for_tenant(tenant_id, id)
-    subcription = await subcription_plan_service.get_subscription_plans_by_tenant(tenant_id)
-    await tenant_service.update_tenant(tenant_id=tenant_id, data=UpdateTenantDto(subscription_id=str(subcription.id)))
+    subscription_id = await subcription_plan_service.create_trial_plan_for_tenant(tenant_id, id)
+    await tenant_service.update_tenant(tenant_id=tenant_id, data=UpdateTenantDto(subscription_id=subscription_id))
     logger.debug(f"Trial plan activated successfully for tenant ID: {tenant_id}")
     return UpdateTenantResponseDto(
         message="Trial plan activated successfully for tenant."
