@@ -34,6 +34,16 @@ router = APIRouter(
 router.tags = ["Stripe"]
 
 
+# The Stripe webhook cannot live on the router above: its dependencies
+# require a logged-in user with MANAGE_PAYMENTS_SETTINGS (CurrentUser
+# needs a Bearer access token), which Stripe's server-to-server POSTs
+# never carry — so every webhook was rejected before signature
+# verification ran and invoice.paid events were never processed. This
+# router carries no auth dependencies; Stripe signature verification
+# inside the handler is the webhook's authentication, as is standard.
+webhook_router = APIRouter(prefix="/configurations", tags=["Stripe"])
+
+
 @router.post("/stripe", status_code=status.HTTP_201_CREATED)
 async def configure_stripe_setting(
     configuration: CreateStripeSettingDto,
@@ -68,7 +78,7 @@ SUPPORTED_EVENTS = {
 }
 
 
-@router.post("/stripe/webhooks", status_code=status.HTTP_200_OK)
+@webhook_router.post("/stripe/webhooks", status_code=status.HTTP_200_OK)
 async def stripe_webhook(
     request: Request,
     stripe_setting_service: StripeSettingService = Depends(get_stripe_setting_service),
