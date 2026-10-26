@@ -40,11 +40,23 @@ export function AuditLogProvider({ children }: AuditLogsProviderProps) {
     const canViewOrDownloadAuditLogs = can("audit_logs:view_only") || can("audit_logs:download") || can("full:access");
     const canDownloadAuditLogs = can("audit_logs:download") || can("full:access");
 
+    // The backend validates ?action= against its AuditActionType Literal
+    // (create/update/delete/read/login/logout/error/download), so an
+    // invalid value (hand-edited URL, stale bookmark — including "all",
+    // which the UI never writes, since onDropdownChange deletes the param
+    // for it) previously reached the backend and failed with 422, while
+    // skip/limit were already guarded below (iteration 137). Fall back to
+    // no filter instead; "download" stays valid even though it is not a
+    // dropdown option, so it must not be dropped here.
+    const validAuditActions = ["create", "update", "delete", "read", "login", "logout", "error", "download"];
+    const rawAction = searchParams.get("action");
+    const safeAction = rawAction && validAuditActions.includes(rawAction) ? rawAction as AuditLogActionType : null;
+
     async function fetchAuditLogs() {
         toast.dismiss();
         const skip = searchParams.get("skip");
         const limit = searchParams.get("limit");
-        const action = searchParams.get("action") as string | null;
+        const action = safeAction;
         // Guard the URL pagination the same way AdvanceTable guards its
         // display (iterations 134-135): a non-numeric or negative ?skip= /
         // ?limit= (hand-edited URL, stale bookmark) previously reached the
@@ -95,7 +107,10 @@ export function AuditLogProvider({ children }: AuditLogsProviderProps) {
             const apiClient = getApiClient(accessToken);
             const response = await apiClient.auditLogs.downloadAuditLogsApiV1AuditLogsDownloadPost({
                 requestBody: {
-                    action: searchParams.get("action") as AuditLogActionType | null,
+                    // Same invalid-action guard as the list fetch above:
+                    // a bogus ?action= would otherwise fail the download
+                    // request with 422 as well.
+                    action: safeAction,
                     total_records: logs.total
                 }
             });
