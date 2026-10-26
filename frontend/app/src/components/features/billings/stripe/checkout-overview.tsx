@@ -113,6 +113,34 @@ export function CheckoutOverview() {
         }
     }, [accessToken, search]);
 
+    // Same over-range case iteration 138 clamped in AdvanceTable, for
+    // this page: a hand-edited or stale-bookmark ?skip= at/past the total
+    // (or a total that shrank since the URL was saved) fetches an empty
+    // page, and the empty branch below hides the pagination controls, so
+    // there is no Previous button to escape with — while the header
+    // claims e.g. "Showing 101 to 25 of 25". The backend echoes the
+    // requested skip verbatim (has_previous is just skip > 0), so it
+    // never clamps. Fall back to the last page's offset instead; the
+    // search-change effect above then refetches that page, and the
+    // navigated skip is below the total, so this cannot ping-pong.
+    // Guarded on the URL skip (not just pagination.skip) so the
+    // navigation itself does not re-trigger a duplicate push before
+    // the refetch lands, and skipped while loading so a stale page
+    // cannot clamp against a not-yet-loaded total.
+    useEffect(() => {
+        if (loading || fetchError) return;
+        if (pagination.total <= 0 || pagination.limit <= 0) return;
+        if (pagination.skip < pagination.total) return;
+        const lastPageSkip = Math.floor((pagination.total - 1) / pagination.limit) * pagination.limit;
+        const parsedUrlSkip = parseInt(new URLSearchParams(search).get("skip") || "0", 10);
+        const urlSkip = Number.isFinite(parsedUrlSkip) && parsedUrlSkip >= 0 ? parsedUrlSkip : 0;
+        if (urlSkip === lastPageSkip) return;
+        const query = new URLSearchParams(search);
+        query.set("skip", lastPageSkip.toString());
+        query.set("limit", pagination.limit.toString());
+        navigate(`${pathname}?${query.toString()}`);
+    }, [loading, fetchError, pagination, search, pathname, navigate]);
+
     const handlePrevious = () => {
         const newSkip = Math.max(0, pagination.skip - pagination.limit);
         const query = new URLSearchParams(window.location.search);
