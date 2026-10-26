@@ -5,6 +5,7 @@ import { useSearchParams } from 'react-router';
 import { toast } from 'sonner';
 import { getApiClient } from '@/lib/utils';
 import { useAuthContext } from '@/components/providers/auth-provider';
+import { useAppConfig } from '@/components/providers/app-config-provider';
 import { NoPermissionToAccessResource } from '@/components/shared/no-permission-access-resource';
 
 
@@ -57,6 +58,7 @@ interface RolesProviderProps {
 }
 export function RolesProvider({ children }: RolesProviderProps) {
     const { accessToken, can } = useAuthContext();
+    const { current_tenant } = useAppConfig();
     const [searchParams] = useSearchParams();
     const [pending, setPending] = useState(true);
     const [roleError, setRoleError] = useState<string | null>(null);
@@ -195,7 +197,15 @@ export function RolesProvider({ children }: RolesProviderProps) {
     useEffect(() => {
         if (!canViewRoles || !accessToken) return;
         refreshRoles();
-    }, [searchParams, accessToken, canViewRoles]);
+        // current_tenant is a dep, not just a guard: the role list is
+        // tenant-scoped (the backend picks the tenant database from the
+        // X-Tenant-ID header, which the client reads from the stored
+        // tenant that AppConfig sets when current_tenant arrives), so a
+        // fetch that ran before the tenant loaded — or before a tenant
+        // switch — must re-run once the tenant is known, mirroring the
+        // users provider's fix. refreshRoles is idempotent, so the
+        // extra fetch on tenant arrival/change is safe.
+    }, [searchParams, accessToken, canViewRoles, current_tenant]);
 
     if (!canViewRoles) {
         return <NoPermissionToAccessResource message='Roles Management' />;
