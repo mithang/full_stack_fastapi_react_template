@@ -214,7 +214,14 @@ class BillingRecordService:
             return await sc.v1.plans.retrieve_async(plan=plan_id)
         except Exception as e:
             logger.error(f"Error retrieving plan {plan_id}: {e}")
-            raise BillingRecordNotFoundException(plan_id)
+            # Only a Stripe 404 (unknown plan id; stripe errors carry
+            # http_status) is a genuine not-found, mirroring the
+            # product-delete fix. Anything else — auth failure, Stripe
+            # outage, resolver error — is a billing error, not a 404
+            # claiming the plan does not exist.
+            if getattr(e, "http_status", None) == 404:
+                raise BillingRecordNotFoundException(plan_id) from e
+            raise BillingRecordException(f"Failed to retrieve plan {plan_id}: {str(e)}") from e
 
     async def delete_plan(self, plan_id: str, scope: ScopeType) -> None:
         sc = await self.stripe_resolver.get_stripe_client(scope=scope)
