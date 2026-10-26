@@ -78,10 +78,17 @@ async def reset_storage(
         # We don't expect storage settings to be configured with host context as they are global settings. Only tenants with proper permissions can configure them.
         if current_user.tenant_id is None or current_user.tenant_id.strip() == "":
             logger.error("Tenant ID is missing in the current user context.")
-            return status.HTTP_400_BAD_REQUEST
+            # Raise, don't return the status code as the body: the route
+            # declares 204, which cannot carry a body at all, so the
+            # returned 400 was discarded and the client saw a successful
+            # 204 for a reset that never happened (same shape as the
+            # configure_storage fix). A real 400 makes the client throw.
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Tenant ID is missing in the current user context.")
 
         await setting_service.reset_storage(storage_id=storage_id, updated_by_user_id=current_user.id, tenant_id=PydanticObjectId(current_user.tenant_id))
         return status.HTTP_201_CREATED
+    except HTTPException:
+        raise
     except (NotFoundException, Exception) as e:
         logger.error(f"Failed to reset storage settings: {e}")
         raise e
