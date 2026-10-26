@@ -350,11 +350,19 @@ export function AIChat() {
             }
 
         } catch (error) {
+            // A fetch rejection is a TypeError with no status: the
+            // request never reached the server, so the raw
+            // "Failed to fetch" text must not be shown as if the AI
+            // request itself failed. Errors thrown above (non-OK
+            // responses, missing body) already carry their own
+            // status/detail message and are shown as-is.
             setChatState(prev => ({
                 ...prev,
                 messages: prev.messages.filter(msg => msg.id !== assistantMessage.id),
                 isLoading: false,
-                error: error instanceof Error ? error.message : 'An error occurred'
+                error: error instanceof TypeError
+                    ? 'Unable to reach the server. Check your connection and try again.'
+                    : error instanceof Error ? error.message : 'An error occurred'
             }))
         }
     }
