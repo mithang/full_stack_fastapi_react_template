@@ -23,7 +23,12 @@ class OllamaModels:
         """
         models: List[AIModelInfoDto] = []
         try:
-            response = requests.get(f"{settings.ollama_host}/api/tags")
+            # No timeout here used to hang /ai/models indefinitely when
+            # the Ollama host was unreachable but not refusing
+            # connections: the surrounding try/except already returns []
+            # on any exception, so a timeout degrades to an empty model
+            # list instead of a hung request.
+            response = requests.get(f"{settings.ollama_host}/api/tags", timeout=10)
             if response.status_code != 200:
                 logger.error(f"Failed to fetch models from Ollama API: {response.status_code} - {response.text}")
                 raise Exception(f"Failed to fetch models from Ollama API: {response.status_code}")
