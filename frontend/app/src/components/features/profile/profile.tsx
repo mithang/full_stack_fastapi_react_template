@@ -72,16 +72,20 @@ export function Profile() {
         },
     })
 
-    // Update form values when user data is available or when entering edit mode
+    // Update form values when user data is available, but never while
+    // editing: an avatar upload refreshes the user (refreshCurrentUser)
+    // while the form is open, and an unconditional reset here would
+    // discard unsaved name/gender edits. Entering edit mode is synced
+    // by the effect below instead.
     useEffect(() => {
-        if (user) {
+        if (user && !isEditing) {
             form.reset({
                 first_name: user.first_name || '',
                 last_name: user.last_name || '',
                 gender: (user.gender as any) || 'prefer_not_to_say',
             })
         }
-    }, [user, form])
+    }, [user, form, isEditing])
 
     // Reset form values when entering edit mode
     useEffect(() => {
