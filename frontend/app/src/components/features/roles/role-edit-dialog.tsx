@@ -71,7 +71,7 @@ export function RoleEditDialog({ open, onDismiss }: RoleEditDialogProps) {
             // arrive as ApiError.
             const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
             toast.error(hasStatus
-                ? "User update failed. Please try again."
+                ? "Role update failed. Please try again."
                 : "Unable to reach the server. Check your connection and try again.", {
                 duration: 5000,
                 position: "top-right",
