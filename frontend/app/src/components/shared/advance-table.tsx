@@ -145,6 +145,21 @@ export default function AdvanceTable<T>({
         setPagination((prev) => prev.pageIndex === currentPage ? prev : { ...prev, pageIndex: currentPage });
     }, [currentPage]);
 
+    // Clamp a page index that runs past the last page: a hand-edited or
+    // stale-bookmark ?skip= beyond total (or a total that shrank since the
+    // URL was saved) otherwise fetched an empty page and showed a blank
+    // table labelled e.g. "Page 101 of 3" — renderEmptyState only covers
+    // the total == 0 case, so nothing explained the empty table, and the
+    // label itself was out of range. The pagination -> URL effect above
+    // then writes the clamped page's offset, so the URL follows and the
+    // two directions settle; totalPage == 0 (no records yet) is left
+    // alone so the initial load is not clamped to page -1.
+    useEffect(() => {
+        if (totalPage > 0 && pagination.pageIndex >= totalPage) {
+            setPagination((prev) => ({ ...prev, pageIndex: totalPage - 1 }));
+        }
+    }, [totalPage, pagination.pageIndex]);
+
     const showPagination = items.length < total;
     const renderEmptyState = () => {
         if (items.length === 0 && total === 0 && !loading) {
