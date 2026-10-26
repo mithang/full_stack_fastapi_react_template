@@ -282,7 +282,7 @@ class BillingRecordService:
             await self.billing_record_repository.update(record.id, record.model_dump())
 
     async def handle_tenant_checkout_success(
-        self, session_id: str, user_id: str
+        self, session_id: str, user_id: str, tenant_id: str
     ) -> None:
         """
         Handle successful checkout for tenant scope
@@ -310,6 +310,16 @@ class BillingRecordService:
         if billing_record.scope != "tenant":
             raise BillingRecordException(
                 f"Scope mismatch for the billing record {session_id}"
+            )
+        # Tenant-guard the record, mirroring the host success handler:
+        # the user check below alone would accept a tenant-scope record
+        # created under a different tenant for the same user (e.g. a
+        # user who has since moved tenants), finalising another tenant's
+        # billing. Compare as strings, as billing_record.tenant_id is a
+        # PydanticObjectId while the caller passes a str.
+        if str(billing_record.tenant_id) != tenant_id:
+            raise BillingRecordException(
+                f"Tenant ID mismatch for the billing record {session_id}"
             )
         if str(billing_record.user_id) != user_id:
             raise BillingRecordException(

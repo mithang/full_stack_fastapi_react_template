@@ -101,7 +101,7 @@ async def tenant_checkout_success(
     current_user: CurrentUser,
     billing_service: BillingRecordService = Depends(get_billing_record_service)
 ):
-    await billing_service.handle_tenant_checkout_success(session_id=session_id, user_id=current_user.id)
+    await billing_service.handle_tenant_checkout_success(session_id=session_id, user_id=current_user.id, tenant_id=current_user.tenant_id)
     return status.HTTP_202_ACCEPTED
 
 
