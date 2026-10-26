@@ -1,5 +1,6 @@
 from typing import List
 from typing_extensions import get_args
+from api.common.exceptions import NotFoundException
 from api.common.utils import get_logger, get_sso_redirect_uri
 from api.domain.dtos.sso_settings_dto import CreateSSOSettingsDto, ReadSSOSettingsDto, SSOSettingsListDto, UpdateSSOSettingsDto
 from api.domain.entities.sso_settings import SSOProvider, SSOSettings
@@ -15,6 +16,13 @@ class SSOSettingsService:
 
     async def get_sso_settings_by_id(self, id: str) -> ReadSSOSettingsDto:
         res = await self.sso_settings_provider_repository.get_by_id(id)
+        if res is None:
+            # BaseRepository.get returns None for a malformed id (iteration 328)
+            # instead of raising, so dereferencing res here would raise
+            # AttributeError and surface as a 500 for a tampered SSO id —
+            # or for a well-formed but unknown id, which previously also
+            # reached this line. Map both to the clean 404 instead.
+            raise NotFoundException("SSOSettings", id)
         return ReadSSOSettingsDto(**res.model_dump(exclude={"client_secret": True}))
 
     async def update_redirect_uri(self, id: str, redirect_uri: str) -> None:
