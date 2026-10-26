@@ -395,8 +395,14 @@ class BillingRecordService:
         Converts a Stripe `invoice.paid` event into a BillingRecordDto.
         Returns None if not applicable (e.g. no subscription).
         """
-        # Extract first line item (99.9% of cases there's only one)
-        lines = invoice.get("lines", {}).get("data", [])
+        # Extract first line item (99.9% of cases there's only one).
+        # Guard a null lines value the same way the metadata lookups
+        # already do: an explicit null would otherwise raise
+        # AttributeError here, outside the save try/catch, turning a
+        # valid invoice.paid delivery into a 500 that Stripe retries
+        # forever. A null data list falls through to the falsy check
+        # below and returns None, as for an empty list.
+        lines = (invoice.get("lines") or {}).get("data", [])
         if not lines:
             return None
 
