@@ -531,6 +531,21 @@ class BillingRecordService:
         if not isinstance(tenant_id, str) or not tenant_id:
             tenant_id = None
         tenant_id = tenant_id or self._extract_tenant_id(line, scope)
+        # Guard ObjectId validity the same way the string guards above
+        # guard the type: a non-empty string that is not a valid
+        # ObjectId (e.g. a slug or UUID from another system in invoice
+        # or line metadata) would otherwise pass every str check above
+        # and raise inside PydanticObjectId() in the record build
+        # below — outside the save try/catch, turning a valid
+        # invoice.paid delivery into a 500 that Stripe retries forever.
+        # A malformed value falls back to None and the paid record is
+        # still persisted, as for a record with no tenant at all; valid
+        # ObjectId strings behave as before.
+        if tenant_id is not None:
+            try:
+                PydanticObjectId(tenant_id)
+            except Exception:
+                tenant_id = None
 
         # Guard the currency the same way the lines/period/metadata
         # lookups above guard null/non-dict values: invoice["currency"]
