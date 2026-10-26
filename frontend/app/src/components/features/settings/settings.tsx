@@ -60,6 +60,22 @@ export function Settings() {
                 azure_connection_string: existingConfig.azure_connection_string || '',
                 azure_container_name: existingConfig.azure_container_name || ''
             });
+        } else {
+            // No configuration exists for this provider yet: reset the form
+            // to blank defaults for the newly selected provider. Without
+            // this, formData kept the previous tab's provider and values,
+            // so saving from the new tab submitted an update for the wrong
+            // provider (onConfigureStorage keys off settings.provider).
+            setFormData({
+                provider: storageProvider,
+                is_enabled: false,
+                region: '',
+                aws_access_key: '',
+                aws_secret_key: '',
+                aws_bucket_name: '',
+                azure_connection_string: '',
+                azure_container_name: ''
+            });
         }
     };
 
