@@ -16,7 +16,9 @@ class AuditLogsReadMiddleware(BaseHTTPMiddleware):
             return "Role"
         elif "/api/v1/tenants" in path:
             return "Tenant"
-  
+        elif "/api/v1/audit-logs" in path:
+            return "AuditLog"
+
         return "Unknown"
     async def dispatch(self, request: Request, call_next):
         token = None
@@ -36,6 +38,14 @@ class AuditLogsReadMiddleware(BaseHTTPMiddleware):
             )
         
             entity = self._get_entity_name(request.url.path)
+            # Only audited entities are logged: previously every GET
+            # (dashboard, products, health, the SPA catch-all route)
+            # fell through to "AuditLog" here, flooding the jsonl file
+            # and pushing genuine user/role/tenant reads out of the
+            # newest-first pagination window in list_audit_logs.
+            # Reading the audit log itself stays logged as AuditLog.
+            if entity == "Unknown":
+                return await call_next(request)
             # Fail open: the audit write is a plain file append with no
             # error handling of its own, so a failure here (disk full,
             # read-only temp dir) must not turn the read itself into
@@ -44,7 +54,7 @@ class AuditLogsReadMiddleware(BaseHTTPMiddleware):
             try:
                 await capture_audit_log(AuditLogDto(
                     action="read",
-                    entity=entity if entity != "Unknown" else "AuditLog",
+                    entity=entity,
                     user_id=str(current_user.id) if current_user else "Anonymous",
                     changes={"info": f"Read access to {request.url.path}"},
                     tenant_id=str(current_user.tenant_id) if current_user and current_user.tenant_id else None
