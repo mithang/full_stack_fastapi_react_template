@@ -38,9 +38,21 @@ export function CheckoutCanceled() {
     // iteration 172.
     const [confirmingTimedOut, setConfirmingTimedOut] = useState(false);
     useEffect(() => {
+        // The stall timer restarts whenever the page re-enters
+        // "confirming": it previously started once on mount, so after a
+        // manual retry (which re-enters "confirming" from "unconfirmed")
+        // the already-fired flag showed the "session may have expired"
+        // hint immediately, even though the retry had only just started.
+        // Resetting the flag here and restarting the timer gives each
+        // confirmation attempt its own full 30 s; leaving "confirming"
+        // (confirmed, or a fresh failure) clears the timer via cleanup.
+        // Mirrors the CheckoutSuccess stall-timer restart from iteration
+        // 174.
+        if (finalisation !== "confirming") return;
+        setConfirmingTimedOut(false);
         const timer = setTimeout(() => setConfirmingTimedOut(true), 30000);
         return () => clearTimeout(timer);
-    }, []);
+    }, [finalisation]);
 
     // Finalise the cancellation server-side: until now this page was a
     // static stub, so a payer returning from Stripe never POSTed to the
