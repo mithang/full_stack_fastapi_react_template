@@ -110,7 +110,15 @@ class LocalAIService:
             # streamed answer was already delivered; drop it explicitly.
             logger.error(f"Refusing to save chat history for malformed session_id: {session_id}")
             return
-        session = await self.chat_session_repository.single_or_none(session_id=PydanticObjectId(session_id))
+        # session_id is Optional in AIAskRequestDto, and the create-new-
+        # session branch below already handles a falsy one by generating
+        # a fresh id — but PydanticObjectId(None) raises TypeError, so
+        # the lookup above it would crash this background task and the
+        # exchange would silently never be saved. Skip the lookup for
+        # None and let the create branch run instead.
+        session = None
+        if session_id is not None:
+            session = await self.chat_session_repository.single_or_none(session_id=PydanticObjectId(session_id))
         if session is not None and str(session.user_id) != str(user_id):
             # Unlike get_histories_by_session_id / delete_session, this
             # lookup is not scoped to the caller, so without this check
