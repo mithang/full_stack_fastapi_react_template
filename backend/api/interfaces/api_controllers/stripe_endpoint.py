@@ -1,6 +1,7 @@
 from typing import Any
 
 import stripe
+from beanie import PydanticObjectId
 from api.common.exceptions import InvalidOperationException
 from api.common.utils import get_logger
 from api.core.container import get_billing_record_service, get_stripe_setting_service
@@ -227,6 +228,21 @@ async def handle_invoice_paid(
     )
     if not isinstance(metadata_tenant_id, str) or not metadata_tenant_id:
         metadata_tenant_id = None
+    # Guard ObjectId validity the same way the service guards its
+    # resolved tenant_id (iteration 280): a non-empty string that is
+    # not a valid ObjectId (e.g. a slug from another system in invoice
+    # metadata) would otherwise win over the webhook tenant context
+    # above, then be dropped to None by the service guard — losing a
+    # valid webhook attribution and leaving a tenant-scope record with
+    # no tenant. Validated here, it falls back to the webhook tenant
+    # context instead, as an empty value already did; valid ObjectId
+    # strings behave as before. The service guard stays as the
+    # backstop for other callers.
+    if metadata_tenant_id is not None:
+        try:
+            PydanticObjectId(metadata_tenant_id)
+        except Exception:
+            metadata_tenant_id = None
     tenant_id = metadata_tenant_id or tenant_id
 
     billing_record = await billing_record_service.from_stripe_invoice_paid(
