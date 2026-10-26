@@ -38,7 +38,13 @@ class BillingRecordService:
     def _extract_period(
         self, line: dict[str, Any]
     ) -> tuple[Optional[int], Optional[int]]:
-        period = line.get("period", {})
+        # Guard an explicit null period the same way the invoice-lines
+        # and line-metadata guards do: a null would otherwise raise
+        # AttributeError here, outside the save try/catch, turning a
+        # valid invoice.paid delivery into a 500 that Stripe retries
+        # forever. Missing/null periods yield (None, None), as for a
+        # period object without start/end.
+        period = line.get("period") or {}
         return period.get("start"), period.get("end")
 
     def _extract_pricing(
