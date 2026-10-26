@@ -75,8 +75,15 @@ class ProductService:
             # only Stripe/update failures below become a product error.
             raise
         except Exception as e:
-            # Handle specific exceptions if needed
+            # Only a Stripe 404 (unknown product id, from the pre-update
+            # retrieve; stripe errors carry http_status) is a genuine
+            # not-found, mirroring get_product_by_id and delete_product
+            # in this file and the billing/pricing update fixes. Anything
+            # else — bad payload, Stripe outage, resolver error — is a
+            # product error (406 via ProductException), not a 404.
             logger.error(f"Failed to update product: {str(e)}")
+            if getattr(e, "http_status", None) == 404:
+                raise ProductNotFoundException(f"Product with ID {product_id} not found.") from e
             raise ProductException(f"Failed to update product: {str(e)}") from e
 
     async def delete_product(self, product_id: str, scope: ScopeType):
