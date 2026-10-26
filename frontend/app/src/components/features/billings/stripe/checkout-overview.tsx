@@ -369,7 +369,10 @@ export function CheckoutOverview() {
                                 Checkout Records
                             </CardTitle>
                             <CardDescription>
-                                Showing {pagination.skip + 1} to {Math.min(pagination.skip + pagination.limit, pagination.total)} of{" "}
+                                {/* With no records the old "skip + 1" start read "Showing 1 to 0
+                                of 0 records"; a zero total has no first record to show. */}
+                                Showing {pagination.total === 0 ? 0 : pagination.skip + 1} to{" "}
+                                {Math.min(pagination.skip + pagination.limit, pagination.total)} of{" "}
                                 {pagination.total} records
                             </CardDescription>
                         </div>
