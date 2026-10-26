@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useAuthContext } from "@/components/providers/auth-provider";
+import { useAppConfig } from "@/components/providers/app-config-provider";
 import { formatDateWithHourAndMinute, formatPrice, getApiClient } from "@/lib/utils";
 import { BillingRecordDto } from "@/api";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -27,6 +28,7 @@ import { useLocation, useNavigate } from "react-router";
 
 export function CheckoutOverview() {
     const { accessToken } = useAuthContext();
+    const { current_tenant } = useAppConfig();
     const [records, setRecords] = useState<BillingRecordDto[]>([]);
     const [loading, setLoading] = useState(true);
     const [fetchError, setFetchError] = useState<string | null>(null);
@@ -129,7 +131,15 @@ export function CheckoutOverview() {
                 Number.isFinite(urlLimit) && urlLimit > 0 ? urlLimit : 10,
             );
         }
-    }, [accessToken, search]);
+        // current_tenant is a dep, not a gate: checkout records are
+        // tenant-DB scoped (TenantMiddleware switches on the X-Tenant-ID
+        // header, which getApiClient reads from the stored tenant that
+        // AppConfig sets when current_tenant arrives), so a fetch that ran
+        // before the tenant loaded was never re-run, leaving host-DB or
+        // stale-tenant records on screen; host users have no tenant, so
+        // gating would stop their records loading. The request-id guard
+        // in fetchCheckoutRecords keeps the extra fetch from racing.
+    }, [accessToken, search, current_tenant]);
 
     // Same over-range case iteration 138 clamped in AdvanceTable, for
     // this page: a hand-edited or stale-bookmark ?skip= at/past the total
