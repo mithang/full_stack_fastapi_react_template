@@ -85,7 +85,14 @@ export function TenantSetting() {
 
         } catch (error: any) {
             console.error("Error checking tenant DNS status:", error);
-            toast.error(error?.body?.detail || "Failed to check custom domain status");
+            // A backend response (ApiError, which carries a numeric status)
+            // means the server answered; a failure with no status is a
+            // network error, not a failed DNS check, and must not send the
+            // admin to re-check a status for a connection problem.
+            const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            toast.error(hasStatus
+                ? (error?.body?.detail || "Failed to check custom domain status")
+                : "Unable to reach the server. Check your connection and try again.");
         } finally {
             setIsLoading(false);
         }
