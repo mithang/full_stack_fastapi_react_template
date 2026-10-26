@@ -18,7 +18,6 @@ not_allowed_cache_paths = [
     "/api/v1/account/login",
     "/api/v1/account/logout",
     "/api/v1/account/register",
-    "/api/v1/account/refresh_token",
     # Single-use token flow that returns a TokenSetDto (and sets the
     # refresh cookie): a cached 200 would let a consumed magic link
     # be replayed within the TTL without re-validating it, and would
