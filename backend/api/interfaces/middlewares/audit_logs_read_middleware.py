@@ -21,14 +21,28 @@ class AuditLogsReadMiddleware(BaseHTTPMiddleware):
 
         return "Unknown"
     async def dispatch(self, request: Request, call_next):
-        token = None
-        if "authorization" in request.headers:
-            token = request.headers["authorization"].replace("Bearer ", "")
-        user_service = get_user_service()
-        jwt_service = get_jwt_token_service()
-        role_service = get_role_service()
-        subscription_service = get_subscription_plan_service()    
         if request.method == "GET":
+            # Only audited entities are logged: previously every GET
+            # (dashboard, products, health, the SPA catch-all route)
+            # fell through to "AuditLog" here, flooding the jsonl file
+            # and pushing genuine user/role/tenant reads out of the
+            # newest-first pagination window in list_audit_logs.
+            # Reading the audit log itself stays logged as AuditLog.
+            # Check the entity before resolving the user: the
+            # resolution hits the user/token services, and paying
+            # that cost for every unlogged GET (dashboard, health,
+            # SPA catch-all) wasted a lookup per request even though
+            # the request was then passed through unlogged.
+            entity = self._get_entity_name(request.url.path)
+            if entity == "Unknown":
+                return await call_next(request)
+            token = None
+            if "authorization" in request.headers:
+                token = request.headers["authorization"].replace("Bearer ", "")
+            user_service = get_user_service()
+            jwt_service = get_jwt_token_service()
+            role_service = get_role_service()
+            subscription_service = get_subscription_plan_service()
             current_user = await current_user_optional(
                 token,
                 user_service=user_service,
@@ -36,16 +50,6 @@ class AuditLogsReadMiddleware(BaseHTTPMiddleware):
                 role_service=role_service,
                 subscription_service=subscription_service
             )
-        
-            entity = self._get_entity_name(request.url.path)
-            # Only audited entities are logged: previously every GET
-            # (dashboard, products, health, the SPA catch-all route)
-            # fell through to "AuditLog" here, flooding the jsonl file
-            # and pushing genuine user/role/tenant reads out of the
-            # newest-first pagination window in list_audit_logs.
-            # Reading the audit log itself stays logged as AuditLog.
-            if entity == "Unknown":
-                return await call_next(request)
             # Fail open: the audit write is a plain file append with no
             # error handling of its own, so a failure here (disk full,
             # read-only temp dir) must not turn the read itself into
