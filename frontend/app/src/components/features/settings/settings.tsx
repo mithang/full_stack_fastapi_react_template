@@ -226,8 +226,7 @@ export function Settings() {
                                         <div className="space-y-2">
                                             <Label htmlFor="region">AWS Region</Label>
                                             <Select
-                                                key={formData?.region}
-                                                defaultValue={getStorageConfig("s3")?.region}
+                                                value={formData.region}
                                                 onValueChange={(value) => updateField('region', value)}
                                             >
                                                 <SelectTrigger>
