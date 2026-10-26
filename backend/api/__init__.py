@@ -87,8 +87,15 @@ async def api_exception_handler(req: Request, ex: ApiBaseException) -> JSONRespo
         content={"error": ex.message, "code": status_code}
     )
 
-app.add_middleware(AuditLogsReadMiddleware)
+# Audit logging must run before the Redis cache: Starlette runs
+# last-added middleware first, so the previous add order (audit
+# before cache) made the cache run first, and a cache hit returned
+# before the audit middleware ever ran, leaving cached reads of
+# users/roles/tenants unlogged while uncached reads were logged.
+# With this order the audit entry is written for every GET, cached
+# or not, and the cache still sits between audit and the handler.
 app.add_middleware(RedisCacheMiddleware)
+app.add_middleware(AuditLogsReadMiddleware)
 
 if is_tenancy_enabled(): 
     app.add_middleware(TenantMiddleware)
