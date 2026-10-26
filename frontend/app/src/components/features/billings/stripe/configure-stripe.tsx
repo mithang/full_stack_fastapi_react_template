@@ -24,7 +24,7 @@ import {
     RefreshCw
 } from "lucide-react";
 import { IconExternalLink } from "@tabler/icons-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAppConfig } from "@/components/providers/app-config-provider";
 import { useAuthContext } from "@/components/providers/auth-provider";
 import { ShowScreenLoader } from "@/components/shared/show-screen-loader";
@@ -53,7 +53,8 @@ export function ConfigureStripe() {
         handleSubmit,
         setValue,
         watch,
-        formState: { errors, isSubmitting },
+        reset,
+        formState: { errors, isSubmitting, isDirty },
     } = useForm<StripeConfigForm>({
         resolver: zodResolver(stripeConfigSchema),
         defaultValues: {
@@ -64,6 +65,25 @@ export function ConfigureStripe() {
             stripe_webhook_secret: "",
         },
     });
+
+    // The form mounts while the provider is still loading, so the
+    // defaultValues above are read with configuredStripeSetting still
+    // null. The form is normally hidden once a setting loads, but a
+    // failed Refresh (which sets showConfigureStripe) reveals it
+    // alongside the loaded setting — with stale EUR/both/0 defaults
+    // that a submit would then write over the live configuration.
+    // Sync to the server values once they arrive, unless the admin has
+    // already started typing; secrets intentionally stay empty.
+    useEffect(() => {
+        if (!configuredStripeSetting || isDirty) return;
+        reset({
+            default_currency: configuredStripeSetting.default_currency || "EUR",
+            mode: configuredStripeSetting.mode || "both",
+            trial_period_days: configuredStripeSetting.trial_period_days.toString() || "0",
+            stripe_secret_key: "",
+            stripe_webhook_secret: "",
+        });
+    }, [configuredStripeSetting, isDirty, reset]);
 
     const selectedMode = watch("mode");
 
