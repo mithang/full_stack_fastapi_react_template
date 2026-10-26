@@ -66,6 +66,15 @@ not_allowed_cache_paths = [
     "/features",
     "/api/v1/security/passkeys",
     "/api/v1/configurations/stripe/webhooks",
+    # Live computed metrics: get_dashboard_metrics aggregates user
+    # counts and a registration timeseries fresh on every call, and
+    # the dashboard page fetches it on load (and on filter change).
+    # A cached 200 would show a viewing admin numbers up to the TTL
+    # old even as other users register, because a registration POST
+    # clears only the registering user's cache keys, not the viewing
+    # admin's. The query string (filter) is part of the cache key, so
+    # this bypass is the only way to keep the metrics live.
+    "/api/v1/dashboard/",
 ]
 
 
