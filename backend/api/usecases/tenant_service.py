@@ -57,7 +57,16 @@ class TenantService:
 
     async def delete_tenant(self, tenant_id: str) -> None:
         """Delete tenant by ID. Raises TenantNotFoundException if not found."""
-        if await self.tenant_repository.delete(id=tenant_id) is None:
+        # BaseRepository.delete() returns a bool (False when no document
+        # matches), never None, so `is None` could never fire and a
+        # delete of a nonexistent tenant silently succeeded instead of
+        # raising, breaking this method's own contract. Check `is
+        # False`, as RoleService.delete_role and UserService.delete_user
+        # already do for the same repository method. The tenant delete
+        # endpoint pre-checks with get_tenant_by_id, so its behaviour
+        # today is unchanged; this fixes the service contract for any
+        # direct caller.
+        if await self.tenant_repository.delete(id=tenant_id) is False:
             raise TenantNotFoundException(tenant_id)
 
     async def total_count(self) -> int:
