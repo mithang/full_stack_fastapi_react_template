@@ -148,6 +148,21 @@ async def update_profile_picture(
     # this check consumes nothing from the upload stream.
     if not file.content_type or not file.content_type.startswith("image/"):
         raise InvalidOperationException("Profile picture must be an image file.")
+    # The frontend caps profile pictures at 5 MB, but a direct API call
+    # bypasses it, so enforce the same cap server-side before the file
+    # reaches storage. Chunks are counted, not retained, and the stream
+    # is rewound afterwards: both storage backends read from the current
+    # stream position (S3 via file.file, Azure via file.read()).
+    max_size = 5 * 1024 * 1024
+    size = 0
+    while True:
+        chunk = await file.read(1024 * 1024)
+        if not chunk:
+            break
+        size += len(chunk)
+        if size > max_size:
+            raise InvalidOperationException("Profile picture must be less than 5MB.")
+    await file.seek(0)
     await user_service.get_user_by_id(user_id)
     file_location = await file_service.upload_file(file)
     await user_service.update_user(user_id=user_id, user_data=UpdateUserDto(image_url=file_location))
