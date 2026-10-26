@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, File, UploadFile, status
-from api.common.exceptions import InvalidOperationException
+from api.common.exceptions import ForbiddenException, InvalidOperationException
 from api.common.utils import get_logger
 from api.domain.dtos.user_dto import CreateUserDto, CreateUserResponseDto, UpdateUserDto, UserDto, UserListDto, UserProfileImageUpdateDto, UserRoleUpdateRequestDto
 from api.domain.enum.permission import Permission
@@ -87,9 +87,12 @@ async def get_profile_image(
 @router.delete("/{user_id}", status_code=status.HTTP_202_ACCEPTED)
 async def delete_user(
     user_id: str,
+    current_user: CurrentUser,
     service: UserService = Depends(get_user_service),
     _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.USER_DELETE_ONLY]))
 ):
+    if str(current_user.id) == user_id:
+        raise ForbiddenException("Users cannot delete their own account.")
     await service.delete_user(user_id)
     return status.HTTP_202_ACCEPTED
 
@@ -115,10 +118,13 @@ async def update_profile_picture(
 @router.patch("/{user_id}/assign_role", response_model=UserDto, status_code=status.HTTP_202_ACCEPTED)
 async def patch_user(
     user_id: str, role_update: UserRoleUpdateRequestDto,
+    current_user: CurrentUser,
     _: bool = Depends(check_permissions_for_current_role([Permission.USER_ROLE_ASSIGN_OR_REMOVE_ONLY])),
     user_service: UserService = Depends(get_user_service)
 
 ):
+    if str(current_user.id) == user_id:
+        raise ForbiddenException("Users cannot assign a role to themselves.")
     
     exsisting_user = await user_service.get_user_by_id(user_id)
     if str(exsisting_user.role_id) == role_update.role_id:
@@ -133,9 +139,12 @@ async def patch_user(
 @router.patch("/{user_id}/remove_role", response_model=UserDto, status_code=status.HTTP_202_ACCEPTED)
 async def remove_user_role(
      user_id: str, role_update: UserRoleUpdateRequestDto,
+    current_user: CurrentUser,
     _: bool = Depends(check_permissions_for_current_role([Permission.USER_ROLE_ASSIGN_OR_REMOVE_ONLY])),
     user_service: UserService = Depends(get_user_service)
 ):
+    if str(current_user.id) == user_id:
+        raise ForbiddenException("Users cannot remove a role from themselves.")
     exsisting_user = await user_service.get_user_by_id(user_id)
     if str(exsisting_user.role_id) != role_update.role_id:
         raise InvalidOperationException("User does not have this role assigned")
