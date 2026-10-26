@@ -181,7 +181,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             await fetchUser(true);
         } catch (error) {
             console.error("Error updating profile:", error);
-            toast.error("Failed to update profile", {
+            // A backend response (ApiError, which carries a numeric status)
+            // means the server answered and rejected the update; a failure
+            // with no status is a network error, not a failed profile
+            // update, and must not send the user re-entering details that
+            // never reached the server. The fetchUser refresh above cannot
+            // throw into this catch (it handles its own failures), so the
+            // error here is always from the update call itself.
+            const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            toast.error(hasStatus
+                ? "Failed to update profile"
+                : "Unable to reach the server. Check your connection and try again.", {
                 richColors: true
             });
         }
