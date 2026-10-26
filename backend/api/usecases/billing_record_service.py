@@ -379,8 +379,23 @@ class BillingRecordService:
         """
         Handle successful checkout for host scope
         """
-        sc: StripeClient = await self.stripe_resolver.get_stripe_client(scope="host")
-        session = await sc.v1.checkout.sessions.retrieve_async(session=session_id)
+        # Wrap only the Stripe calls: any failure here (unknown session id,
+        # bad key, Stripe outage) previously propagated as a raw Stripe
+        # exception past the ApiBaseException-only handler and surfaced as
+        # a 500 — unlike every plan/product/invoice operation, which now
+        # raises a mapped error. The DB lookup below stays outside the try
+        # so a genuinely missing record still raises NotFound.
+        try:
+            sc: StripeClient = await self.stripe_resolver.get_stripe_client(scope="host")
+            session = await sc.v1.checkout.sessions.retrieve_async(session=session_id)
+        except Exception as e:
+            # Only a Stripe 404 (stripe errors carry http_status) is a
+            # not-found; everything else is a billing error.
+            if getattr(e, "http_status", None) == 404:
+                raise BillingRecordNotFoundException(session_id) from e
+            raise BillingRecordException(
+                f"Failed to retrieve checkout session {session_id}: {str(e)}"
+            ) from e
         if session.payment_status != "paid":
             raise BillingRecordException(
                 f"Payment not completed for session {session_id}"
