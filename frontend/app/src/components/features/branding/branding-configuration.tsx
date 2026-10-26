@@ -29,7 +29,7 @@ import {
     FormLabel,
     FormMessage
 } from "@/components/ui/form";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { UpdateBrandingDto } from "@/api";
 import ColorField from "@/components/features/branding/color-fields";
 
@@ -95,6 +95,19 @@ export default function BrandingConfiguration() {
     const [logoFile, setLogoFile] = useState<File | null>(null);
     const [logoPreview, setLogoPreview] = useState<string | null>(branding?.logo_url || null);
     const [uploadingLogo, setUploadingLogo] = useState(false);
+
+    // Sync the preview with the server logo once branding loads: branding
+    // arrives asynchronously (via the app-config fetch), so the useState
+    // initializer above runs while branding is still undefined and an
+    // existing server logo would otherwise never appear in this form.
+    // Keyed only on the logo URL, so a local Remove (which clears the
+    // preview without changing the URL) is not undone, and a pending local
+    // file's preview is never overwritten by the server value.
+    useEffect(() => {
+        if (!logoFile) {
+            setLogoPreview(branding?.logo_url || null);
+        }
+    }, [branding?.logo_url]);
 
     const form = useForm<BrandingFormValues>({
         resolver: zodResolver(brandingFormSchema),
