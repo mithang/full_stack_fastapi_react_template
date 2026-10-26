@@ -180,10 +180,19 @@ export function AIChat() {
     }, [user_preferences, availableAiModels, selectedModel])
 
     useEffect(() => {
+        // The delayed setChatState below must not outlive this effect run:
+        // without a cleanup, switching session_id (or unmounting) inside
+        // the 1 s delay let the stale timer write the old session's
+        // messages over the new session's history (which the new run had
+        // already reset to [] / isLoading). The flag also covers a fetch
+        // that resolves after cleanup, when no timer exists yet to clear.
+        let cancelled = false;
+        let historyTimer: ReturnType<typeof setTimeout> | undefined;
         async function fetchSelectedSessionHistory() {
             const sessionId = searchParams.get("session_id")
             try {
                 const response = await fetchHistories(sessionId!);
+                if (cancelled) return;
                 setChatState({
                     error: null,
                     isLoading: true,
@@ -214,7 +223,8 @@ export function AIChat() {
                 });
 
 
-                setTimeout(() => {
+                historyTimer = setTimeout(() => {
+                    if (cancelled) return;
                     setChatState(prev => ({
                         ...prev,
                         messages: [...messages],
@@ -225,6 +235,7 @@ export function AIChat() {
 
 
             } catch (e) {
+                if (cancelled) return;
                 console.error("Failed to load previous conversations...")
                 // A backend response (ApiError status, preserved on the
                 // wrapper by fetchHistories) means the server answered and
@@ -251,6 +262,10 @@ export function AIChat() {
                 })
             }
         }
+        return () => {
+            cancelled = true;
+            if (historyTimer) clearTimeout(historyTimer);
+        };
         // current_tenant is a dep, not a gate: session histories are
         // tenant-DB scoped (TenantMiddleware switches on the X-Tenant-ID
         // header, which getApiClient reads from the stored tenant that
