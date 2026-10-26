@@ -43,7 +43,15 @@ class RedisCacheMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         token = None
         if "authorization" in request.headers:
-            token = request.headers["authorization"].replace("Bearer ", "")
+            # The auth scheme is case-insensitive (RFC 7235), and
+            # replace() would strip every "Bearer " occurrence, so
+            # strip only a leading scheme: a "bearer <token>" header
+            # from a non-browser client previously reached user
+            # resolution as "bearer <token>", failed, and the request
+            # bypassed the cache as an unresolvable token — mirroring
+            # the audit middleware's misattribution fix.
+            auth_header = request.headers["authorization"]
+            token = auth_header[7:] if auth_header.lower().startswith("bearer ") else auth_header
 
         if any(request.url.path.endswith(path) for path in not_allowed_cache_paths) or token is None:
             logger.debug(f"Bypassing cache for path: {request.url.path}")
