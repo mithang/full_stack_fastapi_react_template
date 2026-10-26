@@ -312,7 +312,23 @@ export function CheckoutOverview() {
                     <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => fetchCheckoutRecords(pagination.skip, pagination.limit)}
+                        onClick={() => {
+                            // Retry the page the URL actually shows, not
+                            // pagination state: a failed fetch never
+                            // overwrites pagination, so after navigating
+                            // to a new page and failing, pagination still
+                            // holds the previous page — retrying it would
+                            // show that page while the URL claims the new
+                            // one. Guarded the same way as the fetch
+                            // effect above; the initial page (no fetch yet)
+                            // matches pagination, so it behaves as before.
+                            const urlSkip = parseInt(new URLSearchParams(search).get("skip") || "0", 10);
+                            const urlLimit = parseInt(new URLSearchParams(search).get("limit") || "10", 10);
+                            fetchCheckoutRecords(
+                                Number.isFinite(urlSkip) && urlSkip >= 0 ? urlSkip : 0,
+                                Number.isFinite(urlLimit) && urlLimit > 0 ? urlLimit : 10,
+                            );
+                        }}
                     >
                         <RefreshCw className="h-4 w-4 mr-2" />
                         Retry
