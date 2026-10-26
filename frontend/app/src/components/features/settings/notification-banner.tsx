@@ -33,7 +33,7 @@ type NotificationForm = z.infer<typeof notificationSchema>;
 
 export function NotificationBanner() {
     const { accessToken } = useAuthContext();
-    const { reloadAppConfig } = useAppConfig();
+    const { reloadAppConfig, current_tenant } = useAppConfig();
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
     const [currentNotification, setCurrentNotification] = useState<NotificationBannerSettingDto | null>(null);
@@ -78,7 +78,14 @@ export function NotificationBanner() {
         if (accessToken) {
             fetchNotificationBanner();
         }
-    }, [accessToken]);
+        // current_tenant is a dep, not a gate: host users have no
+        // tenant, so gating would stop their banner loading, but a
+        // fetch that ran before the tenant arrived (fresh load /
+        // cleared storage) went out without X-Tenant-ID and was never
+        // re-run once AppConfig set the tenant — leaving the host-DB
+        // or stale-tenant banner in the form. Same tenant-arrival
+        // race fixed for dashboard metrics in iteration 182.
+    }, [accessToken, current_tenant]);
 
     const onSubmit = async (data: NotificationForm) => {
         if (!accessToken) return;
