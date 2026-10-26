@@ -26,7 +26,15 @@ class SSOSettingsService:
         return ReadSSOSettingsDto(**res.model_dump(exclude={"client_secret": True}))
 
     async def update_redirect_uri(self, id: str, redirect_uri: str) -> None:
-        await self.sso_settings_provider_repository.update_sso_settings(id, SSOSettings(redirect_uris=[redirect_uri]))
+        # Same silent-success class as update_sso_settings() above:
+        # repository.update() returns None when no document matches, so
+        # updating an unknown id previously returned as if it had
+        # succeeded. Surface the mapped 404 instead, matching
+        # get_sso_settings_by_id() in this file. (No live caller today;
+        # this restores the method's contract for any future caller.)
+        updated = await self.sso_settings_provider_repository.update_sso_settings(id, SSOSettings(redirect_uris=[redirect_uri]))
+        if updated is None:
+            raise NotFoundException("SSOSettings", id)
 
     async def update_sso_settings(self, id: str, sso_settings: UpdateSSOSettingsDto) -> None:
         # Repository.update() returns None when no document matches (and
