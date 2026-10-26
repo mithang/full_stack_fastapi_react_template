@@ -528,8 +528,17 @@ export function AIChat() {
         })
     }
 
-    const copyMessage = (content: string) => {
-        navigator.clipboard.writeText(content)
+    const copyMessage = async (content: string) => {
+        // Clipboard writes reject when permission is denied (and the API
+        // is absent outside secure contexts), so an unguarded call here
+        // surfaced as an unhandled rejection / uncaught throw from a
+        // click handler instead of feedback. A failed copy is reported
+        // with a toast; a successful copy needs no toast.
+        try {
+            await navigator.clipboard.writeText(content)
+        } catch {
+            toast.error("Failed to copy message to clipboard.", { richColors: true, position: "top-right" })
+        }
     }
 
     const retryLastMessage = () => {
