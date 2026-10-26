@@ -78,11 +78,17 @@ class OllamaChat:
         logger.debug(f"Current history before fetching from DB: {self.history}")
         stored_history = await history_service.get_histories_by_session_id(self.user_id, self.current_session)
         logger.debug(f"Stored history fetched from DB: {stored_history}")
-        previous_histories = stored_history["histories"]
+        # get_histories_by_session_id returns a list with one
+        # AIHistoriesDto (or [] for an unknown session), not a dict, and
+        # its histories are AIHistoryDto objects, not dicts: indexing the
+        # list with "histories" (and the items with "query"/"response")
+        # raised TypeError, so a follow-up question in an existing
+        # session failed before streaming instead of reusing context.
+        previous_histories = stored_history[0].histories if stored_history else []
         logger.debug(f"Memory fetched from DB: {len(previous_histories)} items")
         for item in previous_histories:
-            self.history.append(HumanMessage(content=item["query"]))
-            self.history.append(AIMessage(content=item["response"]))
+            self.history.append(HumanMessage(content=item.query))
+            self.history.append(AIMessage(content=item.response))
     
 
     async def generate_response(self, question: str, background_tasks: BackgroundTasks):
