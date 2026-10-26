@@ -26,6 +26,12 @@ not_allowed_cache_paths = [
     # it already bypassed via token is None), but a mobile or other
     # non-browser client sending a bearer token must not be cached.
     "/api/v1/account/email_magic_link_validate",
+    # Fresh-random-value GET: create_new_session returns a new
+    # PydanticObjectId on every call, and the frontend asks for one
+    # whenever starting a chat without a session_id. A cached 200
+    # would hand the same session_id to every new chat within the
+    # TTL, merging distinct conversations into one history.
+    "/api/v1/ai/new_session",
     "/api/v1/app_configuration/",
     "/api/v1/security/passkeys",
     "/api/v1/configurations/stripe/webhooks",
