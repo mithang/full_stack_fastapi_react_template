@@ -161,6 +161,31 @@ export default function AdvanceTable<T>({
         setPagination((prev) => prev.pageIndex === currentPage ? prev : { ...prev, pageIndex: currentPage });
     }, [currentPage]);
 
+    // Normalise a misaligned skip edited in place: the pagination -> URL
+    // effect above only runs on pageIndex changes, so a same-page URL edit
+    // (e.g. ?skip=10 -> ?skip=15 on page 2) left the providers fetching
+    // the raw offset while the label promised page 2's records, until the
+    // next page change. This effect runs on URL changes but only acts
+    // once pagination already agrees with the URL page (i.e. after the
+    // sync effect above has settled), so it cannot fight back/forward
+    // navigation the way an unguarded URL-keyed rewrite would: while the
+    // two disagree it stays out, and once they agree a misaligned skip is
+    // rewritten to the page's own offset and the providers refetch the
+    // records the label promises. A rewrite lands on an agreeing skip, so
+    // it cannot ping-pong.
+    useEffect(() => {
+        const rawSkip = Number(searchParams.get("skip"));
+        if (pagination.pageIndex === currentPage && rawSkip !== pagination.pageIndex * limit) {
+            const skip = (pagination.pageIndex * limit).toString();
+            if (searchParams.get("action") && dropdownActions) {
+                setSearchParams({ 'skip': skip, 'limit': limit.toString(), 'action': searchParams.get("action")! });
+            }
+            else {
+                setSearchParams({ 'skip': skip, 'limit': limit.toString() });
+            }
+        }
+    }, [searchParams, pagination.pageIndex, currentPage]);
+
     // Clamp a page index that runs past the last page: a hand-edited or
     // stale-bookmark ?skip= beyond total (or a total that shrank since the
     // URL was saved) otherwise fetched an empty page and showed a blank
