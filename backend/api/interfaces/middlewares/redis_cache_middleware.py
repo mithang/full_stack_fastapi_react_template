@@ -96,7 +96,13 @@ class RedisCacheMiddleware(BaseHTTPMiddleware):
         # variable subdomain is the trailing segment, so no list entry
         # can match — the same reason "/check_dns" is a suffix entry
         # (there the tenant id leads, here the variable trails).
-        if any(request.url.path.endswith(path) for path in not_allowed_cache_paths) or "/check_subdomain/" in request.url.path or token is None:
+        # Tenant-resolution GET: /api/v1/tenants/search_by_subdomain/{subdomain}
+        # resolves a tenant from its subdomain, so the same trailing-variable
+        # shape applies: a cached TenantDto would keep resolving a freed or
+        # reassigned subdomain to its previous tenant for the rest of the
+        # TTL, where a stable record fetch (e.g. /tenants/{id}) has no such
+        # mapping-change risk. It is bypassed the same way.
+        if any(request.url.path.endswith(path) for path in not_allowed_cache_paths) or "/check_subdomain/" in request.url.path or "/search_by_subdomain/" in request.url.path or token is None:
             logger.debug(f"Bypassing cache for path: {request.url.path}")
             return await call_next(request)
             
