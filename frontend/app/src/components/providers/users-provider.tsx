@@ -83,10 +83,19 @@ export function UsersProvider({ children }: UsersProviderProps) {
             });
         } catch (error) {
             console.error("Failed to fetch users:", error);
-            if (error instanceof Error) {
+            // A backend response (ApiError, which carries a numeric status)
+            // means the server answered and rejected the fetch; a failure
+            // with no status is a network error, not a failed fetch, and
+            // must not surface a raw fetch error (e.g. "Failed to fetch")
+            // that sends the admin re-checking filters for users that
+            // never reached the server.
+            const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            if (hasStatus && error instanceof Error) {
                 setUserError(error.message);
-            } else {
+            } else if (hasStatus) {
                 setUserError("Failed to fetch users");
+            } else {
+                setUserError("Unable to reach the server. Check your connection and try again.");
             }
         }
 
