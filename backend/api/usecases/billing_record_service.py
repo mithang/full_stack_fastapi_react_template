@@ -53,7 +53,24 @@ class BillingRecordService:
         period = line.get("period")
         if not isinstance(period, dict):
             period = {}
-        return period.get("start"), period.get("end")
+        # Guard the scalar period values the same way the record
+        # build guards amount_paid: the annotation promises int, but
+        # the raw values were passed through unchecked, so a non-int
+        # value (e.g. a string) would fail BillingRecord
+        # current_period_end (Optional[datetime]) validation —
+        # outside the save try/catch, turning a valid invoice.paid
+        # delivery into a 500 that Stripe retries forever. A malformed
+        # value falls back to None and the paid record is still
+        # persisted, as for a period object without start/end. bool
+        # is excluded explicitly since it is an int subclass.
+        def _int_or_none(value: Any) -> Optional[int]:
+            if isinstance(value, bool) or not isinstance(value, int):
+                return None
+            return value
+
+        return _int_or_none(period.get("start")), _int_or_none(
+            period.get("end")
+        )
 
     def _extract_pricing(
         self, line: dict[str, Any]
