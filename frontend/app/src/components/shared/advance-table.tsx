@@ -72,7 +72,12 @@ export default function AdvanceTable<T>({
         [searchParams],
     );
 
-    const limit = pageLimit === 0 ? DEFAULT_PAGE_LIMIT : pageLimit;
+    // Guard the limit the same way skip is guarded (|| 0 above): a
+    // non-numeric or negative ?limit= (hand-edited URL, stale bookmark)
+    // previously propagated as NaN/negative through totalPage, currentPage
+    // and pageSize, breaking the "Page X of Y" label. A missing limit
+    // still reads as 0 and falls back to the default, as before.
+    const limit = Number.isFinite(pageLimit) && pageLimit > 0 ? pageLimit : DEFAULT_PAGE_LIMIT;
 
     // The backend treats ?skip= as a record offset (Mongo .skip(), and the
     // audit-log slice newest_first[skip:skip+limit]), not a page number, so
