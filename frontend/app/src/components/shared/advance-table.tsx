@@ -133,7 +133,7 @@ export default function AdvanceTable<T>({
         <div className="shadow max-w-[calc(100vw-1rem)] md:max-w-full overflow-hidden rounded-md border">
             {dropdownActions && (
                 <div className="p-4 flex justify-end">
-                    <Select onValueChange={onDropdownChange} defaultValue={selectedAction}>
+                    <Select onValueChange={onDropdownChange} value={selectedAction}>
                         <SelectTrigger className="w-[180px] ">
                             <IconFilter className="w-4 h-4" />
                             <SelectValue placeholder="Actions" />
