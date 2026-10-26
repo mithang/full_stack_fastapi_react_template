@@ -141,6 +141,33 @@ export function CheckoutOverview() {
         navigate(`${pathname}?${query.toString()}`);
     }, [loading, fetchError, pagination, search, pathname, navigate]);
 
+    // Same misaligned-offset case iterations 139-140 normalised in
+    // AdvanceTable, for this page: a hand-edited or stale-bookmark
+    // ?skip= below the total but not on a page boundary (e.g. 15 at
+    // limit 10) fetches that raw offset, so the "Page 2 of 3" label
+    // promises records 11-20 while the table shows 16-25, and
+    // Previous/Next then jump a full page from the misaligned offset
+    // (15 -> 5, not 10). Fall back to the page's own offset instead;
+    // the search-change effect above then refetches that page. The
+    // over-range case is handled by the clamp effect above, so this
+    // only acts while skip < total; an already-aligned skip rewrites
+    // to itself, so it cannot ping-pong. Guarded on the URL skip and
+    // skipped while loading, mirroring the clamp effect.
+    useEffect(() => {
+        if (loading || fetchError) return;
+        if (pagination.total <= 0 || pagination.limit <= 0) return;
+        if (pagination.skip >= pagination.total) return;
+        if (pagination.skip % pagination.limit === 0) return;
+        const alignedSkip = Math.floor(pagination.skip / pagination.limit) * pagination.limit;
+        const parsedUrlSkip = parseInt(new URLSearchParams(search).get("skip") || "0", 10);
+        const urlSkip = Number.isFinite(parsedUrlSkip) && parsedUrlSkip >= 0 ? parsedUrlSkip : 0;
+        if (urlSkip === alignedSkip) return;
+        const query = new URLSearchParams(search);
+        query.set("skip", alignedSkip.toString());
+        query.set("limit", pagination.limit.toString());
+        navigate(`${pathname}?${query.toString()}`);
+    }, [loading, fetchError, pagination, search, pathname, navigate]);
+
     const handlePrevious = () => {
         const newSkip = Math.max(0, pagination.skip - pagination.limit);
         const query = new URLSearchParams(window.location.search);
