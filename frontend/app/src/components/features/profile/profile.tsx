@@ -98,6 +98,11 @@ export function Profile() {
         const file = event.target.files?.[0]
         if (!file) return
 
+        // Clear the input now that the file is captured, so selecting the
+        // same file again (e.g. to retry after a failed upload) still fires
+        // onChange — a file input with an unchanged value fires no event.
+        event.target.value = ''
+
         // Validate file type
         if (!file.type.startsWith('image/')) {
             toast.error('Please select a valid image file')
