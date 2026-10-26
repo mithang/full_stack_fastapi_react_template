@@ -87,8 +87,16 @@ const columns = [
             const { getProfileImage } = useProfileImage(accessToken);
             const [imageUrl, setImageUrl] = useState<string>("");
             useEffect(() => {
+                // A stale image key (deleted image, 404) rejects: without
+                // a catch that surfaces as an unhandled rejection and
+                // leaves a broken empty img. Fall back to the same
+                // default avatar the hook returns for a missing key, so
+                // one bad avatar cannot break the row (same class as the
+                // auth-provider avatar fallback).
                 getProfileImage(c.row.original.image_url).then(url => {
                     setImageUrl(url);
+                }).catch(() => {
+                    setImageUrl("https://github.com/evilrabbit.png");
                 });
             }, [c.row.original.image_url, getProfileImage]);
             return (
