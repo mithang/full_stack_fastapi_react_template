@@ -46,10 +46,14 @@ class ProductService:
             params = product_dto.model_dump()
             await sc.v1.products.update_async(id=product_id, params=params)
             logger.debug(f"Product with ID {product_id} updated successfully in {scope} scope.")
+        except ProductNotFoundException:
+            # A genuinely missing product (raised above) keeps its 404;
+            # only Stripe/update failures below become a product error.
+            raise
         except Exception as e:
             # Handle specific exceptions if needed
             logger.error(f"Failed to update product: {str(e)}")
-            raise ProductNotFoundException(f"{str(e)}") from e
+            raise ProductException(f"Failed to update product: {str(e)}") from e
 
     async def delete_product(self, product_id: str, scope: ScopeType):
         try:
