@@ -686,6 +686,27 @@ class BillingRecordService:
             },
         )
 
+    async def billing_record_exists_for_invoice(self, invoice_id: str) -> bool:
+        """
+        True when a billing record already exists for this Stripe invoice.
+
+        Stripe delivers events at least once: a delivery whose save
+        succeeded but whose 200 was lost (or a duplicate redelivery) is
+        retried with the identical payload, and without this check the
+        handler would insert a second record for the same invoice —
+        the invoice id is stored in metadata["invoice_id"] by
+        from_stripe_invoice_paid, but no unique index guards it, so the
+        check must happen before the insert. An empty id (the fallback
+        for a malformed invoice) is never treated as a match, or every
+        malformed invoice would collide with every other one.
+        """
+        if not invoice_id:
+            return False
+        existing = await self.billing_record_repository.search(
+            {"metadata.invoice_id": invoice_id}, limit=1
+        )
+        return len(existing) > 0
+
     async def create_billing_record(self, billing_record: BillingRecord) -> None:
         """
         Create a billing record in the database

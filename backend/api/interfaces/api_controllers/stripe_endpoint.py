@@ -260,6 +260,24 @@ async def handle_invoice_paid(
         )
         return
 
+    # Deduplicate retried deliveries before the insert: Stripe
+    # redelivers an invoice.paid event when its first delivery did not
+    # return 2xx — including when the save itself succeeded but the
+    # response was lost — and without this check the retry inserts a
+    # second record for the same invoice. The check runs before the
+    # save try/catch so a lookup failure still surfaces as a non-2xx
+    # (and a safe retry) instead of a blind insert; a duplicate is
+    # acknowledged with the normal 200 below, so Stripe stops retrying
+    # it. An empty invoice id (the malformed-invoice fallback) skips
+    # the check via billing_record_exists_for_invoice itself.
+    if await billing_record_service.billing_record_exists_for_invoice(
+        billing_record.metadata.get("invoice_id", "")
+    ):
+        logger.info(
+            f"BillingRecord already exists for invoice {invoice.get('id')} – skipping duplicate"
+        )
+        return
+
     try:
         await billing_record_service.create_billing_record(billing_record)
         logger.info(
