@@ -254,7 +254,15 @@ export function AIChat() {
                 result.forEach(h => {
                     if (h.query) {
                         messages.push({
-                            id: h.uid,
+                            // Suffixed, not the bare history uid: the
+                            // user question and its assistant reply
+                            // share one history document, so giving
+                            // both the same id produced duplicate React
+                            // keys in the rendered list (and let a
+                            // later update match the wrong sibling).
+                            // Retry still works: it matches the trailing
+                            // message against the same suffixed user id.
+                            id: `${h.uid}-q`,
                             content: h.query,
                             role: "user",
                             timestamp: new Date(h.timestamp)
@@ -263,7 +271,7 @@ export function AIChat() {
 
                     if (h.response) {
                         messages.push({
-                            id: h.uid,
+                            id: `${h.uid}-a`,
                             content: h.response,
                             role: "assistant",
                             timestamp: new Date(h.timestamp)
