@@ -31,14 +31,22 @@ class CoolifyApp:
             raise CoolifyIntegrationException("Coolify integration is not enabled in settings.")
         
         url = f"{self.api_url}/applications/{self.application_id}"
-        async with httpx.AsyncClient() as client:
-            response = await client.get(url, headers=self.headers)
-            if response.status_code != 200:
-                logger.error(f"Failed to fetch Coolify app details: {response.text}")
-                raise CoolifyIntegrationException(f"{response.text}")
-            
-            data: CoolifyAppDto = response.json()
-            return CoolifyAppDto(**data)
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, headers=self.headers)
+        except httpx.HTTPError as e:
+            # A transport failure (DNS, connect, timeout) is not a
+            # CoolifyIntegrationException yet, so it would escape both this
+            # method's callers and the Celery task, which catches only
+            # CoolifyIntegrationException. Report it as one instead.
+            logger.error(f"Failed to fetch Coolify app details: {e}")
+            raise CoolifyIntegrationException(str(e)) from e
+        if response.status_code != 200:
+            logger.error(f"Failed to fetch Coolify app details: {response.text}")
+            raise CoolifyIntegrationException(f"{response.text}")
+
+        data: CoolifyAppDto = response.json()
+        return CoolifyAppDto(**data)
             
     async def update_domain(self, data: UpdateDomainDto) -> bool:
         """
@@ -74,12 +82,18 @@ class CoolifyApp:
                 response = await client.patch(url, json=payload, headers=self.headers)
                 if response.status_code == 200:
                     return True
-                
+
                 logger.error(f"Failed to update Coolify app: {response.text}")
                 return False
         except CoolifyIntegrationException as e:
             logger.error(f"Error fetching app details: {e}")
             raise e
+        except httpx.HTTPError as e:
+            # Same transport-failure gap as get_app_details: the PATCH call
+            # sat outside any httpx guard, so a network failure escaped the
+            # Celery task's CoolifyIntegrationException-only catch.
+            logger.error(f"Error updating Coolify app domains: {e}")
+            raise CoolifyIntegrationException(str(e)) from e
 
     async def restart_app(self) -> bool:
         """
@@ -91,10 +105,17 @@ class CoolifyApp:
             raise CoolifyIntegrationException("Coolify integration is not enabled in settings.")
         
         url = f"{self.api_url}/applications/{self.application_id}/restart"
-        async with httpx.AsyncClient() as client:
-            response = await client.post(url, headers=self.headers)
-            if response.status_code == 200:
-                return True
-            
-            logger.error(f"Failed to restart Coolify app: {response.text}")
-            raise CoolifyIntegrationException(f"{response.text}")
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(url, headers=self.headers)
+        except httpx.HTTPError as e:
+            # Same transport-failure gap as get_app_details: a network
+            # failure escaped the Celery task's CoolifyIntegrationException-
+            # only catch instead of being reported as one.
+            logger.error(f"Failed to restart Coolify app: {e}")
+            raise CoolifyIntegrationException(str(e)) from e
+        if response.status_code == 200:
+            return True
+
+        logger.error(f"Failed to restart Coolify app: {response.text}")
+        raise CoolifyIntegrationException(f"{response.text}")
