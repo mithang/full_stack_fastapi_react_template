@@ -62,10 +62,6 @@ export default function AdvanceTable<T>({
         }
         setSearchParams(searchParams);
     }
-    const currentPage = useMemo(
-        () => Number(searchParams.get("skip")),
-        [searchParams],
-    );
     const pageLimit = useMemo(
         () => Number(searchParams.get("limit")),
         [searchParams],
@@ -77,6 +73,17 @@ export default function AdvanceTable<T>({
     );
 
     const limit = pageLimit === 0 ? DEFAULT_PAGE_LIMIT : pageLimit;
+
+    // The backend treats ?skip= as a record offset (Mongo .skip(), and the
+    // audit-log slice newest_first[skip:skip+limit]), not a page number, so
+    // the page index derived from the URL is skip / limit. Previously the
+    // raw skip value was used as the page index, and the effect below wrote
+    // the page index back as skip — so "Page 2" fetched offset 1 instead of
+    // offset limit, showing almost the same rows as page 1.
+    const currentPage = useMemo(
+        () => Math.max(0, Math.floor((Number(searchParams.get("skip")) || 0) / limit)),
+        [searchParams, limit],
+    );
 
     const { items, total } = data;
     const totalPage = Math.ceil(total / limit);
@@ -100,12 +107,15 @@ export default function AdvanceTable<T>({
     });
 
     useEffect(() => {
-        if (pagination.pageIndex !== Number(currentPage)) {
+        if (pagination.pageIndex !== currentPage) {
+            // Write a record offset, not the page index: page N starts at
+            // record N * limit (see the currentPage derivation above).
+            const skip = (pagination.pageIndex * limit).toString();
             if (searchParams.get("action") && dropdownActions) {
-                setSearchParams({ 'skip': pagination.pageIndex.toString(), 'limit': limit.toString(), 'action': searchParams.get("action")! });
+                setSearchParams({ 'skip': skip, 'limit': limit.toString(), 'action': searchParams.get("action")! });
             }
             else {
-                setSearchParams({ 'skip': pagination.pageIndex.toString(), 'limit': limit.toString() });
+                setSearchParams({ 'skip': skip, 'limit': limit.toString() });
             }
         }
     }, [pagination.pageIndex]);
