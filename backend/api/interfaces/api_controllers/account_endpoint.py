@@ -362,7 +362,12 @@ async def email_magic_link_login(
             return MagicLinkResponseDto(message="If the email exists, a magic link has been sent.")
         elif isinstance(e, ApiBaseException):
             raise e
-        return MagicLinkResponseDto(message="If the email exists, a magic link has been sent.")
+        # Any other failure (email send, DB) for an existing user must not
+        # be reported as success: the user would wait for a link that was
+        # never sent. Only the unknown-email response stays generic, to
+        # avoid enumerating accounts.
+        logger.error(f"Magic link login request for email: {email} wasn't successful: {e}")
+        raise
     
        
 @router.get("/email_magic_link_validate", response_model=TokenSetDto, status_code=status.HTTP_200_OK)
