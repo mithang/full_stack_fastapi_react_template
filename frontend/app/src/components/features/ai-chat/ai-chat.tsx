@@ -36,6 +36,14 @@ interface ChatState {
 export function AIChat() {
     const isUserScrollingRef = useRef(false)
     const userScrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    // Abort controller for the in-flight AI stream, plus the session it
+    // belongs to: switching sessions must cancel the old generation
+    // (see the history effect below), or it keeps running, holds
+    // isLoading true, and locks the composer in the new session until
+    // it finishes — while its updates land nowhere, since the new
+    // session's messages no longer contain its assistant message id.
+    const streamAbortRef = useRef<AbortController | null>(null)
+    const prevSessionIdRef = useRef<string | null>(null)
     const [searchParams, setSearchParams] = useSearchParams()
     const { user, accessToken } = useAuthContext()
     const { getAIChatNewSession, fetchAllSessions } = useAIChat()
@@ -180,6 +188,21 @@ export function AIChat() {
     }, [user_preferences, availableAiModels, selectedModel])
 
     useEffect(() => {
+        // Cancel a stream from the previous session before loading this
+        // one's history: a generation started in another session must not
+        // keep running after the user switched away (see streamAbortRef).
+        // Only a real session change aborts — token rotations and tenant
+        // arrivals re-run this effect with the same session_id, and the
+        // new-session creation flow sets new_session, so neither aborts
+        // the stream that sendMessage just started for that new session.
+        const nextSessionId = searchParams.get("session_id")
+        const isNewSession = searchParams.get("new_session") === 'true'
+        if (!isNewSession && prevSessionIdRef.current !== nextSessionId) {
+            streamAbortRef.current?.abort()
+            streamAbortRef.current = null
+        }
+        prevSessionIdRef.current = nextSessionId
+
         // The delayed setChatState below must not outlive this effect run:
         // without a cleanup, switching session_id (or unmounting) inside
         // the 1 s delay let the stale timer write the old session's
@@ -317,6 +340,10 @@ export function AIChat() {
             textarea.style.height = 'auto'
         }
 
+        // Declared outside try so the catch below can clear the ref for
+        // this stream too: a const inside try is not visible in catch.
+        let streamController: AbortController | null = null
+
         try {
             const tenant = getTenant();
             const payload: AIAskRequestDto = {
@@ -324,6 +351,8 @@ export function AIChat() {
                 model_name: selectedModel?.name,
                 session_id: sessionId
             }
+            streamController = new AbortController()
+            streamAbortRef.current = streamController
             const response = await fetch(`${getApiBaseUrl()}/api/v1/ai/ask`, {
                 method: 'POST',
                 headers: {
@@ -331,7 +360,8 @@ export function AIChat() {
                     Authorization: `Bearer ${accessToken}`,
                     ...tenant?.id && { 'X-Tenant-ID': tenant.id }
                 },
-                body: JSON.stringify(payload)
+                body: JSON.stringify(payload),
+                signal: streamController.signal
             })
             if (!response.ok) {
                 let detail = ''
@@ -385,6 +415,8 @@ export function AIChat() {
                 isLoading: false
             }))
 
+            if (streamAbortRef.current === streamController) streamAbortRef.current = null
+
             const shouldRefresh = new URLSearchParams(window.location.search).get("new_session") === 'true'
             if (shouldRefresh) {
                 await fetchAllSessions()
@@ -392,6 +424,19 @@ export function AIChat() {
             }
 
         } catch (error) {
+            if (streamAbortRef.current === streamController) streamAbortRef.current = null
+            // An abort means the user left this session mid-generation:
+            // the partial assistant message is dropped and no error is
+            // shown — leaving the session is not a failure.
+            if ((error as { name?: string } | null)?.name === 'AbortError') {
+                setChatState(prev => ({
+                    ...prev,
+                    messages: prev.messages.filter(msg => msg.id !== assistantMessage.id),
+                    isLoading: false,
+                    error: null
+                }))
+                return
+            }
             // A fetch rejection is a TypeError with no status: the
             // request never reached the server, so the raw
             // "Failed to fetch" text must not be shown as if the AI
