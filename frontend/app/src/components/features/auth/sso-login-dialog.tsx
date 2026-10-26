@@ -8,9 +8,15 @@ import { cn, getApiBaseUrl } from "@/lib/utils";
 export function SSOLoginDialog() {
     const { enabled_sso_providers } = useAppConfig()
 
-    function renderIcon(provider: typeof providerConfig[keyof typeof providerConfig]) {
-        const IconComponent = provider.icon;
-        return <IconComponent className={cn('h-8 w-8', provider.color)} />
+    function renderIcon(provider: (typeof providerConfig)[string] | undefined) {
+        // An unknown provider name must not crash the login page:
+        // other SSO screens already fall back with `?.label || provider`,
+        // but this one read .icon off an undefined map entry, throwing
+        // during render and taking the whole login screen down with it.
+        // Unknown names (a backend provider added before this map is
+        // updated, or a stray stored value) get the generic SSO icon.
+        const IconComponent = provider?.icon ?? IconBrandAuth0;
+        return <IconComponent className={cn('h-8 w-8', provider?.color)} />
     }
     if (!enabled_sso_providers || enabled_sso_providers.length === 0) {
         return null
