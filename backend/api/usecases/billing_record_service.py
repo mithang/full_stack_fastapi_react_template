@@ -473,6 +473,19 @@ class BillingRecordService:
         Converts a Stripe `invoice.paid` event into a BillingRecordDto.
         Returns None if not applicable (e.g. no subscription).
         """
+        # Guard the caller-supplied scope the same way the status below
+        # guards its value: the Literal annotation is not enforced at
+        # runtime, so a future caller passing anything outside
+        # ScopeType ("tenant"/"host") would otherwise fail
+        # BillingRecord validation in the record build — outside the
+        # save try/catch, turning a valid invoice.paid delivery into
+        # a 500 that Stripe retries forever. An invalid scope falls
+        # back to the handler's own rule ("tenant" when a tenant_id
+        # was supplied, else "host"), so the record is still
+        # persisted; valid scopes behave as before. This runs before
+        # _extract_tenant_id, which keys off scope.
+        if scope not in get_args(ScopeType):
+            scope = "tenant" if tenant_id else "host"
         # Extract first line item (99.9% of cases there's only one).
         # Guard a null lines value the same way the metadata lookups
         # already do: an explicit null would otherwise raise
