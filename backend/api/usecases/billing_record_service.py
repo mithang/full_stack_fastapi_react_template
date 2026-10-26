@@ -1,4 +1,4 @@
-from typing import Any, Literal, Optional
+from typing import Any, Literal, Optional, get_args
 
 from api.common.utils import get_logger
 from api.core.exceptions import (BillingRecordException,
@@ -9,7 +9,7 @@ from api.domain.dtos.billing_dto import (BillingRecordDto,
                                          UpdatePlanDto)
 from api.domain.dtos.checkout_dto import CheckoutRequestDto
 from api.domain.entities.stripe_settings import (BillingRecord,
-                                                 ScopeType)
+                                                 ScopeType, StatusType)
 from api.infrastructure.externals.stripe_resolver import StripeResolver
 from api.infrastructure.persistence.repositories.billing_record_repository_impl import \
     BillingRecordRepository
@@ -494,6 +494,32 @@ class BillingRecordService:
         if not isinstance(stripe_customer_id, str) or not stripe_customer_id:
             stripe_customer_id = None
 
+        # Guard the status the same way the customer above guards a
+        # malformed value: invoice["status"] raises KeyError when
+        # absent, and a value outside StatusType (e.g. a Stripe "open"
+        # or "void" invoice status, which the record's Literal does not
+        # allow) would fail BillingRecord validation — both outside
+        # the save try/catch, turning a valid invoice.paid delivery
+        # into a 500 that Stripe retries forever. A usable status is
+        # kept; anything else falls back to "paid", which the
+        # invoice.paid event itself guarantees.
+        status = invoice.get("status")
+        if status not in get_args(StatusType):
+            status = "paid"
+
+        # Guard the invoice id the same way the status above guards a
+        # malformed value: invoice["id"] raises KeyError when absent,
+        # and a null/non-string value would fail the metadata
+        # Dict[str, str] validation — both outside the save try/catch,
+        # turning a valid invoice.paid delivery into a 500 that Stripe
+        # retries forever. The id is metadata only (not a record
+        # field), so a malformed value falls back to "" and the paid
+        # record is still persisted, as for a record with no amount
+        # at all.
+        invoice_id = invoice.get("id")
+        if not isinstance(invoice_id, str) or not invoice_id:
+            invoice_id = ""
+
         # Build Object
         return BillingRecord(
             scope=scope,
@@ -508,13 +534,13 @@ class BillingRecordService:
             stripe_session_id=None,
             product_id=product_id,
             price_id=price_id,
-            status=invoice["status"],
+            status=status,
             current_period_end=period_end,
             canceled_at=None,
             cancellation_reason=None,
             metadata={
-                "invoice_id": invoice["id"],
-                "stripe_event_id": invoice["id"],
+                "invoice_id": invoice_id,
+                "stripe_event_id": invoice_id,
                 "billing_reason": invoice.get("billing_reason"),
                 "hosted_invoice_url": invoice.get("hosted_invoice_url"),
                 "invoice_pdf": invoice.get("invoice_pdf"),

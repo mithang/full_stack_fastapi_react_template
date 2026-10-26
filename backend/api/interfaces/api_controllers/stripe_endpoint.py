@@ -192,15 +192,20 @@ async def handle_invoice_paid(
     )
 
     if not billing_record:
+        # .get, not ["id"]: the conversion above now tolerates a
+        # missing/malformed invoice id, so logging it directly would
+        # reintroduce the KeyError here — after a successful save in
+        # the success branch, that 500 would make Stripe retry the
+        # delivery and create a duplicate record.
         logger.warning(
-            f"Could not convert invoice to BillingRecordDto: {invoice['id']}"
+            f"Could not convert invoice to BillingRecordDto: {invoice.get('id')}"
         )
         return
 
     try:
         await billing_record_service.create_billing_record(billing_record)
         logger.info(
-            f"BillingRecord created for tenant {tenant_id} – invoice {invoice['id']}"
+            f"BillingRecord created for tenant {tenant_id} – invoice {invoice.get('id')}"
         )
     except Exception as e:
         # Re-raise after logging: unlike an unhandled event type (which
@@ -209,6 +214,6 @@ async def handle_invoice_paid(
         # so Stripe retries the delivery; swallowing it here returned
         # 200 "success" while the billing record was never persisted.
         logger.exception(
-            f"Failed to save BillingRecord for invoice {invoice['id']}: {e}"
+            f"Failed to save BillingRecord for invoice {invoice.get('id')}: {e}"
         )
         raise
