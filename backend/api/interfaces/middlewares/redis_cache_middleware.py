@@ -32,6 +32,16 @@ not_allowed_cache_paths = [
     # would hand the same session_id to every new chat within the
     # TTL, merging distinct conversations into one history.
     "/api/v1/ai/new_session",
+    # Side-effect GET: check_dns dispatches a DNS-update task when the
+    # custom-domain status is "activation-progress" or "failed", and its
+    # message reports the live status. The path carries a tenant id, so
+    # only the "/check_dns" suffix can be matched (matching is endswith).
+    # A cached 200 would suppress the re-dispatch when a user re-checks
+    # after fixing their DNS records — the user would see the stale
+    # "previously failed" message while no new task runs — and would hide
+    # a completed activation behind a stale "still in progress" message
+    # for the rest of the TTL.
+    "/check_dns",
     "/api/v1/app_configuration/",
     "/api/v1/security/passkeys",
     "/api/v1/configurations/stripe/webhooks",
