@@ -55,13 +55,22 @@ class AuditLogsReadMiddleware(BaseHTTPMiddleware):
             # read-only temp dir) must not turn the read itself into
             # a 500 — the handler runs either way, mirroring the
             # Redis cache middleware's fail-open behaviour.
+            # Attribute the entry to the effective request tenant set by
+            # TenantMiddleware (subdomain/custom domain/X-Tenant-ID),
+            # falling back to the user's home tenant on the host scope —
+            # mirroring the Redis cache middleware's effective-tenant
+            # key. Attributing to the user's tenant alone put reads
+            # performed under another tenant's scope into the wrong
+            # tenant's audit file.
+            effective_tenant_id = getattr(request.state, "tenant_id", None)
+            tenant_id = str(effective_tenant_id) if effective_tenant_id else (str(current_user.tenant_id) if current_user and current_user.tenant_id else None)
             try:
                 await capture_audit_log(AuditLogDto(
                     action="read",
                     entity=entity,
                     user_id=str(current_user.id) if current_user else "Anonymous",
                     changes={"info": f"Read access to {request.url.path}"},
-                    tenant_id=str(current_user.tenant_id) if current_user and current_user.tenant_id else None
+                    tenant_id=tenant_id
                 ))
             except Exception as e:
                 logger.warning(f"Audit log write failed, continuing without it: {e}")
