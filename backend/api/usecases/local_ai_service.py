@@ -10,6 +10,19 @@ from api.infrastructure.persistence.repositories.chat_session_ai_repository_impl
 logger = get_logger(__name__)
 
 
+def _is_valid_object_id(value: str | None) -> bool:
+    # Session ids reach this service straight from the URL / request
+    # body (ai-chat reads ?session_id=... verbatim), so a malformed one
+    # must behave like an unknown session, not raise InvalidId inside
+    # PydanticObjectId(...) and surface as a 500. Legitimate ids are
+    # always PydanticObjectId hex strings (see create_new_session).
+    return (
+        isinstance(value, str)
+        and len(value) == 24
+        and all(c in "0123456789abcdefABCDEF" for c in value)
+    )
+
+
 class LocalAIService:
     def __init__(self, 
         chat_session_repository: ChatSessionAIRepository,
@@ -19,6 +32,8 @@ class LocalAIService:
         self.chat_history_repository = chat_history_repository
     
     async def is_session_exists(self, session_id: str) -> bool:
+        if not _is_valid_object_id(session_id):
+            return False
         return await self.chat_session_repository.is_session_exists(session_id)
     
 
@@ -56,6 +71,8 @@ class LocalAIService:
     
 
     async def get_histories_by_session_id(self, user_id: str, session_id: str) -> List[AIHistoriesDto]:
+        if not _is_valid_object_id(session_id):
+            return []
         session = await self.chat_session_repository.single_or_none(session_id=PydanticObjectId(session_id), user_id=PydanticObjectId(user_id))
         logger.debug(f"Getting histories for session_id: {session_id}, user_id: {user_id}")
         if not session:
@@ -72,6 +89,8 @@ class LocalAIService:
     
     
     async def delete_session(self, user_id: str, session_id: str) -> None:
+        if not _is_valid_object_id(session_id):
+            return
         session = await self.chat_session_repository.single_or_none(session_id=PydanticObjectId(session_id), user_id=PydanticObjectId(user_id))
         if not session:
             return
@@ -85,6 +104,12 @@ class LocalAIService:
     
 
     async def save_user_query(self, user_id: str, query: str, response: str, session_id: str | None = None, tenant_id: str | None = None) -> None:
+        if session_id is not None and not _is_valid_object_id(session_id):
+            # Runs as a post-response background task, so a raise here
+            # would surface only as a logged task failure while the
+            # streamed answer was already delivered; drop it explicitly.
+            logger.error(f"Refusing to save chat history for malformed session_id: {session_id}")
+            return
         session = await self.chat_session_repository.single_or_none(session_id=PydanticObjectId(session_id))
 
         histories = {
