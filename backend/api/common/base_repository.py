@@ -17,7 +17,19 @@ class BaseRepository(Generic[T]):
         return result
     
     async def get(self, id: str) -> Optional[T]:
-        result = await self.model.find_one({"_id": PydanticObjectId(id)})
+        try:
+            object_id = PydanticObjectId(id)
+        except Exception:
+            # A malformed id (e.g. a tampered detail URL) cannot match any
+            # document, so treat it as "not found" instead of escaping as
+            # a 500; callers already map None to their NotFound exception,
+            # and update()/delete() below already handle a None doc.
+            # Broad catch is deliberate and safe here: the conversion is
+            # pure (no I/O), and beanie/bson raise InvalidId while the
+            # pydantic-validated paths raise ValidationError, so catching
+            # one shape alone would leave the other escaping as a 500.
+            return None
+        result = await self.model.find_one({"_id": object_id})
         logger.debug(f"Get result for id {id}: {result}")
         return result
 
