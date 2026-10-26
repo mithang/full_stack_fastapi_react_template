@@ -253,8 +253,19 @@ class BillingRecordService:
             raise BillingRecordException(f"Unable to delete the plan {plan_id}.")
 
     async def list_invoices(self, scope: ScopeType) -> InvoiceListDto:
-        sc = await self.stripe_resolver.get_stripe_client(scope=scope)
-        result = await sc.v1.invoices.list_async(params={"limit": 100})
+        try:
+            sc = await self.stripe_resolver.get_stripe_client(scope=scope)
+            result = await sc.v1.invoices.list_async(params={"limit": 100})
+        except Exception as e:
+            logger.error(f"Error listing invoices: {e}")
+            # The list was unwrapped, so a Stripe failure reached the
+            # client as a raw 500 instead of a mapped API error —
+            # unlike every single-plan/product operation and the
+            # plan/product lists, which now raise BillingRecordException
+            # or ProductException. No 404 distinction is needed for
+            # a list: an empty invoice list is a valid empty result,
+            # so a failure is never a not-found.
+            raise BillingRecordException(f"Failed to list invoices: {str(e)}") from e
         return InvoiceListDto(
             invoices=[invoice for invoice in result.data], has_more=result.has_more
         )
