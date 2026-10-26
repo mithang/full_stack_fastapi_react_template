@@ -110,7 +110,16 @@ class RedisCacheMiddleware(BaseHTTPMiddleware):
             logger.debug(f"Response status {response.status_code} not cached.")
             await self._clear_cache(user_id, tenant_id)
             logger.debug(f"Cleared cache for user: {user_id}, tenant: {tenant_id}")
-            return await call_next(request)
+            # Return the already-consumed 401 response instead of
+            # calling call_next() again: a second call would re-run
+            # the route handler and the audit-log middleware, doubling
+            # handler work and audit entries for a single client GET.
+            return Response(
+                content=body_text,
+                status_code=response.status_code,
+                headers=dict(response.headers),
+                media_type=content_type,
+            )
 
 
         # Return new Response (since body_iterator is consumed)
