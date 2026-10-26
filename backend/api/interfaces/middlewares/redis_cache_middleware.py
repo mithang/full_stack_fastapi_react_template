@@ -52,6 +52,18 @@ not_allowed_cache_paths = [
     # published (possibly urgent) banner not appearing until their
     # cached entry expires.
     "/api/v1/notifications/banner",
+    # Tenant feature toggles, fetched by the manage-features dialog.
+    # A feature update is a PATCH, and the middleware only clears the
+    # acting admin's cache keys, so every other admin would otherwise
+    # keep the previous toggle list for the rest of the TTL — a
+    # just-disabled feature still shown as enabled (or vice versa)
+    # when they open the dialog. Features gate access server-side
+    # (check_feature_access reads the tenant fresh), so this is a
+    # stale-admin-UI fix, not an enforcement fix. Matching is
+    # endswith, and the tenant path ends in "/features" while the
+    # static feature-enum list is "/api/v1/features/" (trailing
+    # slash), so that list stays cached.
+    "/features",
     "/api/v1/security/passkeys",
     "/api/v1/configurations/stripe/webhooks",
 ]
