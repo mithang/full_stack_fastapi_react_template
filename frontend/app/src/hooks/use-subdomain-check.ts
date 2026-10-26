@@ -40,7 +40,13 @@ export function useSubdomainCheck() {
             setSubdomainAvailability(null);
             setError(null);
         }
-    }, [debouncedText]);
+        // host_main_domain is a dependency, not just debouncedText:
+        // it starts as "" in AppConfigProvider and only arrives with the
+        // app-configuration fetch, so a check that ran before it loaded
+        // queried "<subdomain>." instead of "<subdomain>.<main domain>"
+        // and never re-ran, leaving a wrong availability verdict (an
+        // invalid subdomain reads as unavailable) on screen.
+    }, [debouncedText, host_main_domain]);
 
     return { setSubdomain, subdomainAvailability, isChecking, error };
 
