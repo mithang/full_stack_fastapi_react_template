@@ -43,6 +43,15 @@ not_allowed_cache_paths = [
     # for the rest of the TTL.
     "/check_dns",
     "/api/v1/app_configuration/",
+    # Global tenant banner, fetched once at app load by the
+    # app-config provider alongside the app configuration above.
+    # A banner create/update is a mutation, but the middleware only
+    # clears the acting admin's cache keys, so every other user in
+    # the tenant would otherwise keep the previous banner for the
+    # rest of the TTL — a withdrawn banner lingering, or a newly
+    # published (possibly urgent) banner not appearing until their
+    # cached entry expires.
+    "/api/v1/notifications/banner",
     "/api/v1/security/passkeys",
     "/api/v1/configurations/stripe/webhooks",
 ]
