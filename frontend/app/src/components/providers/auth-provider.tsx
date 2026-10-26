@@ -15,7 +15,11 @@ import { toast } from "sonner";
 // spurious /me + refresh calls, and a worker 401 bounced /activation and
 // /non-active visitors to /login), and carried a dead /password-reset-request
 // entry — the real route is /forgot-password, already listed.
-const notProtectedRoutes = ["/login", "/password_reset_confirmation", "/register", "/forgot-password", "/activation", "/magic_link_login", "/non-active"];
+// It also missed the Stripe return routes added later under the same
+// public layout: a logged-out payer landing on /checkout/success or
+// /checkout/cancel fired /me + refresh, and a failed refresh navigated
+// them to /login instead of showing the return page.
+const notProtectedRoutes = ["/login", "/password_reset_confirmation", "/register", "/forgot-password", "/activation", "/magic_link_login", "/non-active", "/checkout/success", "/checkout/cancel"];
 export type UpdateProfileType = {
     firstName: string;
     lastName: string;
