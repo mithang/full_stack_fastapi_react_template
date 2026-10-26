@@ -41,6 +41,15 @@ async def partial_update_branding(
     if branding is None:
         raise BrandingException("Branding not found.")
 
+    # Branding is a singleton (create_branding refuses a second one), and
+    # update_branding discards the repository return, so without this
+    # check a PATCH with an unknown or tampered branding_id returned 204
+    # as if it had succeeded — the silent-success class fixed for SSO
+    # settings in iterations 365-366. The existing existence check alone
+    # does not validate the requested id, only that some branding exists.
+    if branding.id != branding_id:
+        raise BrandingException("Branding not found.")
+
     data.tenant_id = current_user.tenant_id
     await branding_service.update_branding(id=branding_id, data=data)
 
