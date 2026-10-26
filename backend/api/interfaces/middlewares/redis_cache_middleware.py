@@ -19,6 +19,14 @@ not_allowed_cache_paths = [
     "/api/v1/account/logout",
     "/api/v1/account/register",
     "/api/v1/account/refresh_token",
+    # Single-use token flow that returns a TokenSetDto (and sets the
+    # refresh cookie): a cached 200 would let a consumed magic link
+    # be replayed within the TTL without re-validating it, and would
+    # return the token set without the handler's Set-Cookie. The
+    # repo frontend calls this without an Authorization header (so
+    # it already bypassed via token is None), but a mobile or other
+    # non-browser client sending a bearer token must not be cached.
+    "/api/v1/account/email_magic_link_validate",
     "/api/v1/app_configuration/",
     "/api/v1/security/passkeys",
     "/api/v1/configurations/stripe/webhooks",
