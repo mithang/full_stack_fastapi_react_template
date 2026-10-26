@@ -52,6 +52,7 @@ export function AIChat() {
     const inputRef = useRef<HTMLTextAreaElement>(null)
     const [pending, startTransition] = useTransition()
     const [availableAiModels, setAvailableAIModels] = useState<AIModelInfoDto[]>([])
+    const [modelsLoaded, setModelsLoaded] = useState(false)
     // True only once a models fetch has succeeded. The empty-list messages
     // below must not render before that: while the fetch is in flight the
     // list is still its initial [], and after a network failure it stays []
