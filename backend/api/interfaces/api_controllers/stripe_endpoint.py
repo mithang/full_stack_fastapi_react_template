@@ -130,9 +130,14 @@ async def stripe_webhook(
     # ------------------------------------------------------------------
 
     if event_type not in SUPPORTED_EVENTS:
-        logger.error(f"Unhandled event type: {event_type}")
+        # Acknowledge with 2xx, not 404: Stripe treats any non-2xx as a
+        # failed delivery and retries it, so an event type this app
+        # deliberately ignores would be redelivered repeatedly. The
+        # signature has already been verified above, so ignoring it
+        # here is safe.
+        logger.info(f"Ignoring unhandled event type: {event_type}")
         return JSONResponse(
-            status_code=404, content={"message": "Unhandled event type"}
+            status_code=200, content={"message": "Unhandled event type"}
         )
 
     await SUPPORTED_EVENTS.get(event_type, None)(data_object, billing_record_service)
