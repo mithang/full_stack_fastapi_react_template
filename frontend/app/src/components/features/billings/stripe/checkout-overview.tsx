@@ -156,7 +156,11 @@ export function CheckoutOverview() {
         const query = new URLSearchParams(search);
         query.set("skip", lastPageSkip.toString());
         query.set("limit", pagination.limit.toString());
-        navigate(`${pathname}?${query.toString()}`);
+        // Replace, don't push: this URL is a correction of a bad URL, not
+        // a page the user navigated to — pushing it would make Back return
+        // to the bad URL, which would clamp forward again, so Back would
+        // appear to do nothing.
+        navigate(`${pathname}?${query.toString()}`, { replace: true });
     }, [loading, fetchError, pagination, search, pathname, navigate]);
 
     // Same misaligned-offset case iterations 139-140 normalised in
@@ -183,7 +187,11 @@ export function CheckoutOverview() {
         const query = new URLSearchParams(search);
         query.set("skip", alignedSkip.toString());
         query.set("limit", pagination.limit.toString());
-        navigate(`${pathname}?${query.toString()}`);
+        // Replace, don't push, for the same reason as the clamp effect
+        // above: a corrected URL must not leave the bad URL behind it
+        // in history, or Back would land on it and normalise forward
+        // again instead of going back.
+        navigate(`${pathname}?${query.toString()}`, { replace: true });
     }, [loading, fetchError, pagination, search, pathname, navigate]);
 
     // Prev/next build on the router's search string, like every other
