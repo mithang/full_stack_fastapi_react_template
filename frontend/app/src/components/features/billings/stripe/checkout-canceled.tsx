@@ -18,6 +18,13 @@ export function CheckoutCanceled() {
     // no error page: the cancellation already happened at Stripe, and the
     // billing page is the place to check its recorded status.
     const [finalisation, setFinalisation] = useState<"confirming" | "confirmed" | "unconfirmed">("confirming");
+    // Manual retry counter for a failed finalisation (see the
+    // "unconfirmed" render below): a transient failure (network blip,
+    // backend hiccup) does not change the access token, so the effect
+    // would otherwise never re-run and the page would sit on
+    // "couldn't confirm yet" with no way back except a full reload.
+    // Mirrors the CheckoutSuccess manual retry from iteration 169.
+    const [retryAttempt, setRetryAttempt] = useState(0);
 
     // Finalise the cancellation server-side: until now this page was a
     // static stub, so a payer returning from Stripe never POSTed to the
@@ -56,7 +63,7 @@ export function CheckoutCanceled() {
             if (notifiedRef.current === key) notifiedRef.current = null;
             setFinalisation("unconfirmed");
         });
-    }, [tenantId, userId, accessToken]);
+    }, [tenantId, userId, accessToken, retryAttempt]);
 
     // Stripe always appends ?tenant_id= (host checkout) or ?user_id=
     // (tenant checkout) to the cancel_url (see billing_record_service).
@@ -90,6 +97,21 @@ export function CheckoutCanceled() {
             <div>
                 <h1>Checkout Canceled</h1>
                 <p>We couldn't confirm your cancellation just yet. If you canceled the checkout, please check <Link to="/billing/checkouts">your billing page</Link> for its status.</p>
+                <p><button type="button" onClick={() => {
+                    // Clear the guard before bumping the counter: the
+                    // effect re-runs on retryAttempt and must not see
+                    // the failed attempt's key, or it would return
+                    // early and never re-POST. If no token is held at
+                    // click time the effect early-returns and the page
+                    // stays "confirming" until the worker refresh
+                    // populates one, when the effect re-runs on
+                    // accessToken and posts — it cannot get stuck in
+                    // "unconfirmed" from this click. Mirrors the
+                    // CheckoutSuccess manual retry from iteration 169.
+                    notifiedRef.current = null;
+                    setFinalisation("confirming");
+                    setRetryAttempt((attempt) => attempt + 1);
+                }}>Try confirming again</button></p>
             </div>
         );
     }
