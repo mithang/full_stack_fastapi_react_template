@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from api.common.exceptions import ApiBaseException, ConflictException, ForbiddenException, InvalidOperationException, NotFoundException, UnauthorizedException
+from api.common.exceptions import ApiBaseException, AuthenticationFailedException, ConflictException, ForbiddenException, InvalidOperationException, NotFoundException, UnauthorizedException
 from api.common.utils import get_logger, is_tenancy_enabled
 from api.core.container import container
 from api.core.exceptions import InvalidSubdomainException, TenantNotFoundException
@@ -74,6 +74,11 @@ async def api_exception_handler(req: Request, ex: ApiBaseException) -> JSONRespo
     elif isinstance(ex, ConflictException):
         status_code = status.HTTP_409_CONFLICT
     elif isinstance(ex, UnauthorizedException):
+        status_code = status.HTTP_401_UNAUTHORIZED
+    elif isinstance(ex, AuthenticationFailedException):
+        # The only named auth exception still falling through to the
+        # default 400: an authentication failure is a 401, the status
+        # the frontend treats as an auth signal, not a bad request.
         status_code = status.HTTP_401_UNAUTHORIZED
     elif isinstance(ex, ForbiddenException):
         # ForbiddenException previously fell through to the default 400,
