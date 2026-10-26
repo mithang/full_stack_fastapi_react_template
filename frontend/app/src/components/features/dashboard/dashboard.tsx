@@ -17,6 +17,7 @@ import { AlertTriangle } from "lucide-react";
 import { getApiClient } from "@/lib/utils";
 import { AllCards } from "./all-cards";
 import { useAuthContext } from "@/components/providers/auth-provider";
+import { useAppConfig } from "@/components/providers/app-config-provider";
 
 
 
@@ -26,6 +27,7 @@ export function Dashboard() {
     const [fetchError, setFetchError] = useState<string | null>(null);
 
     const { accessToken } = useAuthContext();
+    const { current_tenant } = useAppConfig();
     async function fetchData() {
         try {
             setFetchError(null);
@@ -48,7 +50,13 @@ export function Dashboard() {
     }
     useEffect(() => {
         fetchData();
-    }, [filter, accessToken])
+        // current_tenant is a dep, not a gate: host users have no
+        // tenant, so gating would stop their metrics loading, but a
+        // fetch that ran before the tenant arrived (fresh load /
+        // cleared storage) must re-run once AppConfig sets it, or the
+        // chart keeps the host-DB / stale-tenant numbers — the same
+        // tenant-arrival race fixed in the providers (iters 176-181).
+    }, [filter, accessToken, current_tenant])
 
     return (
         <div>
