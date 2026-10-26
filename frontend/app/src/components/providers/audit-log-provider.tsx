@@ -100,7 +100,15 @@ export function AuditLogProvider({ children }: AuditLogsProviderProps) {
         } catch (error: unknown) {
             const errMsg = extractErrorMessage(error);
             console.error("Failed to download audit logs:", errMsg);
-            toast.error("Failed to download audit logs", {
+            // A backend response (ApiError, which carries a numeric status)
+            // means the server answered; a failure with no status is a
+            // network error, not a failed download request, and must not
+            // send the admin to re-check a download that never reached
+            // the server.
+            const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            toast.error(hasStatus
+                ? "Failed to download audit logs"
+                : "Unable to reach the server. Check your connection and try again.", {
                 richColors: true,
                 duration: 5000,
                 position: "top-right",
