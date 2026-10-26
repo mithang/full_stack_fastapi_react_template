@@ -62,8 +62,13 @@ class BillingRecordService:
         if scope != "tenant":
             return None
 
-        # Most reliable: line metadata
-        tenant_id = line.get("metadata", {}).get("tenant_id")
+        # Most reliable: line metadata. Guard a null metadata value the
+        # same way the parent/subscription lookups below already do
+        # (and as the invoice-level metadata guard does): an explicit
+        # null would otherwise raise AttributeError here, outside the
+        # save try/catch, turning a valid invoice.paid delivery into a
+        # 500 that Stripe retries forever.
+        tenant_id = (line.get("metadata") or {}).get("tenant_id")
         if tenant_id:
             return tenant_id
 
