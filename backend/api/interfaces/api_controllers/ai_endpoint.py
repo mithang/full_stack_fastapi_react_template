@@ -79,6 +79,9 @@ async def ask_ai(
     background_tasks: BackgroundTasks,
     local_ai_service: LocalAIService = Depends(get_local_ai_service),
 ):
+    if query.question is None or query.question.strip() == "":
+        raise InvalidOperationException("Question cannot be empty")
+
     if query.model_name is None or query.model_name.strip() == "":
         raise InvalidOperationException("Model name cannot be empty")
     
