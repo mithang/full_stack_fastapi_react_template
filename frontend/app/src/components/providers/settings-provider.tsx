@@ -56,8 +56,18 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
             setStorages(storages);
             setAvailableStorages(availables);
         } catch (error) {
-            toast.error("Failed to load storage settings", {
-                description: (error as Error).message,
+            // A backend response (ApiError, which carries a numeric
+            // status) means the server answered; a failure with no status
+            // is a network error, not a failed settings load, and must
+            // not surface the raw fetch message ("Failed to fetch") nor
+            // send the admin re-checking settings that never reached the
+            // server. Mirrors the fetchRoles/fetchUsers error-state
+            // distinction (iterations 103-104) for this load toast.
+            const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            toast.error(hasStatus
+                ? "Failed to load storage settings"
+                : "Unable to reach the server. Check your connection and try again.", {
+                description: hasStatus ? (error as Error).message : undefined,
                 richColors: true,
                 position: "top-right",
             });
