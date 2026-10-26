@@ -49,6 +49,14 @@ export function BrandingProvider({ children }: BrandingProviderProps) {
             toast.error(hasStatus
                 ? "Failed to update branding"
                 : "Unable to reach the server. Check your connection and try again.", { richColors: true, position: "top-right" });
+            // Re-throw so callers can tell failure from success: the branding
+            // form shows a "Saved" checkmark after this resolves, and without
+            // the throw it would show it for a failed update too. The form's
+            // catch already handles the rejection (the provider toast above
+            // is the user-facing feedback). onUploadLogo deliberately keeps
+            // swallowing: its caller has no catch, so re-throwing there
+            // would surface an unhandled rejection.
+            throw error;
         }
     }
 
