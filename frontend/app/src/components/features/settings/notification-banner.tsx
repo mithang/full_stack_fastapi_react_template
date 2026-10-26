@@ -117,7 +117,13 @@ export function NotificationBanner() {
         } catch (error: unknown) {
             const errMsg = extractErrorMessage(error);
             console.error("Error saving notification banner:", errMsg);
-            toast.error("Failed to save notification banner", {
+            // A backend response (ApiError, which carries a numeric
+            // status) means the server answered and rejected the save;
+            // a failure with no status is a network error, not a bad
+            // banner, and must not send the admin re-entering a message
+            // for a connection problem.
+            const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            toast.error(hasStatus ? "Failed to save notification banner" : "Unable to reach the server. Check your connection and try again.", {
                 richColors: true, position: "top-right", description: errMsg
             });
         } finally {
