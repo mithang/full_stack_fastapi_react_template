@@ -83,7 +83,13 @@ export function StripeProvider({ children }: StripeProviderProps) {
             toast.success("Stripe setting configured successfully.", { richColors: true, position: "top-right" });
         } catch (error) {
             console.error("Error configuring Stripe setting:", error);
-            toast.error("Failed to configure Stripe setting.", { richColors: true, position: "top-right" });
+            // A backend response (ApiError, which carries a numeric
+            // status) means the server answered and rejected the
+            // configuration; a failure with no status is a network
+            // error, not a bad Stripe setting, and must not send the
+            // admin re-entering credentials for a connection problem.
+            const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            toast.error(hasStatus ? "Failed to configure Stripe setting." : "Unable to reach the server. Check your connection and try again.", { richColors: true, position: "top-right" });
         } finally {
             setLoading(false);
         }
