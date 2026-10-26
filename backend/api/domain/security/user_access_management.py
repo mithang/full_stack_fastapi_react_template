@@ -1,4 +1,5 @@
 from typing import List
+from fastapi import Request
 from api.common.exceptions import ForbiddenException
 from api.common.utils import get_logger, is_tenancy_enabled
 from api.core.container import get_role_service
@@ -36,7 +37,7 @@ class UserAccessManagement:
         """Check if user is accessing their own resource"""
         if not resource_id or not self.allow_self_access:
             return False
-        return current_user.id == resource_id
+        return str(current_user.id) == str(resource_id)
     
     async def has_permission(self, user_permissions: List[Permission], required_permissions: List[Permission]) -> bool:
         """Check if user has required permissions"""
@@ -49,9 +50,18 @@ class UserAccessManagement:
     
     def __call__(self):
 
-        async def check_permission(current_user: CurrentUser) -> bool:
+        async def check_permission(current_user: CurrentUser, request: Request) -> bool:
 
-            resource_id = current_user.id
+            # The resource being accessed is the id in the request path
+            # (e.g. /users/{user_id}), NOT the caller's own id: the old
+            # code set resource_id = current_user.id, so the self-access
+            # check below compared the caller to themselves and was
+            # always true — any holder of USER_SELF_READ_AND_WRITE_ONLY
+            # passed it for any user's record. Only the user endpoints
+            # use allow_self_access, and all of them name the path
+            # parameter user_id; routes without one get None here and
+            # fail the self-access check, which is fail-closed.
+            resource_id = request.path_params.get("user_id")
             logger.info(f"Resource ID for self-access checking: {resource_id}")
 
             if current_user.role_id is None:
@@ -82,8 +92,17 @@ class UserAccessManagement:
                     logger.info("Self access granted - User accessing own resource")
                     return True
             
-            # Check required permissions
-            if await self.has_permission(user_permissions, self.required_permissions):
+            # Check required permissions. USER_SELF_READ_AND_WRITE_ONLY
+            # is a self-only permission: it is honoured by the
+            # self-access branch above and must not satisfy the general
+            # check, or a self-only holder would pass a route whose
+            # required list is just that permission (GET /users/{id})
+            # for any user's record. The empty-list guard matters when
+            # any_permission is False, since all([]) is True.
+            general_permissions = self.required_permissions
+            if self.allow_self_access:
+                general_permissions = [p for p in general_permissions if p != Permission.USER_SELF_READ_AND_WRITE_ONLY]
+            if general_permissions and await self.has_permission(user_permissions, general_permissions):
                 permission_type = "any" if self.any_permission else "all"
                 logger.info(f"Access granted - User has {permission_type} required permissions")
                 return True
