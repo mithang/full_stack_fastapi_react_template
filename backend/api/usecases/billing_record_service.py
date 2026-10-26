@@ -2,7 +2,8 @@ from typing import Any, Literal, Optional, get_args
 
 from api.common.utils import get_logger
 from api.core.exceptions import (BillingRecordException,
-                                 BillingRecordNotFoundException)
+                                 BillingRecordNotFoundException,
+                                 ProductNotFoundException)
 from api.domain.dtos.billing_dto import (BillingRecordDto,
                                          BillingRecordListDto, CreatePlanDto,
                                          InvoiceListDto, PlanDto, PlanListDto,
@@ -194,6 +195,16 @@ class BillingRecordService:
             )
         except Exception as e:
             logger.error(f"Error creating plan : {e}")
+            # Only a Stripe 404 (stripe errors carry http_status) is a
+            # genuine not-found here, and the only id this create
+            # references is the product (CreatePlanDto documents
+            # product_id as "the ID of an existing product"), so a 404
+            # means that product does not exist — not the plan, which
+            # does not exist yet. Anything else — bad payload, Stripe
+            # outage, resolver error — is a billing error (406 via
+            # BillingRecordException), not a 404.
+            if getattr(e, "http_status", None) == 404:
+                raise ProductNotFoundException(new_plan.product_id) from e
             raise BillingRecordException(str(e))
 
     async def update_plan(
