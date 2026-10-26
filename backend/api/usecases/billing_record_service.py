@@ -235,6 +235,15 @@ class BillingRecordService:
         )
         if billing_record is None:
             raise BillingRecordNotFoundException(session_id)
+        # Scope-guard the record: tenant-scope checkouts store the same
+        # tenant_id, so the tenant check below alone would also accept a
+        # tenant-scope record here (the host-cancel handler got the same
+        # scope filter in an earlier iteration). A tenant-scope session
+        # must finalise through the tenant success handler instead.
+        if billing_record.scope != "host":
+            raise BillingRecordException(
+                f"Scope mismatch for the billing record {session_id}"
+            )
         # billing_record.tenant_id is a PydanticObjectId while the caller
         # passes current_user.tenant_id, a str (UserDto.tenant_id is str),
         # so a raw != is always true and every host success finalisation
