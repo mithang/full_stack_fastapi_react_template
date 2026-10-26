@@ -138,9 +138,16 @@ export function AIChat() {
                 isUserScrollingRef.current = false
             }, 200)
         }
-        window.addEventListener("scroll", handleScroll)
+        // The messages scroll inside the Radix ScrollArea viewport, not
+        // the window: the chat pane has a fixed height and its own
+        // scrollbar, so a window listener never fired while the user
+        // scrolled back through earlier messages — and the streaming
+        // auto-scroll then yanked the view to the bottom mid-read.
+        // Listen on the viewport itself (window only as a fallback).
+        const scrollTarget = scrollAreaRef.current?.querySelector('[data-slot="scroll-area-viewport"]') ?? window
+        scrollTarget.addEventListener("scroll", handleScroll)
         return () => {
-            window.removeEventListener("scroll", handleScroll)
+            scrollTarget.removeEventListener("scroll", handleScroll)
             if (userScrollTimeoutRef.current) {
                 clearTimeout(userScrollTimeoutRef.current)
             }
