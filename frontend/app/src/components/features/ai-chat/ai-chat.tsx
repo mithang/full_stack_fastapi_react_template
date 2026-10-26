@@ -332,6 +332,15 @@ export function AIChat() {
 
     const sendMessage = async () => {
         if (!input.trim() || chatState.isLoading) return
+        // The Send button is disabled without a selected model or with no
+        // models available, but the Enter-key handler calls sendMessage
+        // directly and bypassed both guards — so pressing Enter with no
+        // model sent a request with model_name undefined instead of
+        // doing nothing. Match the button's disabled conditions here.
+        if (!selectedModel?.name || availableAiModels.length === 0) {
+            toast.error("Please select a local AI model to start chatting.", { richColors: true, position: "top-right" })
+            return
+        }
         let sessionId = searchParams.get("session_id")
         if (!sessionId) {
             try {
