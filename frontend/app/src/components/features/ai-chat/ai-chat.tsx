@@ -553,13 +553,23 @@ export function AIChat() {
                 setInput(lastUserMessage.content)
                 // Adjust textarea height after setting content
                 setTimeout(adjustTextareaHeight, 0)
-                // Remove the last assistant message if it exists
-                setChatState(prev => ({
-                    ...prev,
-                    messages: prev.messages.filter((msg, index, arr) =>
-                        !(msg.role === 'assistant' && index === arr.length - 1)
-                    )
-                }))
+                // Remove the last exchange, not just its assistant reply:
+                // the question itself now lives in the input for resending,
+                // so leaving it in the list would make Send append a
+                // second copy of it. A trailing assistant reply is dropped
+                // first (successful case); a trailing user message with no
+                // reply yet (failed send, whose assistant message the
+                // send catch already filtered out) is dropped as well.
+                setChatState(prev => {
+                    const messages = [...prev.messages]
+                    if (messages.length > 0 && messages[messages.length - 1].role === 'assistant') {
+                        messages.pop()
+                    }
+                    if (messages.length > 0 && messages[messages.length - 1].id === lastUserMessage.id) {
+                        messages.pop()
+                    }
+                    return { ...prev, messages }
+                })
             }
         }
     }
