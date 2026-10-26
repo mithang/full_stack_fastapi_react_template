@@ -82,7 +82,7 @@ async def host_checkout_success(
 
 
 @router.post("/host/payment/cancel", status_code=status.HTTP_202_ACCEPTED)
-async def host_checkout_success(
+async def host_checkout_canceled(
     tenant_id: str,
     current_user: CurrentUser,
     billing_service: BillingRecordService = Depends(get_billing_record_service)
