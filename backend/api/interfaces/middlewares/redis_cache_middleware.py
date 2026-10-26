@@ -67,6 +67,18 @@ class RedisCacheMiddleware(BaseHTTPMiddleware):
             logger.debug(f"Could not resolve current_user in middleware: {e}")
             current_user = None
 
+        # A token was supplied but its user could not be resolved
+        # (invalid/expired token, or a transient lookup failure).
+        # Do not serve or store anything under the shared
+        # "anonymous" key below: a handler that still succeeds
+        # (e.g. after a transient failure clears) would otherwise
+        # cache one user's 200 response under a key shared by every
+        # unresolvable token, and later such requests would be
+        # served that cached response. Bypass, as for no token.
+        if current_user is None:
+            logger.debug("Bypassing cache for unresolvable token.")
+            return await call_next(request)
+
         user_id = getattr(current_user, "id", "anonymous")
         # Key on the effective request tenant, not the token user's
         # tenant: TenantMiddleware runs before this middleware and
