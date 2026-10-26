@@ -107,7 +107,16 @@ class BillingRecordService:
             if isinstance(line_metadata, dict)
             else None
         )
-        if tenant_id:
+        # Guard the scalar tenant_id value the same way the record
+        # build guards currency/amount/customer: the containers above
+        # are dict-checked, but a truthy non-string tenant_id (e.g. an
+        # int) would otherwise pass through here and raise inside
+        # PydanticObjectId() in the record build — outside the save
+        # try/catch, turning a valid invoice.paid delivery into a 500
+        # that Stripe retries forever. A malformed value falls through
+        # to the subscription-metadata fallback below, as an empty
+        # value already did.
+        if isinstance(tenant_id, str) and tenant_id:
             return tenant_id
 
         # Fallback: subscription metadata. Guard null/non-dict values the
@@ -125,7 +134,12 @@ class BillingRecordService:
         )
 
         if isinstance(metadata, dict):
-            return metadata.get("tenant_id")
+            # Same scalar guard as the line-metadata lookup above: a
+            # non-string tenant_id here would raise in PydanticObjectId
+            # at the record build instead of falling back to None.
+            fallback = metadata.get("tenant_id")
+            if isinstance(fallback, str) and fallback:
+                return fallback
 
         return None
 
