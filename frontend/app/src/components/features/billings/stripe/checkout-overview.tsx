@@ -34,8 +34,17 @@ export function CheckoutOverview() {
     const navigate = useNavigate();
 
     const searchQuery = new URLSearchParams(search);
-    const initialSkip = parseInt(searchQuery.get("skip") || "0", 10);
-    const initialLimit = parseInt(searchQuery.get("limit") || "10", 10);
+    // Guard the URL pagination the same way the AdvanceTable providers
+    // do (iteration 137): the first checkout fetch sends pagination.limit
+    // verbatim, so a non-numeric or negative ?limit= (hand-edited URL,
+    // stale bookmark) previously reached the backend as NaN/negative —
+    // FastAPI rejects NaN as an int (422) — and a bogus ?skip= seeded the
+    // initial display state. Fall back to skip 0 / limit 10; valid and
+    // missing values behave as before.
+    const parsedInitialSkip = parseInt(searchQuery.get("skip") || "0", 10);
+    const parsedInitialLimit = parseInt(searchQuery.get("limit") || "10", 10);
+    const initialSkip = Number.isFinite(parsedInitialSkip) && parsedInitialSkip >= 0 ? parsedInitialSkip : 0;
+    const initialLimit = Number.isFinite(parsedInitialLimit) && parsedInitialLimit > 0 ? parsedInitialLimit : 10;
 
     const [pagination, setPagination] = useState({
         skip: initialSkip,
