@@ -163,8 +163,18 @@ class BillingRecordService:
     # Helper methods end here
 
     async def list_plans(self, scope: ScopeType) -> PlanListDto:
-        sc = await self.stripe_resolver.get_stripe_client(scope=scope)
-        result = await sc.v1.plans.list_async(params={"limit": 100})
+        try:
+            sc = await self.stripe_resolver.get_stripe_client(scope=scope)
+            result = await sc.v1.plans.list_async(params={"limit": 100})
+        except Exception as e:
+            logger.error(f"Error listing plans: {e}")
+            # The list was unwrapped, so a Stripe failure reached the
+            # client as a raw 500 instead of a mapped API error —
+            # unlike every single-plan operation, which now raises
+            # BillingRecordException. No 404 distinction is needed for
+            # a list: an empty catalogue is a valid empty result, so a
+            # failure is never a not-found.
+            raise BillingRecordException(f"Failed to list plans: {str(e)}") from e
         if len(result.data) == 0:
             return PlanListDto(plans=[], has_more=False)
         return PlanListDto(
