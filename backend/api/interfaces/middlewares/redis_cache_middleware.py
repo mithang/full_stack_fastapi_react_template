@@ -197,6 +197,20 @@ not_allowed_cache_paths = [
     # prefix /products + GET "/" (api/__init__.py:130,152;
     # product_endpoint.py:15,23).
     "/api/v1/products/",
+    # Live Stripe list: list_prices reads the tenant's prices fresh
+    # from Stripe on every call (prices.list_async), and prices are
+    # created and updated by other admins or in the Stripe dashboard,
+    # while a mutation clears only the acting admin's cache keys, so
+    # a viewing admin would otherwise keep a list up to the TTL old
+    # — a just-created price missing, or a just-deactivated price
+    # still offered while they review pricing. Same stale-viewer
+    # class as the products bypass above, not an enforcement fix:
+    # price mutations read/write fresh. Endswith matching keeps the
+    # detail route (/prices/{price_id}) cached, since it does not
+    # end in "/api/v1/prices/". Full path confirmed as /api/v1 +
+    # router prefix /prices + GET "/" (api/__init__.py:130,153;
+    # prices_endpoint.py:15,23).
+    "/api/v1/prices/",
 ]
 
 
