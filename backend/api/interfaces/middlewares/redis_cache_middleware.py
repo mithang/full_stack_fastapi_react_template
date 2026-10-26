@@ -110,6 +110,19 @@ not_allowed_cache_paths = [
     # and the static available-providers list cached, since neither
     # path ends in "/api/v1/ssos/".
     "/api/v1/ssos/",
+    # Append-only billing list: list_checkout_records reads the tenant's
+    # billing records fresh on every call, and the billing overview page
+    # fetches it on load and on page change. Records are created by other
+    # users' payment-success handlers (and Stripe webhooks), not by the
+    # viewing admin's mutations, and a mutation clears only the acting
+    # user's cache keys, so a viewing billing admin would otherwise keep
+    # a list up to the TTL old — newest payments hidden while they
+    # review billing. Same stale-viewer class as the audit-log bypass,
+    # not an enforcement fix: payment handlers read/write fresh. The
+    # query string (skip/limit) is part of the cache key, so this bypass
+    # is the only way to keep the list live. Endswith matching is exact
+    # here: no other GET path ends in "/checkouts/all".
+    "/api/v1/checkouts/all",
     # Tenant storage settings list, fetched by the SettingsProvider
     # on load and on tenant change (and after the viewing admin's own
     # configure/reset, which clears only their own cache keys). A
