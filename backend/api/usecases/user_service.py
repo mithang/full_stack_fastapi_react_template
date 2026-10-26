@@ -1,6 +1,6 @@
 from typing import Any
 from beanie import PydanticObjectId
-from pydantic import EmailStr, ValidationError
+from pydantic import EmailStr
 from api.common.exceptions import InvalidOperationException
 from api.common.utils import get_logger
 from api.core.exceptions import EmailAlreadyExistsException, RoleNotFoundException, UserNotFoundException
@@ -136,10 +136,16 @@ class UserService:
         """Get password reset entry by token. Returns UserPasswordReset model or None if not found."""
         try:
             object_id = PydanticObjectId(user_id)
-        except ValidationError:
+        except Exception:
             # A malformed user_id (tampered/truncated reset link) cannot match any
             # stored record, so treat it as "no reset data" instead of escaping as
             # a 500; the caller raises its invalid-token error for None.
+            # The catch is broad on purpose, as in BaseRepository.get and
+            # update_user above: direct PydanticObjectId() construction raises
+            # bson InvalidId for a malformed value, not the pydantic
+            # ValidationError this previously caught alone, so catching only
+            # ValidationError left a malformed reset-link user_id escaping
+            # as a raw 500 instead of the caller's invalid-token error.
             return None
         return await self.user_password_reset_repository.single_or_none(user_id=object_id)
 
