@@ -128,6 +128,33 @@ export default function BrandingConfiguration() {
         },
     });
 
+    // Sync the form with the server branding once it loads: branding
+    // arrives asynchronously (via the app-config fetch), so the
+    // defaultValues above are read while branding is still undefined and
+    // the form would otherwise stay empty — and saving it would submit
+    // those empty values over the live branding. Only reset while the
+    // form is still pristine, so a reload (e.g. after a logo upload)
+    // never discards edits the admin is in the middle of making.
+    useEffect(() => {
+        if (branding && !form.formState.isDirty) {
+            form.reset({
+                identity: {
+                    app_name: branding.app_name || '',
+                },
+                contact_info: {
+                    support_email: branding.contact_info?.support_email || '',
+                    phone: branding.contact_info?.phone || '',
+                    address: branding.contact_info?.address || '',
+                },
+                theme_config: {
+                    radius: branding.theme_config?.radius || '0.5rem',
+                    light: branding.theme_config?.light || {},
+                    dark: branding.theme_config?.dark || {},
+                },
+            });
+        }
+    }, [branding, form]);
+
     async function onSubmit(data: BrandingFormValues) {
         setLoading(true);
         setSaved(false);
