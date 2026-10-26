@@ -53,9 +53,13 @@ async def create_tenant_checkout_session(
         raise InvalidOperationException(f"Email mismatch for the current user. {checkout_req.email}")
 
     tenant = await tenant_service.get_tenant_by_id(current_user.tenant_id)
-    domain = tenant.subdomain
-    if tenant.custom_domain not in (None, ""):
-        domain = tenant.custom_domain
+    # A tenant may have neither a custom domain nor a subdomain (both
+    # nullable on the entity), in which case the old code produced
+    # frontend_url "https://None" as the Stripe checkout return URL —
+    # the same neither-domain class fixed for magic-link/passkey/SSO
+    # in earlier iterations. Fall back to the main domain; custom-domain
+    # and subdomain tenants are unchanged.
+    domain = tenant.custom_domain or tenant.subdomain or get_host_main_domain_name()
     frontend_url = f"https://{domain}"
     url = await billing_service.create_tenant_check_out_session_for_tenant_users(
         frontend_url=frontend_url,
