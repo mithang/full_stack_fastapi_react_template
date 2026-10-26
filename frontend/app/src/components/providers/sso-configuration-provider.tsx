@@ -66,7 +66,14 @@ export default function SSOConfigurationProvider({ children }: SSOConfigurationP
             }
         } else {
             console.error("Failed to fetch SSO providers:", ssoResult.reason);
-            toast.error("Failed to fetch SSO providers", { richColors: true, position: "top-right" });
+            // A backend response (ApiError, which carries a numeric status)
+            // means the server answered; a failure with no status is a
+            // network error, not a failed SSO fetch, and must not send
+            // the admin to re-check settings that never reached the server.
+            const hasStatus = typeof (ssoResult.reason as { status?: unknown } | null)?.status === "number";
+            toast.error(hasStatus
+                ? "Failed to fetch SSO providers"
+                : "Unable to reach the server. Check your connection and try again.", { richColors: true, position: "top-right" });
         }
     }
     async function refreshSSOConfigurations() {
