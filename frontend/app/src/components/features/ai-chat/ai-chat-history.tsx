@@ -37,7 +37,13 @@ export function AIChatHistory({ mobile }: AIChatHistoryProps) {
                 position: "top-right",
                 description: "The chat session has been deleted. All associated messages have been removed."
             })
-            setSearchParams({})
+            // Only leave the chat view when the deleted session is the one
+            // currently open: deleting another session from its dropdown
+            // must not drop the viewed session_id from the URL (which
+            // blanked the open conversation).
+            if (searchParams.get("session_id") === sessionId) {
+                setSearchParams({})
+            }
         } catch (error) {
             console.error("Error deleting session:", error)
             // A backend response (ApiError, which carries a numeric
