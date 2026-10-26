@@ -135,6 +135,10 @@ export function SSOProviderConfiguration() {
         setEditingProvider(null)
     }
 
+    function onDeleteProviderClose() {
+        setProviderToDelete(null)
+    }
+
 
 
     return (
@@ -317,7 +321,7 @@ export function SSOProviderConfiguration() {
             )}
 
             {providerToDelete && (
-                <DeleteSSOConfigurationDialog deleteSSOProviderId={providerToDelete.id} />
+                <DeleteSSOConfigurationDialog deleteSSOProviderId={providerToDelete.id} onClose={onDeleteProviderClose} />
             )}
 
         </div>
