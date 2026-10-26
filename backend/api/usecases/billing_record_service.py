@@ -225,8 +225,13 @@ class BillingRecordService:
                 f"Payment not completed for session {session_id}"
             )
 
+        # The Stripe session id is stored as stripe_session_id (see the
+        # create_*_check_out_session methods above), not session_id, so
+        # looking it up as session_id could never match and every host
+        # success finalisation raised NotFound instead of flipping the
+        # record to "succeeded".
         billing_record = await self.billing_record_repository.single_or_none(
-            session_id=session_id
+            stripe_session_id=session_id
         )
         if billing_record is None:
             raise BillingRecordNotFoundException(session_id)
@@ -276,8 +281,10 @@ class BillingRecordService:
                 f"Payment not completed for session {session_id}"
             )
 
+        # Same field-name fix as the host handler above: the session id is
+        # stored as stripe_session_id, so a session_id lookup never matched.
         billing_record = await self.billing_record_repository.single_or_none(
-            session_id=session_id
+            stripe_session_id=session_id
         )
         if billing_record is None:
             raise BillingRecordNotFoundException(session_id)
