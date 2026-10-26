@@ -39,7 +39,7 @@ export function AIChat() {
     const [searchParams, setSearchParams] = useSearchParams()
     const { user, accessToken } = useAuthContext()
     const { getAIChatNewSession, fetchAllSessions } = useAIChat()
-    const { user_preferences } = useAppConfig()
+    const { user_preferences, current_tenant } = useAppConfig()
     const [chatState, setChatState] = useState<ChatState>({
         messages: [],
         isLoading: false,
@@ -241,7 +241,16 @@ export function AIChat() {
                 })
             }
         }
-    }, [searchParams, accessToken])
+        // current_tenant is a dep, not a gate: session histories are
+        // tenant-DB scoped (TenantMiddleware switches on the X-Tenant-ID
+        // header, which getApiClient reads from the stored tenant that
+        // AppConfig sets when current_tenant arrives), so a fetch that ran
+        // before the tenant loaded was never re-run, leaving the session's
+        // history in an error state even though it exists in the tenant DB.
+        // Host users have no tenant, so gating would stop their histories
+        // loading; the fetch itself is idempotent, so the extra fetch on
+        // tenant arrival is safe.
+    }, [searchParams, accessToken, current_tenant])
 
     const generateId = () => Math.random().toString(36).substr(2, 9)
 
