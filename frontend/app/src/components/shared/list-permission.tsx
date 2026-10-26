@@ -50,6 +50,7 @@ export function ListPermission({
         try {
             const response = await permission.getPermissionsApiV1PermissionsGet();
             setPermissions(response);
+            setError(null);
         } catch (error) {
             console.error("Failed to fetch permissions:", error);
             // A backend response (ApiError, which carries a numeric status)
@@ -64,11 +65,22 @@ export function ListPermission({
         }
     }
 
+    // accessToken is a dep, not []: this component mounts only when the
+    // admin opens the role-permission dialog, and the fetch ran exactly
+    // once with the mount-time token. If that token was expired (or a
+    // worker refresh was in flight) the fetch 401'd, set the error Alert,
+    // and nothing ever re-ran it — reopening the dialog was the only
+    // retry, and the success path did not even clear a prior error.
+    // A token arrival/rotation now re-runs the fetch, and a success
+    // clears the error; the permission list is a static enum, so the
+    // extra fetch on rotation is safe. Skipped while no token is held
+    // rather than firing an unauthenticated request that can only 401.
     useEffect(() => {
+        if (!accessToken) return;
         startTransition(() => {
             fetchPermissions();
         });
-    }, []);
+    }, [accessToken]);
 
 
 
