@@ -272,7 +272,19 @@ async def passkey_login_options(
     user_service = await auth_service.get_user_service()
     user = await user_service.find_by_email(email=email)
     user_doc = await user.to_serializable_dict()
-    return await passkey_service.auth_login_options(user_dto=UserDto(**user_doc))
+    try:
+        return await passkey_service.auth_login_options(user_dto=UserDto(**user_doc))
+    except PassKeyException:
+        raise
+    except Exception as e:
+        # auth_login_options base64-decodes stored credential ids and calls
+        # the webauthn library's generate_authentication_options; a corrupt
+        # stored credential (or a library error) would otherwise escape as a
+        # 500 instead of the mapped 406, unlike passkey_login/register which
+        # already wrap their service calls (iteration 323). The known
+        # PassKeyException ("No credentials found...") passes through intact.
+        logger.error(f"Passkey login options failed for email: {email} with error: {e}")
+        raise PassKeyException("Passkey authentication failed.") from e
 
 
 @router.post("/passkey/login", status_code=status.HTTP_200_OK, response_model=TokenSetDto)
