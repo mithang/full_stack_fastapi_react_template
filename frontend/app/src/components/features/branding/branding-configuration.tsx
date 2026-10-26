@@ -137,6 +137,11 @@ export default function BrandingConfiguration() {
     function handleLogoChange(event: React.ChangeEvent<HTMLInputElement>) {
         const file = event.target.files?.[0];
         if (file) {
+            // Clear the input now that the file is captured, so selecting the
+            // same file again (e.g. after Remove, or after an invalid pick)
+            // still fires onChange — a file input with an unchanged value
+            // fires no event (same fix as profile picture, iteration 117).
+            event.target.value = '';
             // Validate file type
             if (!file.type.startsWith('image/')) {
                 alert('Please select an image file');
