@@ -458,6 +458,17 @@ class BillingRecordService:
         price_id, product_id = self._extract_pricing(line)
         tenant_id = tenant_id or self._extract_tenant_id(line, scope)
 
+        # Guard the currency the same way the lines/period/metadata
+        # lookups above guard null/non-dict values: invoice["currency"]
+        # raises KeyError when absent and .upper() raises AttributeError
+        # on a null/non-string value — both outside the save try/catch,
+        # turning a valid invoice.paid delivery into a 500 that Stripe
+        # retries forever. A malformed currency is treated like no lines
+        # at all and returns None, as for an empty list.
+        currency = invoice.get("currency")
+        if not isinstance(currency, str) or not currency:
+            return None
+
         # Build Object
         return BillingRecord(
             scope=scope,
@@ -465,7 +476,7 @@ class BillingRecordService:
             tenant_id=PydanticObjectId(tenant_id) if tenant_id else None,
             user_id=None,
             payment_type="card",
-            currency=invoice["currency"].upper(),
+            currency=currency.upper(),
             amount=invoice["amount_paid"],
             stripe_customer_id=invoice["customer"],
             stripe_subscription_id=invoice.get("subscription"),
