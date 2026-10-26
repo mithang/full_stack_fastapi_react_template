@@ -66,6 +66,18 @@ not_allowed_cache_paths = [
     "/features",
     "/api/v1/security/passkeys",
     "/api/v1/configurations/stripe/webhooks",
+    # Tenant Stripe settings, fetched by the Stripe provider on load
+    # and on tenant change. A configure POST by another admin with
+    # MANAGE_PAYMENTS_SETTINGS clears only that admin's cache keys,
+    # so a viewing admin would otherwise keep the previous settings
+    # for the rest of the TTL — a just-configured key not shown, or
+    # removed settings still offered in the billing UI. Same
+    # stale-admin-UI class as the SSO-list bypass above, not an
+    # enforcement fix: checkout handlers read settings fresh.
+    # Endswith matching is exact here: no other GET path ends in
+    # "/stripe" (the webhook path has its own entry above, and
+    # webhook POSTs are never cached anyway).
+    "/api/v1/configurations/stripe",
     # Live computed metrics: get_dashboard_metrics aggregates user
     # counts and a registration timeseries fresh on every call, and
     # the dashboard page fetches it on load (and on filter change).
