@@ -200,14 +200,19 @@ async def change_email(
     auth_service: AuthService = Depends(get_auth_service)
 ):
     
-    try:
-        await auth_service.change_email_request(
-            current_email=current_user.email,
-            new_email=request.new_email,
-            domain=frontend_host
-        )
-    finally:
-        return status.HTTP_202_ACCEPTED
+    # Do not wrap this in try/finally with a return: a return in finally
+    # would swallow the service's InvalidOperationException (same email,
+    # new email already in use, email-send failure) and report 202 for a
+    # request that never happened. Unlike password_reset_request, this
+    # endpoint is authenticated, so there is no anti-enumeration reason
+    # to hide failures; they surface via the InvalidOperationException
+    # handler as a clean 406 {"error": ...}.
+    await auth_service.change_email_request(
+        current_email=current_user.email,
+        new_email=request.new_email,
+        domain=frontend_host
+    )
+    return status.HTTP_202_ACCEPTED
 
     
 @router.patch("/change_email_confirmation",  status_code=status.HTTP_200_OK, response_model=ChangeEmailResponseDto)
