@@ -29,6 +29,8 @@ import { Billing } from "@/components/features/billings/stripe/billing";
 import { Invoices } from "@/components/features/billings/stripe/invoices";
 import { Products } from "@/components/features/billings/stripe/products";
 import { CheckoutOverview } from "@/components/features/billings/stripe/checkout-overview";
+import { CheckoutSuccess } from "@/components/features/billings/stripe/checkout-success";
+import { CheckoutCanceled } from "@/components/features/billings/stripe/checkout-canceled";
 import { AppSettings } from "@/components/features/settings/app-settings";
 import { AuditLogProvider } from "@/components/providers/audit-log-provider";
 import { AuditLogs } from "@/components/features/audit-logs/audit-logs";
@@ -56,6 +58,15 @@ function App() {
         <Route path="activation" element={<Activation />} />
         <Route path="magic_link_login" element={<MagicLinkLoginValidate />} />
         <Route path="non-active" element={<NonActiveTenantView />} />
+        {/* Stripe returns here after checkout (see the success_url /
+        cancel_url built in billing_record_service): without these routes
+        the DashboardLayout catch-all below silently redirected a
+        returning payer to /dashboard, so the confirmation pages never
+        rendered. They are static pages under the public layout, so they
+        render regardless of auth state; the success POST that finalises
+        a session is still a separate, later step. */}
+        <Route path="checkout/success" element={<CheckoutSuccess />} />
+        <Route path="checkout/cancel" element={<CheckoutCanceled />} />
       </Route>
 
       <Route element={<DashboardLayout />}>
