@@ -179,6 +179,24 @@ not_allowed_cache_paths = [
     # cached, since /api/v1/storage/available does not end in
     # "/api/v1/storage/".
     "/api/v1/storage/",
+    # Live Stripe list: list_products reads the tenant's products
+    # fresh from Stripe on every call, and the products page fetches
+    # it on load. Products are created, updated, and deleted by
+    # other admins (or in the Stripe dashboard), and a mutation
+    # clears only the acting admin's cache keys, so a viewing admin
+    # would otherwise keep a list up to the TTL old — a
+    # just-created product missing from the pricing UI, or a
+    # just-deactivated product still offered while they review it.
+    # Same stale-viewer class as the audit-log/checkout/invoices/
+    # users/roles bypasses, not an enforcement fix: product
+    # mutations read/write fresh. The query string (active filter)
+    # is part of the cache key, so this bypass is the only way to
+    # keep the list live. Endswith matching keeps the detail route
+    # (/products/{product_id}) cached, since it does not end in
+    # "/api/v1/products/". Full path confirmed as /api/v1 + router
+    # prefix /products + GET "/" (api/__init__.py:130,152;
+    # product_endpoint.py:15,23).
+    "/api/v1/products/",
 ]
 
 
