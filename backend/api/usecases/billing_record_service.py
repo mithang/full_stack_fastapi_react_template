@@ -3,6 +3,7 @@ from typing import Any, Literal, Optional, get_args
 from api.common.utils import get_logger
 from api.core.exceptions import (BillingRecordException,
                                  BillingRecordNotFoundException,
+                                 PricingNotFoundException,
                                  ProductNotFoundException)
 from api.domain.dtos.billing_dto import (BillingRecordDto,
                                          BillingRecordListDto, CreatePlanDto,
@@ -318,6 +319,15 @@ class BillingRecordService:
                 }
             )
         except Exception as e:
+            # Only a Stripe 404 is a genuine not-found here, mirroring
+            # create_plan/create_price: the session references exactly
+            # one existing id — its price (the customer is created fresh
+            # in this same call) — so a 404 means that price does not
+            # exist, not a generic billing failure. Anything else — bad
+            # payload, Stripe outage, resolver error — is a billing
+            # error (406 via BillingRecordException), not a 404.
+            if getattr(e, "http_status", None) == 404:
+                raise PricingNotFoundException(checkout_req.price_id) from e
             raise BillingRecordException(
                 f"Failed to create host checkout session: {str(e)}"
             ) from e
