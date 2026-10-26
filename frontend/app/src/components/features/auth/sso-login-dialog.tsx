@@ -36,7 +36,7 @@ export function SSOLoginDialog() {
                         "sm:grid-cols-2": enabled_sso_providers.length > 1,
                     })}>
                         {enabled_sso_providers.map((provider) => (
-                            <a href={`${getApiBaseUrl()}/api/v1/account/sso/${provider}/login`} className="flex items-center space-x-2 bg-primary/90 dark:bg-primary p-1 text-primary-foreground justify-center rounded-2xl dark:hover:bg-primary/90 hover:bg-primary/80 transition-all w-full px-3">
+                            <a href={`${getApiBaseUrl()}/api/v1/account/sso/${encodeURIComponent(provider)}/login`} className="flex items-center space-x-2 bg-primary/90 dark:bg-primary p-1 text-primary-foreground justify-center rounded-2xl dark:hover:bg-primary/90 hover:bg-primary/80 transition-all w-full px-3">
                                 {renderIcon(providerConfig[provider])}
                                 <span className="capitalize text-md">Continue with {provider}</span>
                             </a>
