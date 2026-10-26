@@ -5,6 +5,7 @@ import { getApiClient } from '@/lib/utils';
 import { useSearchParams } from 'react-router';
 import { toast } from 'sonner';
 import { useAuthContext } from '@/components/providers/auth-provider';
+import { useAppConfig } from '@/components/providers/app-config-provider';
 import { NoPermissionToAccessResource } from '@/components/shared/no-permission-access-resource';
 
 export type UserResponse = UserListDto
@@ -57,6 +58,7 @@ interface UsersProviderProps {
 
 export function UsersProvider({ children }: UsersProviderProps) {
     const { accessToken, can } = useAuthContext();
+    const { current_tenant } = useAppConfig();
     const [searchParams] = useSearchParams();
     const [pending, setPending] = useState(true);
     const [userError, setUserError] = useState<string | null>(null);
@@ -205,7 +207,15 @@ export function UsersProvider({ children }: UsersProviderProps) {
     useEffect(() => {
         if (!accessToken || !canViewUsers) return;
         refreshUsers();
-    }, [searchParams, accessToken, canViewUsers]);
+        // current_tenant is a dep, not just a guard: the user list is
+        // tenant-scoped (the backend picks the tenant database from the
+        // X-Tenant-ID header, which the client reads from the stored
+        // tenant that AppConfig sets when current_tenant arrives), so a
+        // fetch that ran before the tenant loaded — or before a tenant
+        // switch — must re-run once the tenant is known, mirroring the
+        // settings provider's fix. refreshUsers is idempotent, so the
+        // extra fetch on tenant arrival/change is safe.
+    }, [searchParams, accessToken, canViewUsers, current_tenant]);
 
     if (!canViewUsers) {
         return <NoPermissionToAccessResource message='User Management' />;
