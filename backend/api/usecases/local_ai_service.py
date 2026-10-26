@@ -111,6 +111,15 @@ class LocalAIService:
             logger.error(f"Refusing to save chat history for malformed session_id: {session_id}")
             return
         session = await self.chat_session_repository.single_or_none(session_id=PydanticObjectId(session_id))
+        if session is not None and str(session.user_id) != str(user_id):
+            # Unlike get_histories_by_session_id / delete_session, this
+            # lookup is not scoped to the caller, so without this check
+            # asking with another user's session_id would append the
+            # caller's question and answer to the victim's history.
+            # Drop the save instead of creating a duplicate session row
+            # under the same session_id for the caller.
+            logger.error(f"Refusing to save chat history for session owned by another user: {session_id}")
+            return
 
         histories = {
             "histories": {
