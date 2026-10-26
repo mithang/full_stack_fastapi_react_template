@@ -29,9 +29,20 @@ class BrandingService:
     async def update_branding(self, id: str, data: UpdateBrandingDto) -> None:
         try:
             logger.debug(f"Updating branding with ID {id} using data: {data}")
-            await self.branding_repository.update_branding(id, Branding(**data.model_dump(exclude_unset=True, exclude_none=True), app_name=data.identity.app_name))
+            updated = await self.branding_repository.update_branding(id, Branding(**data.model_dump(exclude_unset=True, exclude_none=True), app_name=data.identity.app_name))
         except Exception as e:
             raise BrandingException(str(e))
+        # The not-found check sits outside the try on purpose: raising
+        # inside it would be re-wrapped by the except above and double
+        # the "Branding Error:" prefix. A None return means no branding
+        # matched the id, so fail instead of silently succeeding — the
+        # same silent-success class fixed for SSO settings in
+        # iterations 365-366. The PATCH endpoint's id-match guard
+        # (iteration 367) already covers its own route; this restores
+        # the contract for every caller, including the POST / and logo
+        # routes that pass the singleton id they just fetched.
+        if updated is None:
+            raise BrandingException("Branding not found.")
         
     async def create_branding(self, data: UpdateBrandingDto) -> BrandingDto:
         if await self.branding_repository.count() > 0:
