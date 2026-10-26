@@ -236,7 +236,12 @@ export function AIChat() {
                     messages: []
                 });
 
-                const result = response[0].histories
+                // The backend returns [] (not an error) for an unknown or
+                // already-deleted session, so response[0] is undefined
+                // there: reading .histories off it threw, and the catch
+                // below misreported it as "Unable to reach the server".
+                // An unknown session is just an empty conversation.
+                const result = response[0]?.histories ?? []
                 const messages: Message[] = [];
 
                 result.forEach(h => {
