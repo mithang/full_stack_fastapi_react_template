@@ -8,12 +8,12 @@ import { useAppConfig } from "@/components/providers/app-config-provider";
 interface BrandingProviderState {
     branding?: BrandingDto
     onUpdateBranding: (data: UpdateBrandingDto) => Promise<void>;
-    onUploadLogo: (file: Blob) => Promise<void>;
+    onUploadLogo: (file: Blob) => Promise<boolean>;
 }
 
 const initialState: BrandingProviderState = {
     onUpdateBranding: async () => { },
-    onUploadLogo: async () => { },
+    onUploadLogo: async () => false,
 }
 
 const BrandingContext = createContext<BrandingProviderState>(initialState);
@@ -76,6 +76,11 @@ export function BrandingProvider({ children }: BrandingProviderProps) {
             await reloadAppConfig().catch((error) => {
                 console.warn("Failed to refresh app config after logo upload", error);
             });
+            // Report success so the caller can clear its pending file: the
+            // provider still swallows failures (its caller has no catch), so
+            // without a return value a successful upload left the Upload
+            // button showing a stale file that re-uploaded on a second click.
+            return true;
         } catch (error) {
             console.error("Failed to upload logo", error);
             // A backend response (ApiError, which carries a numeric status)
@@ -86,6 +91,9 @@ export function BrandingProvider({ children }: BrandingProviderProps) {
             toast.error(hasStatus
                 ? "Failed to upload logo"
                 : "Unable to reach the server. Check your connection and try again.", { richColors: true, position: "top-right" });
+            // Keep the caller's pending file so the admin can retry without
+            // re-selecting a logo that never reached the server.
+            return false;
         }
     }
 

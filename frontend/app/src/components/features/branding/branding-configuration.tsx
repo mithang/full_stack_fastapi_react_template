@@ -165,7 +165,12 @@ export default function BrandingConfiguration() {
     async function handleLogoUpload() {
         setUploadingLogo(true);
         try {
-            await onUploadLogo(logoFile!);
+            // Clear the pending file only on success: on failure the file
+            // (and its preview) stay so the admin can retry the same upload
+            // without re-selecting it.
+            if (await onUploadLogo(logoFile!)) {
+                setLogoFile(null);
+            }
         } finally {
             setUploadingLogo(false);
         }
