@@ -216,6 +216,17 @@ export function CheckoutOverview() {
                 icon: <CheckCircle2 className="h-3 w-3" />,
                 label: "Succeeded",
             },
+            // A paid Stripe invoice reaches the table verbatim: the
+            // backend's from_stripe_invoice_paid sets status to the
+            // invoice's own status, and "paid" is in the BillingRecordDto
+            // enum, but it had no badge entry here, so paid records
+            // rendered with the generic outline/AlertTriangle fallback
+            // instead of a success badge like succeeded/active.
+            paid: {
+                variant: "default",
+                icon: <CheckCircle2 className="h-3 w-3" />,
+                label: "Paid",
+            },
             active: {
                 variant: "default",
                 icon: <CheckCircle2 className="h-3 w-3" />,
@@ -352,7 +363,12 @@ export function CheckoutOverview() {
                             <div>
                                 <p className="text-sm text-muted-foreground">Succeeded</p>
                                 <p className="text-2xl font-bold mt-1 text-green-600">
-                                    {records.filter((r) => r.status === "succeeded" || r.status === "active").length}
+                                    {/* "paid" belongs here too: it is a success
+                                    outcome (see the badge above), but was
+                                    counted by none of the three category
+                                    cards, so paid records vanished from the
+                                    breakdown while still counted in Total. */}
+                                    {records.filter((r) => r.status === "succeeded" || r.status === "active" || r.status === "paid").length}
                                 </p>
                             </div>
                             <CheckCircle2 className="h-8 w-8 text-green-600" />
