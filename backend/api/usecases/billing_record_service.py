@@ -224,8 +224,21 @@ class BillingRecordService:
             raise BillingRecordException(f"Failed to retrieve plan {plan_id}: {str(e)}") from e
 
     async def delete_plan(self, plan_id: str, scope: ScopeType) -> None:
-        sc = await self.stripe_resolver.get_stripe_client(scope=scope)
-        result = await sc.v1.plans.delete_async(plan=plan_id)
+        try:
+            sc = await self.stripe_resolver.get_stripe_client(scope=scope)
+            result = await sc.v1.plans.delete_async(plan=plan_id)
+        except Exception as e:
+            logger.error(f"Error deleting plan {plan_id}: {e}")
+            # The delete was unwrapped, so a Stripe failure reached the
+            # client as a raw 500 instead of a mapped API error — and
+            # an unknown plan id was indistinguishable from an outage.
+            # Only a Stripe 404 (stripe errors carry http_status) is a
+            # genuine not-found, mirroring the product-delete fix; anything
+            # else — auth failure, Stripe outage, resolver error — is a
+            # billing error (406 via BillingRecordException).
+            if getattr(e, "http_status", None) == 404:
+                raise BillingRecordNotFoundException(plan_id) from e
+            raise BillingRecordException(f"Failed to delete plan {plan_id}: {str(e)}") from e
         if result.deleted is False:
             raise BillingRecordException(f"Unable to delete the plan {plan_id}.")
 
