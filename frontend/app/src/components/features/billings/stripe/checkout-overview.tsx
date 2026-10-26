@@ -89,7 +89,16 @@ export function CheckoutOverview() {
 
     useEffect(() => {
         if (accessToken) {
-            fetchCheckoutRecords();
+            // Prev/next navigation only writes ?skip= to the URL, so the
+            // refetch triggered by the search change must read the skip
+            // back out of it: previously this called fetchCheckoutRecords()
+            // with its default skip 0, so every page navigation refetched
+            // page 1 while the URL (and, after the fetch, the pagination
+            // state) claimed another page. Guarded the same way as
+            // initialSkip above; the fetch itself overwrites pagination
+            // with the backend-echoed skip, so no loop is possible here.
+            const urlSkip = parseInt(new URLSearchParams(search).get("skip") || "0", 10);
+            fetchCheckoutRecords(Number.isFinite(urlSkip) && urlSkip >= 0 ? urlSkip : 0);
         }
     }, [accessToken, search]);
 
