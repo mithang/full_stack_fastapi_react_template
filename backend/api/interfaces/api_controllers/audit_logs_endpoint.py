@@ -1,5 +1,5 @@
 from typing import Dict, Optional
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 
 from api.common.dtos.download_dto import DownloadResponseDto
 from api.common.dtos.worker_dto import WorkerPayloadDto
@@ -30,8 +30,8 @@ router.tags = ["Audit Logs"]
 @router.get("/", response_model=AuditLogListDto, status_code=status.HTTP_200_OK)
 async def list_audit_logs(
     current_user: CurrentUser,
-    limit: int = 10,
-    skip: int = 0,
+    limit: int = Query(10, ge=1, le=100),
+    skip: int = Query(0, ge=0),
     action: Optional[AuditActionType] = None,
     log_service: AuditLogsService = Depends(get_audit_logs_service)
 ):
