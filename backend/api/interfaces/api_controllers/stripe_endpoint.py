@@ -185,6 +185,12 @@ async def handle_invoice_paid(
             f"BillingRecord created for tenant {tenant_id} – invoice {invoice['id']}"
         )
     except Exception as e:
+        # Re-raise after logging: unlike an unhandled event type (which
+        # is deliberately acknowledged with 200), a failed save of a
+        # handled invoice.paid event must surface as a non-2xx response
+        # so Stripe retries the delivery; swallowing it here returned
+        # 200 "success" while the billing record was never persisted.
         logger.exception(
             f"Failed to save BillingRecord for invoice {invoice['id']}: {e}"
         )
+        raise
