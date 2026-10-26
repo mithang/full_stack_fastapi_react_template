@@ -36,13 +36,21 @@ class AuditLogsReadMiddleware(BaseHTTPMiddleware):
             )
         
             entity = self._get_entity_name(request.url.path)
-            await capture_audit_log(AuditLogDto(
-                action="read",
-                entity=entity if entity != "Unknown" else "AuditLog",
-                user_id=str(current_user.id) if current_user else "Anonymous",
-                changes={"info": f"Read access to {request.url.path}"},
-                tenant_id=str(current_user.tenant_id) if current_user and current_user.tenant_id else None
-            ))
+            # Fail open: the audit write is a plain file append with no
+            # error handling of its own, so a failure here (disk full,
+            # read-only temp dir) must not turn the read itself into
+            # a 500 — the handler runs either way, mirroring the
+            # Redis cache middleware's fail-open behaviour.
+            try:
+                await capture_audit_log(AuditLogDto(
+                    action="read",
+                    entity=entity if entity != "Unknown" else "AuditLog",
+                    user_id=str(current_user.id) if current_user else "Anonymous",
+                    changes={"info": f"Read access to {request.url.path}"},
+                    tenant_id=str(current_user.tenant_id) if current_user and current_user.tenant_id else None
+                ))
+            except Exception as e:
+                logger.warning(f"Audit log write failed, continuing without it: {e}")
     
         
         return await call_next(request)
