@@ -56,7 +56,11 @@ class SSOSettingsService:
         for sso in ssos:
             if sso.provider == provider_name:
                 return sso
-        raise ValueError(f"SSO provider '{provider_name}' not found or not enabled.")
+        # ValueError is not an ApiBaseException, so it escaped the central
+        # handler as a raw 500 when a user clicked an SSO provider that
+        # has no settings row; NotFoundException (already imported) maps
+        # to 404 via the handler, matching get_sso_settings_by_id above.
+        raise NotFoundException("SSOSettings", provider_name)
     
     async def get_only_enabled_providers(self) -> SSOSettingsListDto:
         ssos: List[SSOSettings] = await self.sso_settings_provider_repository.list_sso_settings()
