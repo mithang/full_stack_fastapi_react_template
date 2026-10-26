@@ -344,7 +344,11 @@ export function CheckoutOverview() {
                 </Button>
             </div>
 
-            {/* Summary Cards */}
+            {/* Summary Cards: Total is the global count from the backend,
+            but the three category cards count only the current page's
+            records (the list endpoint returns one page, and there is no
+            backend aggregate) — the "(this page)" labels say so, rather
+            than letting the categories look like a breakdown of Total. */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <Card>
                     <CardContent className="pt-6">
@@ -361,7 +365,7 @@ export function CheckoutOverview() {
                     <CardContent className="pt-6">
                         <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-sm text-muted-foreground">Succeeded</p>
+                                <p className="text-sm text-muted-foreground">Succeeded (this page)</p>
                                 <p className="text-2xl font-bold mt-1 text-green-600">
                                     {/* "paid" belongs here too: it is a success
                                     outcome (see the badge above), but was
@@ -379,7 +383,7 @@ export function CheckoutOverview() {
                     <CardContent className="pt-6">
                         <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-sm text-muted-foreground">Pending</p>
+                                <p className="text-sm text-muted-foreground">Pending (this page)</p>
                                 <p className="text-2xl font-bold mt-1 text-yellow-600">
                                     {/* requires_payment_method / requires_action are
                                     awaiting-action checkout states, but were counted
@@ -398,7 +402,7 @@ export function CheckoutOverview() {
                     <CardContent className="pt-6">
                         <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-sm text-muted-foreground">Failed/Canceled</p>
+                                <p className="text-sm text-muted-foreground">Failed/Canceled (this page)</p>
                                 <p className="text-2xl font-bold mt-1 text-red-600">
                                     {
                                         records.filter((r) => r.status === "payment_failed" || r.status === "canceled")
