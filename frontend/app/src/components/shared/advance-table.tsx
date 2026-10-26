@@ -60,6 +60,13 @@ export default function AdvanceTable<T>({
         if (value === "all") {
             searchParams.delete("action");
         }
+        // A new filter starts a new result set, so drop the page offset:
+        // keeping ?skip= from the old filter could land past the end of
+        // the filtered results and show an empty table even though
+        // matching records exist on page 1. All table providers already
+        // default a missing skip to 0, and the page sync effect below
+        // follows the URL back to page 1.
+        searchParams.delete("skip");
         setSearchParams(searchParams);
     }
     const pageLimit = useMemo(
