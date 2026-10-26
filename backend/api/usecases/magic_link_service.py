@@ -1,5 +1,6 @@
 from beanie import PydanticObjectId
 from fastapi_mail import MessageType
+from pydantic import ValidationError
 from api.common.exceptions import ApiBaseException
 from api.common.utils import get_email_sharing_link, get_host_main_domain_name
 from api.domain.dtos.user_dto import UserDto
@@ -57,7 +58,14 @@ class EmailMagicLinkService:
         Returns:
             bool: True if the token is valid, False otherwise.
         """
-        record = await self.user_magic_link_repo.single_or_none(user_id=PydanticObjectId(user_id), token=token)
+        try:
+            record = await self.user_magic_link_repo.single_or_none(user_id=PydanticObjectId(user_id), token=token)
+        except ValidationError:
+            # A malformed user_id cannot match any stored record, so the
+            # link is invalid — not a 500. The endpoint then raises its
+            # Forbidden "Invalid or expired magic link." error, matching
+            # the wrong-shape-token handling in jwt_token_service.py.
+            return False
         print("Record:", record)
         if record is None:
             return False
