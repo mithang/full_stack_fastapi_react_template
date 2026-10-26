@@ -141,9 +141,28 @@ async def stripe_webhook(
         logger.error(f"Unexpected error constructing event: {e}")
         raise HTTPException(status_code=400, detail="Webhook error")
 
-    # Extract the event type and object
-    event_type = event["type"]
-    data_object = event["data"]["object"]
+    # Extract the event type and object. Guard the envelope the same
+    # way the invoice conversion guards malformed invoice fields: a
+    # signature-verified event with a missing type/data/object would
+    # otherwise raise KeyError/TypeError here, outside any try/catch,
+    # surfacing as a 500 that Stripe retries forever — and a retry
+    # redelivers the identical payload, so it can never succeed. Such
+    # an event is acknowledged with 200 (as unhandled types are below)
+    # and logged, instead of looping forever.
+    try:
+        event_type = event["type"]
+        data_object = event["data"]["object"]
+        if data_object is None:
+            # A null object is malformed the same way a missing one
+            # is: dispatching it would crash handle_invoice_paid on
+            # .get, again as a retried 500. (No isinstance check here:
+            # a Stripe event object need not be a plain dict.)
+            raise TypeError("event data object is None")
+    except (KeyError, TypeError, AttributeError):
+        logger.warning("Ignoring malformed webhook event envelope")
+        return JSONResponse(
+            status_code=200, content={"message": "Malformed event envelope"}
+        )
 
     # ------------------------------------------------------------------
     # Handle relevant Stripe events
