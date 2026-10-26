@@ -333,8 +333,12 @@ class BillingRecordService:
         # the host handler and use search(), which returns model docs;
         # convert the string user id to PydanticObjectId, as the stored
         # user_id field is an ObjectId (repo convention elsewhere).
+        # Scope the search to tenant records, mirroring the host-cancel
+        # handler's scope filter: host records currently carry no user_id,
+        # so this changes nothing today, but a host record must never be
+        # canceled by a tenant cancel even if it ever gains a user_id.
         billing_records = await self.billing_record_repository.search(
-            {"user_id": PydanticObjectId(user_id), "status": "pending"}
+            {"user_id": PydanticObjectId(user_id), "scope": "tenant", "status": "pending"}
         )
         for record in billing_records:
             record.status = "canceled"
