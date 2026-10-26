@@ -123,6 +123,18 @@ not_allowed_cache_paths = [
     # is the only way to keep the list live. Endswith matching is exact
     # here: no other GET path ends in "/checkouts/all".
     "/api/v1/checkouts/all",
+    # Live Stripe list: list_invoices reads the tenant's invoices
+    # fresh from Stripe on every call, and the invoices page fetches
+    # it on load. Invoices are created/paid by other users' payments
+    # and Stripe events, not by the viewing billing admin's mutations,
+    # and a mutation clears only the acting user's cache keys, so a
+    # viewing billing admin would otherwise keep a list up to the TTL
+    # old — a just-paid invoice still shown as open while they review
+    # billing. Same stale-viewer class as the audit-log/checkout
+    # bypasses, not an enforcement fix: payment handlers read/write
+    # fresh. Full path confirmed as /api/v1 + router prefix /invoices
+    # + GET "/" (api/__init__.py:130,157; invoice_endpoint.py:14,22).
+    "/api/v1/invoices/",
     # Tenant storage settings list, fetched by the SettingsProvider
     # on load and on tenant change (and after the viewing admin's own
     # configure/reset, which clears only their own cache keys). A
