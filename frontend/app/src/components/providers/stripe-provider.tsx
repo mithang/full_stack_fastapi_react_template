@@ -49,9 +49,26 @@ export function StripeProvider({ children }: StripeProviderProps) {
         try {
             const setting = await getApiClient(accessToken).stripe.getStripeSettingsApiV1ConfigurationsStripeGet();
             setConfiguredStripeSetting(setting);
+            // A successful fetch supersedes any earlier failure: clear
+            // the failure flags, otherwise a single transient outage
+            // would hide the current-configuration card and keep the
+            // billing pages on their error state for the rest of the
+            // session (neither flag was ever reset on success).
+            setShowConfigureStripe(false);
+            setStripeConfigurationError(false);
         } catch (error) {
             console.error("Error fetching configured Stripe setting:", error);
-            setShowConfigureStripe(true);
+            // A backend response (ApiError, which carries a numeric
+            // status) means the server answered — e.g. no setting
+            // stored yet — so showing the configuration form is
+            // correct. A failure with no status is a network error,
+            // not an unconfigured Stripe, and must not replace an
+            // already loaded configuration with the form; the error
+            // flag still drives the billing pages' error state.
+            const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            if (hasStatus) {
+                setShowConfigureStripe(true);
+            }
             setStripeConfigurationError(true);
         } finally {
             setLoading(false);
