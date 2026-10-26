@@ -2,6 +2,7 @@ from datetime import timedelta
 from typing import Literal
 
 import jwt
+from pydantic import ValidationError
 from api.common.dtos.token_dto import AccessTokenDto, ActivationTokenPayloadDto, RefreshTokenDto, RefreshTokenDto, RefreshTokenPayloadDto, TokenPayloadDto, TokenSetDto, VerifyEmailTokenPayloadDto
 from api.common.utils import get_logger, get_utc_now
 from api.common.security import ACCESS_TOKEN_EXPIRE_MINUTES, ACTIVATION_TOKEN_EXPIRE_HOURS, ALGORITHM, JWT_SECRET, REFRESH_ALGORITHM, REFRESH_TOKEN_EXPIRE_DAYS, REFRESH_TOKEN_SECRET
@@ -72,6 +73,13 @@ class JwtTokenService:
             return None
         except jwt.InvalidTokenError:
             logger.error("Invalid token.")
+            return None
+        except ValidationError:
+            # A token with a valid signature but the wrong payload shape (e.g. an
+            # activation token presented as a Bearer access token) is not a valid
+            # session token: treat it as invalid (401 via the caller) instead of
+            # letting the validation error escape as a 500.
+            logger.error("Token payload has an invalid shape.")
             return None
 
     async def verify_activation_token(self, token: str) -> VerifyEmailTokenPayloadDto:
