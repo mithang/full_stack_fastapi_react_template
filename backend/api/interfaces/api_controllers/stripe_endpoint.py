@@ -75,7 +75,9 @@ async def get_stripe_settings(
 
 
 SUPPORTED_EVENTS = {
-    "invoice.paid": lambda obj, svc: handle_invoice_paid(obj, svc),
+    "invoice.paid": lambda obj, svc, tenant_id=None: handle_invoice_paid(
+        obj, svc, tenant_id
+    ),
 }
 
 
@@ -158,7 +160,16 @@ async def stripe_webhook(
             status_code=200, content={"message": "Unhandled event type"}
         )
 
-    await SUPPORTED_EVENTS.get(event_type, None)(data_object, billing_record_service)
+    # Thread the webhook's own tenant context through: the secret above
+    # was already selected from this tenant's stored settings, so a
+    # tenant-scoped delivery belongs to that tenant even when the invoice
+    # carries no tenant_id in its metadata.
+    request_tenant_id = getattr(request.state, "tenant_id", None)
+    await SUPPORTED_EVENTS.get(event_type, None)(
+        data_object,
+        billing_record_service,
+        str(request_tenant_id) if request_tenant_id else None,
+    )
 
     return JSONResponse(status_code=200, content={"status": "success"})
 
@@ -166,8 +177,15 @@ async def stripe_webhook(
 async def handle_invoice_paid(
     invoice: dict[str, Any],
     billing_record_service: BillingRecordService,
+    tenant_id: str | None = None,
 ) -> None:
-    tenant_id = invoice.get("metadata", {}).get("tenant_id")
+    # Invoice metadata wins when present; otherwise fall back to the
+    # tenant context the webhook itself arrived under (a tenant delivery
+    # was verified against that tenant's stored secret, so attributing
+    # it to the host scope merely because the invoice metadata lacks
+    # tenant_id would misattribute the record). A null metadata value
+    # falls back the same way instead of raising AttributeError.
+    tenant_id = (invoice.get("metadata") or {}).get("tenant_id") or tenant_id
 
     billing_record = await billing_record_service.from_stripe_invoice_paid(
         invoice=invoice, scope="tenant" if tenant_id else "host", tenant_id=tenant_id
