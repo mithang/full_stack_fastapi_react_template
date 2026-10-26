@@ -135,6 +135,20 @@ not_allowed_cache_paths = [
     # fresh. Full path confirmed as /api/v1 + router prefix /invoices
     # + GET "/" (api/__init__.py:130,157; invoice_endpoint.py:14,22).
     "/api/v1/invoices/",
+    # Tenant user list, fetched by the UsersProvider on load and on
+    # page change. Users are created, updated, deleted, and assigned
+    # roles by other admins, and a mutation clears only the acting
+    # admin's cache keys, so a viewing admin would otherwise keep a
+    # list up to the TTL old — a just-created user missing from the
+    # list, or a just-deactivated user still shown as active while
+    # they review it. Same stale-viewer class as the audit-log/
+    # checkout/invoices bypasses, not an enforcement fix: user
+    # mutations read/write fresh. The query string (skip/limit) is
+    # part of the cache key, so this bypass is the only way to keep
+    # the list live. Endswith matching keeps the detail route
+    # (/users/{user_id}) and the profile-image route cached, since
+    # neither path ends in "/api/v1/users/".
+    "/api/v1/users/",
     # Tenant storage settings list, fetched by the SettingsProvider
     # on load and on tenant change (and after the viewing admin's own
     # configure/reset, which clears only their own cache keys). A
