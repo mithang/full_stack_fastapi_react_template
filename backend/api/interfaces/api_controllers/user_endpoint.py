@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, File, UploadFile, status
 from api.common.exceptions import ForbiddenException, InvalidOperationException
-from api.common.utils import get_logger
+from api.common.utils import get_logger, is_tenancy_enabled
 from api.domain.dtos.user_dto import CreateUserDto, CreateUserResponseDto, UpdateUserDto, UserDto, UserListDto, UserProfileImageUpdateDto, UserRoleUpdateRequestDto
 from api.domain.enum.permission import Permission
 from api.interfaces.security.role_checker import check_permissions_for_current_role
@@ -60,13 +60,37 @@ async def get_user(
 async def update_user(
     user_id: str,
     data: UpdateUserDto,
+    current_user: CurrentUser,
     service: UserService = Depends(get_user_service),
+    role_service: RoleService = Depends(get_role_service),
     _bool: bool = Depends(check_permissions_for_current_role(
         required_permissions=[Permission.USER_READ_AND_WRITE_ONLY, Permission.USER_SELF_READ_AND_WRITE_ONLY],
         allow_self_access=True)
     )
 
 ):
+    # Role changes must go through the dedicated assign/remove endpoints'
+    # permission (USER_ROLE_ASSIGN_OR_REMOVE_ONLY). UpdateUserDto carries
+    # role_id and the service applies it, so without this check a caller
+    # with only self or user-write access could escalate by PUTting their
+    # own record (or another user's) with an admin role id, bypassing
+    # the self-action guards on assign_role/remove_role. A no-op (the
+    # role id already on the target) is allowed so full-DTO clients
+    # echoing the current role are not broken.
+    if data.role_id is not None:
+        caller_permissions = []
+        if current_user.role_id is not None:
+            caller_role = await role_service.get_role_by_id(role_id=str(current_user.role_id))
+            caller_permissions = caller_role.permissions or []
+        can_assign_roles = (
+            Permission.FULL_ACCESS in caller_permissions
+            or Permission.USER_ROLE_ASSIGN_OR_REMOVE_ONLY in caller_permissions
+            or (is_tenancy_enabled() and Permission.HOST_MANAGE_TENANTS in caller_permissions)
+        )
+        if not can_assign_roles:
+            existing_user = await service.get_user_by_id(user_id)
+            if str(existing_user.role_id) != data.role_id:
+                raise ForbiddenException("Only users with role assignment permission can change a user's role.")
     user_doc = await service.update_user(user_id=user_id, user_data=data)
     serialized_user = await user_doc.to_serializable_dict()
     return UserDto(**serialized_user)
