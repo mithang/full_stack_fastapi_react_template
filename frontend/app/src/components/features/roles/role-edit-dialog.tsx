@@ -58,12 +58,6 @@ export function RoleEditDialog({ open, onDismiss }: RoleEditDialogProps) {
                 position: "top-right",
                 richColors: true,
             });
-            form.reset();
-            toast.success("Role updated successfully!", {
-                duration: 5000,
-                position: "top-right",
-                richColors: true,
-            });
             onDismiss();
 
         } catch (error) {
