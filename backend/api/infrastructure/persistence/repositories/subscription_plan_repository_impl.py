@@ -16,15 +16,41 @@ class SubscriptionPlanRepository(BaseRepository[SubscriptionPlan], AuditLogRepos
         return await super().get(id=subscription_id)
     
     async def get_subscription_plan_by_user_id(self, user_id: str) -> SubscriptionPlan | None:
-        return await super().single_or_none(user_id=PydanticObjectId(user_id))
+        try:
+            user_oid = PydanticObjectId(user_id)
+        except Exception:
+            # A malformed id (e.g. a tampered path param) cannot match
+            # any plan, so treat it as "not found" instead of escaping
+            # as a 500; callers already handle None. Same broad catch
+            # as BaseRepository.get: bson raises InvalidId, pydantic
+            # paths raise ValidationError.
+            return None
+        return await super().single_or_none(user_id=user_oid)
 
     async def get_subscription_plans_by_tenant(self, tenant_id: str) -> SubscriptionPlan | None:
-        return await super().single_or_none(tenant_id=PydanticObjectId(tenant_id))
-    
+        try:
+            tenant_oid = PydanticObjectId(tenant_id)
+        except Exception:
+            # As above: a malformed tenant_id (e.g. a tampered
+            # activate_trial_plan path param) cannot match any plan.
+            return None
+        return await super().single_or_none(tenant_id=tenant_oid)
+
     async def create_subscription_plan(self, subscription_plan: CreateSubscriptionPlanDto) -> PydanticObjectId | None:
+        try:
+            tenant_oid = PydanticObjectId(subscription_plan.tenant_id) if subscription_plan.tenant_id else None
+            user_oid = PydanticObjectId(subscription_plan.user_id) if subscription_plan.user_id else None
+        except Exception:
+            # DTO ids are plain strs, so a malformed tenant_id (e.g.
+            # from the activate_trial_plan path param) would otherwise
+            # escape as a 500 before anything is created. Return None
+            # instead; the service maps None to InvalidOperationException
+            # ("Failed to create trial subscription plan."), a clean
+            # mapped error, and no plan row is created.
+            return None
         subcription = SubscriptionPlan(
-            tenant_id=PydanticObjectId(subscription_plan.tenant_id) if subscription_plan.tenant_id else None,
-            user_id=PydanticObjectId(subscription_plan.user_id) if subscription_plan.user_id else None,
+            tenant_id=tenant_oid,
+            user_id=user_oid,
             plan_id=subscription_plan.plan_id,
             is_trial=subscription_plan.is_trial,
             actor=subscription_plan.actor,
