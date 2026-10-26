@@ -211,6 +211,22 @@ not_allowed_cache_paths = [
     # router prefix /prices + GET "/" (api/__init__.py:130,153;
     # prices_endpoint.py:15,23).
     "/api/v1/prices/",
+    # Live Stripe list: list_plans reads the tenant's (or host's)
+    # plans fresh from Stripe on every call (plans.list_async), and
+    # the billing overview page fetches it on load. Plans are
+    # created, updated, and deleted by other admins (or in the
+    # Stripe dashboard), and a mutation clears only the acting
+    # admin's cache keys, so a viewing billing admin would
+    # otherwise keep a list up to the TTL old — a just-created
+    # plan missing from the billing overview, or a just-deleted
+    # plan still offered while they review it. Same stale-viewer
+    # class as the products/prices bypasses above, not an
+    # enforcement fix: plan mutations read/write fresh. Endswith
+    # matching keeps the detail route (/plans/{plan_id}) cached,
+    # since it does not end in "/api/v1/billing/plans". Full path
+    # confirmed as /api/v1 + router prefix /billing + GET "/plans"
+    # (api/__init__.py:130,154; billing_endpoint.py:13,16).
+    "/api/v1/billing/plans",
 ]
 
 
