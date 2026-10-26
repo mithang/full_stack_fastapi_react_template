@@ -381,7 +381,13 @@ export function CheckoutOverview() {
                             <div>
                                 <p className="text-sm text-muted-foreground">Pending</p>
                                 <p className="text-2xl font-bold mt-1 text-yellow-600">
-                                    {records.filter((r) => r.status === "pending" || r.status === "incomplete").length}
+                                    {/* requires_payment_method / requires_action are
+                                    awaiting-action checkout states, but were counted
+                                    by none of the three category cards, so they
+                                    vanished from the breakdown exactly as "paid"
+                                    did before iteration 150 — they belong with the
+                                    pending (not yet completed) outcomes. */}
+                                    {records.filter((r) => r.status === "pending" || r.status === "incomplete" || r.status === "requires_payment_method" || r.status === "requires_action").length}
                                 </p>
                             </div>
                             <Clock className="h-8 w-8 text-yellow-600" />
