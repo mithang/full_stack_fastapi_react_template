@@ -625,6 +625,13 @@ export function AIChat() {
     // send is blocked, e.g. no model selected) instead of just sending.
     const handleKeyPress = (e: React.KeyboardEvent) => {
         if (e.key === 'Enter' && !e.shiftKey) {
+            // Do not send while an IME composition is in progress:
+            // during composition (e.g. Vietnamese/CJK input) Enter
+            // confirms the composed character, and sending on it
+            // would submit a half-composed message and swallow the
+            // keystroke the IME needed. The next Enter, after
+            // composition ends, sends normally.
+            if (e.nativeEvent.isComposing) return
             e.preventDefault()
             sendMessage()
         }
