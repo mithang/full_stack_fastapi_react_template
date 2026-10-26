@@ -83,7 +83,16 @@ export function DashboardSidebar() {
                 { richColors: true, position: "top-right", description: "Redirecting to login..." });
         } catch (error) {
             console.error("Logout failed:", error);
-            toast.error("Logout failed. Please try again.", { richColors: true, position: "top-right" });
+            // A backend response (ApiError, which carries a numeric status)
+            // means the server answered and rejected the logout; a failure
+            // with no status is a network error, and the finally block below
+            // still signs the user out of this browser and navigates to
+            // /login — so reporting "Logout failed. Please try again." would
+            // wrongly tell them they are still signed in.
+            const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            toast.error(hasStatus
+                ? "Logout failed. Please try again."
+                : "Unable to reach the server. You have been signed out of this browser.", { richColors: true, position: "top-right" });
         } finally {
             // Clear the in-memory session even if the API call failed:
             // navigation to /login already happens unconditionally, so
