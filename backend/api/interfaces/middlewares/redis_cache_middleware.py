@@ -85,7 +85,18 @@ class RedisCacheMiddleware(BaseHTTPMiddleware):
             auth_header = request.headers["authorization"]
             token = auth_header[7:] if auth_header.lower().startswith("bearer ") else auth_header
 
-        if any(request.url.path.endswith(path) for path in not_allowed_cache_paths) or token is None:
+        # Live-availability GET: /api/v1/tenants/check_subdomain/{subdomain}
+        # returns whether a subdomain is free right now, and the frontend
+        # (TenantsService, via ApiClient with a bearer token when logged
+        # in) calls it while the user types. A cached verdict would lie
+        # for the rest of the TTL — a just-freed name still shown as
+        # taken, or a just-taken name still shown as free, with the
+        # submission then failing server-side. It cannot go in
+        # not_allowed_cache_paths: matching there is endswith, and the
+        # variable subdomain is the trailing segment, so no list entry
+        # can match — the same reason "/check_dns" is a suffix entry
+        # (there the tenant id leads, here the variable trails).
+        if any(request.url.path.endswith(path) for path in not_allowed_cache_paths) or "/check_subdomain/" in request.url.path or token is None:
             logger.debug(f"Bypassing cache for path: {request.url.path}")
             return await call_next(request)
             
