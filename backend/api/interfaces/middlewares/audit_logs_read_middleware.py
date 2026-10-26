@@ -38,7 +38,14 @@ class AuditLogsReadMiddleware(BaseHTTPMiddleware):
                 return await call_next(request)
             token = None
             if "authorization" in request.headers:
-                token = request.headers["authorization"].replace("Bearer ", "")
+                # The auth scheme is case-insensitive (RFC 7235), and
+                # replace() would strip every "Bearer " occurrence, so
+                # strip only a leading scheme: a "bearer <token>" header
+                # from a non-browser client previously reached user
+                # resolution as "bearer <token>", failed, and had its
+                # reads misattributed to "Anonymous".
+                auth_header = request.headers["authorization"]
+                token = auth_header[7:] if auth_header.lower().startswith("bearer ") else auth_header
             user_service = get_user_service()
             jwt_service = get_jwt_token_service()
             role_service = get_role_service()
