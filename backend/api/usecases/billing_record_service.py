@@ -532,6 +532,23 @@ class BillingRecordService:
         if not isinstance(invoice_id, str) or not invoice_id:
             invoice_id = ""
 
+        # Guard the subscription the same way the customer above guards
+        # a malformed value: invoice.get("subscription") is passed
+        # straight to stripe_subscription_id (Optional[str]), so an
+        # expanded subscription object (a dict, when the invoice was
+        # fetched with expand[]) or a null/non-string value would fail
+        # BillingRecord validation — outside the save try/catch,
+        # turning a valid invoice.paid delivery into a 500 that Stripe
+        # retries forever. An expanded object keeps its id (the useful
+        # linkage); anything else malformed falls back to None and the
+        # paid record is still persisted, as for a record with no
+        # customer at all.
+        stripe_subscription_id = invoice.get("subscription")
+        if isinstance(stripe_subscription_id, dict):
+            stripe_subscription_id = stripe_subscription_id.get("id")
+        if not isinstance(stripe_subscription_id, str) or not stripe_subscription_id:
+            stripe_subscription_id = None
+
         # Build Object
         return BillingRecord(
             scope=scope,
@@ -542,7 +559,7 @@ class BillingRecordService:
             currency=currency.upper(),
             amount=amount_paid,
             stripe_customer_id=stripe_customer_id,
-            stripe_subscription_id=invoice.get("subscription"),
+            stripe_subscription_id=stripe_subscription_id,
             stripe_session_id=None,
             product_id=product_id,
             price_id=price_id,
