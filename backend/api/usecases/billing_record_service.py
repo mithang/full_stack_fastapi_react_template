@@ -49,8 +49,14 @@ class BillingRecordService:
             return None, None
 
         # New Stripe format
-        details = pricing["price_details"]
-        return details.get("price"), details.get("product")
+        details = pricing.get("price_details")
+        if isinstance(details, dict):
+            return details.get("price"), details.get("product")
+        # Legacy line-item format: no price_details wrapper, so the price
+        # object itself carries the id/product. Indexing price_details
+        # unconditionally raised KeyError here, turning a valid
+        # invoice.paid delivery into a 500 that Stripe retries forever.
+        return pricing.get("id"), pricing.get("product")
 
     def _extract_tenant_id(self, line: dict[str, Any], scope: str) -> Optional[str]:
         if scope != "tenant":
