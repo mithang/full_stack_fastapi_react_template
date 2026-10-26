@@ -75,6 +75,16 @@ not_allowed_cache_paths = [
     # admin's. The query string (filter) is part of the cache key, so
     # this bypass is the only way to keep the metrics live.
     "/api/v1/dashboard/",
+    # Append-only security list: list_audit_logs reads the tenant's
+    # audit entries fresh on every call, and the audit-log page
+    # fetches it on load (and on page/filter change). Audit entries
+    # are created by other users' actions, and a mutation clears only
+    # the acting user's cache keys, so a viewing admin would
+    # otherwise keep a list up to the TTL old — newest security
+    # events (logins, permission changes) hidden while they review
+    # it. The query string (limit/skip/action) is part of the cache
+    # key, so this bypass is the only way to keep the list live.
+    "/api/v1/audit-logs/",
 ]
 
 
