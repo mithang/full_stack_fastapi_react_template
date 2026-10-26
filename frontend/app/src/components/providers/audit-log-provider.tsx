@@ -1,6 +1,7 @@
 import { AuditLogListDto } from "@/api";
 import { createContext, useContext, useEffect, useState } from "react";
 import { useAuthContext } from "./auth-provider";
+import { useAppConfig } from "./app-config-provider";
 import { extractErrorMessage, getApiClient } from "@/lib/utils";
 import { IResponseData } from "../shared/iresponse-data.inteface";
 import { useSearchParams } from "react-router";
@@ -36,6 +37,7 @@ const AuditLogsContext = createContext<AuditLogsContextProps>(initialState);
 export function AuditLogProvider({ children }: AuditLogsProviderProps) {
     const [logs, setLogs] = useState<IResponseData<AuditLogType>>(initialState.data);
     const { accessToken, can } = useAuthContext();
+    const { current_tenant } = useAppConfig();
     const [searchParams] = useSearchParams();
     const canViewOrDownloadAuditLogs = can("audit_logs:view_only") || can("audit_logs:download") || can("full:access");
     const canDownloadAuditLogs = can("audit_logs:download") || can("full:access");
@@ -144,7 +146,15 @@ export function AuditLogProvider({ children }: AuditLogsProviderProps) {
     useEffect(() => {
         if (!accessToken || !canViewOrDownloadAuditLogs) return;
         fetchAuditLogs();
-    }, [accessToken, searchParams, canViewOrDownloadAuditLogs]);
+        // current_tenant is a dep, not a gate: audit logs are tenant-DB
+        // scoped (the backend picks the tenant database from the
+        // X-Tenant-ID header, which the client reads from the stored
+        // tenant that AppConfig sets when current_tenant arrives), so a
+        // fetch that ran before the tenant loaded must re-run once the
+        // tenant is known, mirroring the roles/users providers' fix.
+        // fetchAuditLogs is idempotent, so the extra fetch on tenant
+        // arrival/change is safe.
+    }, [accessToken, searchParams, canViewOrDownloadAuditLogs, current_tenant]);
 
     if (!canViewOrDownloadAuditLogs) {
         return <NoPermissionToAccessResource message='Audit Logs' />;
