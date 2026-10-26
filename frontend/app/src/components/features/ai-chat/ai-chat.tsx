@@ -458,6 +458,25 @@ export function AIChat() {
             if (shouldRefresh) {
                 await fetchAllSessions()
 
+                // Drop the one-shot new_session flag from the URL now
+                // that the first exchange is complete: a reload on
+                // ?session_id=...&new_session=true skips the history
+                // fetch and shows an empty chat even though the exchange
+                // is saved server-side. This must be a replaceState, not
+                // setSearchParams: a router navigation would re-run the
+                // history effect immediately, and the backend persists
+                // the exchange in a post-response background task, so
+                // that refetch would likely return empty history and
+                // overwrite the just-streamed exchange. replaceState
+                // changes only the URL — no effect re-runs, displayed
+                // messages untouched — so the next reload loads the
+                // history normally. The stale flag in router state is
+                // harmless (the effect skips fetching while it is set,
+                // and the next session switch / clearChat replaces the
+                // params entirely).
+                const url = new URL(window.location.href)
+                url.searchParams.delete("new_session")
+                window.history.replaceState(null, "", url)
             }
 
         } catch (error) {
