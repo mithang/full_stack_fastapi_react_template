@@ -3,7 +3,7 @@ from beanie import PydanticObjectId
 from pydantic import EmailStr, ValidationError
 from api.common.exceptions import InvalidOperationException
 from api.common.utils import get_logger
-from api.core.exceptions import EmailAlreadyExistsException, UserNotFoundException
+from api.core.exceptions import EmailAlreadyExistsException, RoleNotFoundException, UserNotFoundException
 from api.domain.dtos.dashboard_dto import TimeSeriesDto
 from api.domain.entities.user import User
 from api.domain.dtos.user_dto import CreateUserDto, UpdateUserDto, UserDto, UserListDto, UserResendActivationEmailRequestDto
@@ -81,7 +81,22 @@ class UserService:
         existing.first_name = user_data.first_name or existing.first_name
         existing.last_name = user_data.last_name or existing.last_name
         existing.gender = user_data.gender or existing.gender
-        existing.role_id = PydanticObjectId(user_data.role_id) if user_data.role_id else existing.role_id
+        if user_data.role_id:
+            try:
+                existing.role_id = PydanticObjectId(user_data.role_id)
+            except Exception:
+                # role_id arrives as a plain str (UpdateUserDto /
+                # UserRoleUpdateRequestDto do not validate it as an
+                # ObjectId), so a malformed value from an assign-role
+                # request raised InvalidId inside PydanticObjectId()
+                # and escaped as a 500 instead of the clean 404 the
+                # role lookup itself returns for an unknown id. A
+                # malformed id cannot match any role, so report it
+                # the same way; the catch is broad on purpose, as in
+                # BaseRepository.get: bson raises InvalidId while
+                # pydantic-validated paths raise ValidationError.
+                # A None role_id still keeps the existing role.
+                raise RoleNotFoundException(role_id=user_data.role_id)
         doc = await existing.to_serializable_dict()
         doc["image_url"] = user_data.image_url or existing.image_url
         logger.info(f"Updating user {user_id} with data: {doc}")
