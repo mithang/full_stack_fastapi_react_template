@@ -22,8 +22,13 @@ const columns = [
             const isUserSelfUpdate = can("user:self_read_and_write_only");
             const isAdmin = can("full:access");
             const shouldAllowUserActions = isAdmin || isUserSelfUpdate;
-            const shouldAllowDeleteAction = can("user:delete_only") || isAdmin && user?.id !== tableId;
-            const canUpdateRoles = can("role:read_and_write_only") || isAdmin && user?.id !== tableId;
+            // Parenthesised so the self-exclusion applies to every
+            // permission holder, not just admins: && binds tighter than
+            // ||, so the unparenthesised form let a delete-only or
+            // role-write holder act on their own row (self-delete, or
+            // assigning themselves a new role) while admins were barred.
+            const shouldAllowDeleteAction = (can("user:delete_only") || isAdmin) && user?.id !== tableId;
+            const canUpdateRoles = (can("role:read_and_write_only") || isAdmin) && user?.id !== tableId;
 
 
             const actionOptions: ActionOption<typeof c.row.original> = {
