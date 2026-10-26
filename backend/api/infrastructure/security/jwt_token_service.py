@@ -102,6 +102,13 @@ class JwtTokenService:
         except jwt.InvalidTokenError:
             logger.error("Invalid activation token")
             raise InvalidOperationException("Invalid activation token")
+        except ValidationError:
+            # A correctly signed token with the right type but a wrong payload
+            # shape (missing/invalid user_id or email) is not a usable token:
+            # report it as invalid instead of letting the validation error
+            # escape as a 500, mirroring decode_token().
+            logger.error("Activation token payload has an invalid shape")
+            raise InvalidOperationException("Invalid activation token")
 
 
     async def verify_password_reset_token(self, token: str, jwt_secret: str) -> VerifyEmailTokenPayloadDto:
@@ -125,6 +132,12 @@ class JwtTokenService:
         except jwt.InvalidTokenError:
             logger.error("Invalid password reset token")
             raise InvalidOperationException("Invalid password reset token")
+        except ValidationError:
+            # Same wrong-shape guard as verify_activation_token: a signed
+            # token with the right type but missing/invalid user_id or email
+            # is invalid, not a 500.
+            logger.error("Password reset token payload has an invalid shape")
+            raise InvalidOperationException("Invalid password reset token")
     
     async def verify_change_email_token(self, token: str) -> VerifyEmailTokenPayloadDto:
         """
@@ -146,6 +159,12 @@ class JwtTokenService:
             raise InvalidOperationException("Change email token has expired")
         except jwt.InvalidTokenError:
             logger.error("Invalid change email token")
+            raise InvalidOperationException("Invalid change email token")
+        except ValidationError:
+            # Same wrong-shape guard as verify_activation_token: a signed
+            # token with the right type but missing/invalid user_id or email
+            # is invalid, not a 500.
+            logger.error("Change email token payload has an invalid shape")
             raise InvalidOperationException("Invalid change email token")
 
 
