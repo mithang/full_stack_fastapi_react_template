@@ -21,6 +21,7 @@ export function ManageUserRoles({ open, onDismiss, userId }: ManageUserRolesProp
     const [roles, setRoles] = useState<RoleDto[]>([]);
     const [query, setQuery] = useState("");
     const [selectedRole, setSelectedRole] = useState<RoleDto | null>(null);
+    const [searchError, setSearchError] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [isSearching, setIsSearching] = useState(false);
     const { accessToken } = useAuthContext();
@@ -34,6 +35,7 @@ export function ManageUserRoles({ open, onDismiss, userId }: ManageUserRolesProp
         }
 
         setIsSearching(true);
+        setSearchError(null);
         try {
             const roles = await apiClient.roles.searchRoleByNameApiV1RolesSearchByNameGet({
                 name: query
@@ -41,7 +43,15 @@ export function ManageUserRoles({ open, onDismiss, userId }: ManageUserRolesProp
             setRoles(roles);
         } catch (error) {
             console.error('Failed to fetch roles:', error);
+            // A backend response (ApiError, which carries a numeric
+            // status) means the server answered; a failure with no status
+            // is a network error, not an empty role list, and must not
+            // surface as "No roles found" for the searched name.
+            const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
             setRoles([]);
+            setSearchError(hasStatus
+                ? "Failed to search roles. Please try again."
+                : "Unable to reach the server. Check your connection and try again.");
         } finally {
             setIsSearching(false);
         }
@@ -96,6 +106,7 @@ export function ManageUserRoles({ open, onDismiss, userId }: ManageUserRolesProp
             setQuery("");
             setRoles([]);
             setSelectedRole(null);
+            setSearchError(null);
         }
     }, [open]);
 
@@ -135,7 +146,14 @@ export function ManageUserRoles({ open, onDismiss, userId }: ManageUserRolesProp
 
                     {/* Search Results */}
                     <div className="max-h-64 overflow-y-auto">
-                        {query && roles.length === 0 && !isSearching && (
+                        {searchError && !isSearching && (
+                            <div className="text-center py-8 text-red-500">
+                                <Users className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                                <p className="text-sm">{searchError}</p>
+                            </div>
+                        )}
+
+                        {!searchError && query && roles.length === 0 && !isSearching && (
                             <div className="text-center py-8 text-gray-500">
                                 <Users className="h-8 w-8 mx-auto mb-2 opacity-50" />
                                 <p className="text-sm">No roles found for "{query}"</p>
