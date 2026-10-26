@@ -29,7 +29,15 @@ class SSOSettingsService:
         await self.sso_settings_provider_repository.update_sso_settings(id, SSOSettings(redirect_uris=[redirect_uri]))
 
     async def update_sso_settings(self, id: str, sso_settings: UpdateSSOSettingsDto) -> None:
-        await self.sso_settings_provider_repository.update_sso_settings(id, SSOSettings(**sso_settings.model_dump(exclude_none=True, exclude_unset=True)))
+        # Repository.update() returns None when no document matches (and
+        # BaseRepository.get returns None for a malformed id), so an
+        # update of an unknown SSO settings id previously returned 204
+        # as if it had succeeded — the silent-success class fixed for
+        # tenant delete in iteration 364. Surface the mapped 404 instead,
+        # matching get_sso_settings_by_id() in this file.
+        updated = await self.sso_settings_provider_repository.update_sso_settings(id, SSOSettings(**sso_settings.model_dump(exclude_none=True, exclude_unset=True)))
+        if updated is None:
+            raise NotFoundException("SSOSettings", id)
 
     async def create_sso_settings(self, sso_settings: CreateSSOSettingsDto) -> str:
         redirect_uri = get_sso_redirect_uri(sso_settings.provider)
