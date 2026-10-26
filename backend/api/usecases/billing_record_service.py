@@ -230,7 +230,12 @@ class BillingRecordService:
         )
         if billing_record is None:
             raise BillingRecordNotFoundException(session_id)
-        if billing_record.tenant_id != tenant_id:
+        # billing_record.tenant_id is a PydanticObjectId while the caller
+        # passes current_user.tenant_id, a str (UserDto.tenant_id is str),
+        # so a raw != is always true and every host success finalisation
+        # raised a mismatch. Compare as strings, mirroring the tenant
+        # success handler's str(billing_record.user_id) check below.
+        if str(billing_record.tenant_id) != tenant_id:
             raise BillingRecordException(
                 f"Tenant ID mismatch for the billing record {session_id}"
             )
