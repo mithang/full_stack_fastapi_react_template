@@ -44,7 +44,15 @@ class BillingRecordService:
         # valid invoice.paid delivery into a 500 that Stripe retries
         # forever. Missing/null periods yield (None, None), as for a
         # period object without start/end.
-        period = line.get("period") or {}
+        # Guard a non-dict period the same way _extract_tenant_id guards
+        # its metadata lookups: an explicit null was already guarded,
+        # but a truthy non-dict value (e.g. a string) would still raise
+        # AttributeError here, outside the save try/catch, turning a
+        # valid invoice.paid delivery into a 500 that Stripe retries
+        # forever.
+        period = line.get("period")
+        if not isinstance(period, dict):
+            period = {}
         return period.get("start"), period.get("end")
 
     def _extract_pricing(
