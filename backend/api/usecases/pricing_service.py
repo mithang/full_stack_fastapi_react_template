@@ -1,5 +1,5 @@
 from api.common.utils import get_logger
-from api.core.exceptions import PricingException, PricingNotFoundException
+from api.core.exceptions import PricingException, PricingNotFoundException, ProductNotFoundException
 from api.domain.dtos.pricing_dto import CreatePricingDto, PricingListDto, UpdatePricingDto
 from api.domain.entities.stripe_settings import ScopeType
 from api.infrastructure.externals.stripe_resolver import StripeResolver
@@ -18,6 +18,13 @@ class PricingService:
             return await sc.v1.prices.create_async(params=price.model_dump())
         except Exception as e:
             logger.error(f"Error creating price: {e}")
+            # Only a Stripe 404 is a genuine not-found, mirroring
+            # create_plan in billing_record_service.py: a price create
+            # references exactly one id — its product — so a 404 means
+            # that product does not exist, not the price being created.
+            # Anything else is a pricing error, not a 404.
+            if getattr(e, "http_status", None) == 404:
+                raise ProductNotFoundException(price.product) from e
             raise PricingException(str(e))
 
     async def list_prices(self, scope: ScopeType) -> PricingListDto:
