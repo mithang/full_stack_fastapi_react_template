@@ -18,8 +18,21 @@ class ProductService:
         return ProductListDto(products=[product for product in result.data],  has_more=result.has_more)
     
     async def get_product_by_id(self, product_id: str,  scope: ScopeType) -> ProductDto:
-        sc = await self.stripe_resolver.get_stripe_client(scope=scope)
-        product = await sc.v1.products.retrieve_async(id=product_id)
+        try:
+            sc = await self.stripe_resolver.get_stripe_client(scope=scope)
+            product = await sc.v1.products.retrieve_async(id=product_id)
+        except Exception as e:
+            logger.error(f"Failed to retrieve product {product_id}: {str(e)}")
+            # The retrieve is unwrapped, so a Stripe failure reached the
+            # client as a raw 500 instead of a mapped API error — and
+            # an unknown product id was indistinguishable from an outage.
+            # Only a Stripe 404 (stripe errors carry http_status) is a
+            # genuine not-found, mirroring the get_plan fix; anything
+            # else — auth failure, Stripe outage, resolver error — is a
+            # product error (406 via ProductException).
+            if getattr(e, "http_status", None) == 404:
+                raise ProductNotFoundException(product_id) from e
+            raise ProductException(f"Failed to retrieve product {product_id}: {str(e)}") from e
         if not product:
             raise ProductNotFoundException(f"Product with ID {product_id} not found.")
         return ProductDto(id=product.id, name=product.name, description=product.description, active=product.active, tax_code=product.tax_code) 
