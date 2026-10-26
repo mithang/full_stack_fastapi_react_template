@@ -42,13 +42,34 @@ class TenantMiddleware(BaseHTTPMiddleware):
  
         if tenant_id is not None:
             logger.debug(f"Tenant ID found: {tenant_id}")
-            request.state.tenant_id = PydanticObjectId(tenant_id)
-            # Initialize the database for the tenant and initialize Beanie with tenant-specific models
-            await db.init_db(f"tenant_{tenant_id}", is_tenant=True)
-            logger.debug(f"Database initialized for tenant: tenant_{tenant_id}")
-            return await call_next(request)
-        
-        
+            try:
+                request.state.tenant_id = PydanticObjectId(tenant_id)
+                # Initialize the database for the tenant and initialize
+                # Beanie with tenant-specific models. This stays inside
+                # the try so a conversion failure skips the tenant-DB
+                # init and the return, instead of falling through to
+                # them with tenant_id=None.
+                await db.init_db(f"tenant_{tenant_id}", is_tenant=True)
+                logger.debug(f"Database initialized for tenant: tenant_{tenant_id}")
+                return await call_next(request)
+            except Exception:
+                # Guard a malformed X-Tenant-ID / tenant_id query value
+                # (e.g. a corrupted frontend localStorage entry) the
+                # same way the subdomain branch above guards an unknown
+                # tenant: PydanticObjectId() raises on a non-ObjectId
+                # string, and uncaught that turned every API call
+                # carrying the bad header into a 500 before any handler
+                # ran. Fall through to the host/default-database path
+                # below instead, as for a missing tenant id; tenant-
+                # scoped handlers still fail closed on their own auth
+                # checks, and a valid id behaves as before.
+                logger.warning(
+                    f"Invalid tenant id '{tenant_id}', falling back to host scope"
+                )
+                tenant_id = None
+        # A malformed id falls through here to the host/default-
+        # database path below, which sets request.state.tenant_id
+        # = None explicitly; the valid-id path returned above.
         # If no tenant ID is provided, ensure we are using the default database
         if db.is_tenant_active():
             # Reset to default DB if no tenant ID is provided
