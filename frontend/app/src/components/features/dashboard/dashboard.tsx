@@ -12,6 +12,8 @@ import {
 } from "recharts";
 import { DashboardMetricsDto } from "@/api";
 import { Loading } from "@/components/shared/loading";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { AlertTriangle } from "lucide-react";
 import { getApiClient } from "@/lib/utils";
 import { AllCards } from "./all-cards";
 import { useAuthContext } from "@/components/providers/auth-provider";
@@ -21,20 +23,30 @@ import { useAuthContext } from "@/components/providers/auth-provider";
 export function Dashboard() {
     const [filter, setFilter] = useState<"today" | "this_week" | "last_3_months">("this_week");
     const [data, setData] = useState<DashboardMetricsDto | null>(null);
+    const [fetchError, setFetchError] = useState<string | null>(null);
 
     const { accessToken } = useAuthContext();
-    useEffect(() => {
-        async function fetchData() {
-            try {
-                const metrics = await getApiClient(accessToken).dashboard.getDashboardMetricsApiV1DashboardGet({ filter })
-                setData(metrics);
-            } catch (error) {
-                if (error instanceof Error) {
-                    console.error("Error fetching dashboard metrics:", error.cause);
-                }
+    async function fetchData() {
+        try {
+            setFetchError(null);
+            const metrics = await getApiClient(accessToken).dashboard.getDashboardMetricsApiV1DashboardGet({ filter })
+            setData(metrics);
+        } catch (error) {
+            if (error instanceof Error) {
+                console.error("Error fetching dashboard metrics:", error.cause);
             }
-
+            // Previously every failure fell through to the "Fetching
+            // Metrics..." loading state forever, so a backend outage looked
+            // exactly like metrics still loading. A backend response
+            // (ApiError, which carries a numeric status) means the server
+            // answered; a failure with no status is a network failure.
+            const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            setFetchError(hasStatus
+                ? "Failed to load dashboard metrics. Please try again later."
+                : "Unable to reach the server. Check your connection and try again.");
         }
+    }
+    useEffect(() => {
         fetchData();
     }, [filter, accessToken])
 
@@ -69,7 +81,17 @@ export function Dashboard() {
                         </Button>
                     </div>
 
-                    {data ? (
+                    {fetchError ? (
+                        <Alert variant="destructive">
+                            <AlertTriangle className="h-4 w-4" />
+                            <AlertDescription>
+                                {fetchError}
+                                <Button variant="outline" size="sm" className="mt-2" onClick={fetchData}>
+                                    Retry
+                                </Button>
+                            </AlertDescription>
+                        </Alert>
+                    ) : data ? (
                         <div className="h-72">
                             <ResponsiveContainer width="100%" height="100%">
                                 <LineChart data={data.timeseries}>
