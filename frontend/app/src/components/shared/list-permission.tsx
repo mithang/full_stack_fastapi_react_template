@@ -52,7 +52,15 @@ export function ListPermission({
             setPermissions(response);
         } catch (error) {
             console.error("Failed to fetch permissions:", error);
-            setError("Failed to fetch permissions");
+            // A backend response (ApiError, which carries a numeric status)
+            // means the server answered and rejected the fetch; a failure
+            // with no status is a network error, not a failed fetch, and
+            // must not surface the fetch-failed message that sends the
+            // admin re-checking permissions that never reached the server.
+            const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            setError(hasStatus
+                ? "Failed to fetch permissions"
+                : "Unable to reach the server. Check your connection and try again.");
         }
     }
 
