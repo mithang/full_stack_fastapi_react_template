@@ -331,7 +331,9 @@ class BillingRecordService:
             billing_record.id, billing_record.model_dump()
         )
 
-    async def handle_tenant_checkout_canceled(self, user_id: str) -> None:
+    async def handle_tenant_checkout_canceled(
+        self, user_id: str, tenant_id: str
+    ) -> None:
         """
         Handle cancelled checkout for tenant scope
         """
@@ -351,6 +353,16 @@ class BillingRecordService:
             {"user_id": PydanticObjectId(user_id), "scope": "tenant", "status": "pending"}
         )
         for record in billing_records:
+            # Tenant-guard the record, mirroring the tenant success
+            # handler's tenant check: the user check alone would also
+            # cancel a tenant-scope record created under a different
+            # tenant for the same user (e.g. a user who has since moved
+            # tenants). Compared as strings, as record.tenant_id is a
+            # PydanticObjectId while the caller passes a str; a None
+            # tenant_id fails closed (matches nothing) rather than
+            # cancelling another tenant's records.
+            if str(record.tenant_id) != tenant_id:
+                continue
             record.status = "canceled"
             await self.billing_record_repository.update(record.id, record.model_dump())
 
