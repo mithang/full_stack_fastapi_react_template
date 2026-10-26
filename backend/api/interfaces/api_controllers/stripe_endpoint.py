@@ -184,8 +184,18 @@ async def handle_invoice_paid(
     # was verified against that tenant's stored secret, so attributing
     # it to the host scope merely because the invoice metadata lacks
     # tenant_id would misattribute the record). A null metadata value
-    # falls back the same way instead of raising AttributeError.
-    tenant_id = (invoice.get("metadata") or {}).get("tenant_id") or tenant_id
+    # falls back the same way instead of raising AttributeError, as
+    # does a truthy non-dict value (e.g. a string), which the old
+    # `or {}` guard did not cover: `.get` on it raised AttributeError
+    # outside the save try/catch below, turning a valid delivery into
+    # a 500 that Stripe retries forever — the same class fixed for line
+    # metadata in the billing service.
+    invoice_metadata = invoice.get("metadata")
+    tenant_id = (
+        invoice_metadata.get("tenant_id")
+        if isinstance(invoice_metadata, dict)
+        else None
+    ) or tenant_id
 
     billing_record = await billing_record_service.from_stripe_invoice_paid(
         invoice=invoice, scope="tenant" if tenant_id else "host", tenant_id=tenant_id
