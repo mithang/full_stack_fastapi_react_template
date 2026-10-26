@@ -68,7 +68,19 @@ class RedisCacheMiddleware(BaseHTTPMiddleware):
             current_user = None
 
         user_id = getattr(current_user, "id", "anonymous")
-        tenant_id = getattr(current_user, "tenant_id", "default")
+        # Key on the effective request tenant, not the token user's
+        # tenant: TenantMiddleware runs before this middleware and
+        # sets request.state.tenant_id from the subdomain/custom
+        # domain or the X-Tenant-ID header, and handlers read data
+        # from that tenant's database. Keying on the user's tenant
+        # alone let one tenant's cached GET be served for another
+        # tenant's request (and left the other tenant's entries
+        # uncleared on mutation) whenever the two differed.
+        # request.state.tenant_id is None on the host scope (or when
+        # tenancy is disabled), where the user's tenant is the
+        # previous behaviour and is kept as the fallback.
+        request_tenant_id = getattr(request.state, "tenant_id", None)
+        tenant_id = str(request_tenant_id) if request_tenant_id is not None else getattr(current_user, "tenant_id", "default")
         cache_base = f"cu{user_id}:ct{tenant_id}:{request.url.path}?{request.url.query}"
         logger.debug(f"Cache base string: {cache_base}")
         cache_key = f"cache:{cache_base}"
