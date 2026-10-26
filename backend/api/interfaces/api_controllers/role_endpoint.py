@@ -1,6 +1,6 @@
 from typing import Annotated, List
 from beanie import PydanticObjectId
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 from api.common.exceptions import InvalidOperationException
 from api.common.utils import get_logger
 from api.domain.dtos.role_dto import CreateRoleDto, CreateRoleResponseDto, RoleDto, RoleListDto, UpdateRoleDto
@@ -18,7 +18,12 @@ router = APIRouter(prefix="/roles", tags=["Roles"])
 
 @router.get("/", response_model=RoleListDto)
 async def list_roles(
-    skip: int = 0, limit: int = 10,
+    # Same unbounded-pagination gap as GET /users/ (iteration 237):
+    # a direct API call could pass limit=1000000 or negative values
+    # straight into the DB query. Cap server-side; out-of-range
+    # values now fail fast with a 422 instead.
+    skip: int = Query(0, ge=0),
+    limit: int = Query(10, ge=1, le=100),
     service: RoleService = Depends(get_role_service),
     _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.ROLE_VIEW_ONLY]))
 
