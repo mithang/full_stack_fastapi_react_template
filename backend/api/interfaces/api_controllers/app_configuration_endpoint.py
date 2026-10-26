@@ -24,16 +24,19 @@ router = APIRouter(prefix="/app_configuration")
 router.tags = ["App Configuration"]
 
 async def get_tenant(service: TenantService, tenant_id: str | None) -> Tenant | None:
-    current_tenant = None
+    if not tenant_id:
+        return None
     logger.debug(f"Fetching tenant with ID: {tenant_id}")
     try:
         t = await service.get_tenant_by_id(tenant_id)
-        current_tenant = Tenant(**t.model_dump())
+        return Tenant(**t.model_dump())
     except TenantNotFoundException:
         logger.warning(f"Tenant with ID {tenant_id} not found for current user.")
-        current_tenant = None
-    finally:
-        return current_tenant
+        return None
+    # No finally-return here: a return in finally would swallow any
+    # unexpected failure (e.g. a DB outage) and make the caller treat it
+    # as "no tenant", returning a default-branded config instead of an
+    # error. Only the known not-found case maps to None.
 
 @router.get("/", response_model=AppConfigurationDto, status_code=status.HTTP_200_OK)
 async def get_app_configuration(
@@ -57,7 +60,7 @@ async def get_app_configuration(
             user_pref_doc.setdefault("preferences", {})["passkey_enabled"] = passkey_enabled
 
     tenant_id = str(current_user.tenant_id) if current_user and current_user.tenant_id else str(tenant_id) if tenant_id else None
-    t = await get_tenant(tenant_service, str(tenant_id))
+    t = await get_tenant(tenant_service, tenant_id)
     current_tenant = TenantDto(**t.model_dump()) if t else None
 
     enabled_sso_provider = await sso_settings_service.get_only_enabled_providers()
