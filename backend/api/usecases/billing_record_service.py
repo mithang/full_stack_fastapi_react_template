@@ -283,8 +283,16 @@ class BillingRecordService:
         """
         Handle cancelled checkout for tenant scope
         """
-        billing_records = await self.billing_record_repository.list(
-            {"user_id": user_id, "status": "pending"}
+        # BillingRecordRepository.list() takes (skip, limit) and returns a
+        # BillingRecordListDto, so passing a filter dict to it (as before)
+        # could never work: the dict reached .skip() and the DTO is not
+        # iterable, so POST /checkouts/tenant/payment/cancel always
+        # failed and pending records were never marked canceled. Mirror
+        # the host handler and use search(), which returns model docs;
+        # convert the string user id to PydanticObjectId, as the stored
+        # user_id field is an ObjectId (repo convention elsewhere).
+        billing_records = await self.billing_record_repository.search(
+            {"user_id": PydanticObjectId(user_id), "status": "pending"}
         )
         for record in billing_records:
             record.status = "canceled"
