@@ -120,7 +120,7 @@ export function Products() {
             // This is to handle cases where there is no tenant (Host Mode)
             fetchProducts();
         }
-    }, [accessToken, showActiveOnly, current_tenant]);
+    }, [accessToken, showActiveOnly, current_tenant, configuredStripeSetting]);
 
     const openCreateDialog = () => {
         reset({
