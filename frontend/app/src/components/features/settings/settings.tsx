@@ -1,5 +1,5 @@
 import { StorageFormData, useSettings } from "@/components/providers/settings-provider";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,6 +36,17 @@ export function Settings() {
     });
     const [isLoading, setIsLoading] = useState(false);
     const [activeTab, setActiveTab] = useState('s3');
+    // Tracks whether the admin has edited the form since it was last
+    // loaded programmatically (initial load, tab switch, or reset).
+    // The storages effect below must not overwrite in-progress edits:
+    // SettingsProvider refetches on every access-token rotation (every
+    // ~10 minutes via the refresh worker) and on tenant arrival, and
+    // the backend masks stored secrets to "****", so an unguarded sync
+    // would discard typed values — and could replace a typed secret
+    // with the masked placeholder, which a later save would submit
+    // as the secret. Mirrors the pristine-only sync guards in the
+    // branding and tenant-setting forms.
+    const formDirtyRef = useRef(false);
 
     // Get existing storage configuration for a provider
     const getStorageConfig = (provider: StorageProvider): AvailableStorageProviderDto | null => {
@@ -77,6 +88,9 @@ export function Settings() {
                 azure_container_name: ''
             });
         }
+        // Tab switches load that provider's configuration
+        // programmatically, so the form is pristine again afterwards.
+        formDirtyRef.current = false;
     };
 
     // Handle form submission
@@ -94,10 +108,27 @@ export function Settings() {
 
     // Update form field
     const updateField = (field: keyof StorageFormData, value: any) => {
+        formDirtyRef.current = true;
         setFormData(prev => ({ ...prev, [field]: value }));
     };
 
+    // Reset is a programmatic load, not an edit: clear the dirty flag
+    // first so the provider's post-reset refetch re-syncs the form to
+    // the reset (empty) configuration instead of being skipped.
+    const handleResetStorage = async (storageId: string) => {
+        formDirtyRef.current = false;
+        await onResetStorage(storageId);
+    };
+
     useEffect(() => {
+        // Do not overwrite in-progress edits when storages refetches
+        // (token rotation, tenant arrival); see formDirtyRef above.
+        // A successful save leaves the flag set: the form already holds
+        // the submitted values, and re-syncing would replace a typed
+        // secret with the backend's masked placeholder.
+        if (formDirtyRef.current) {
+            return;
+        }
         const provider = storages.find(s => s.is_enabled);
         if (provider) {
             setActiveTab(provider.provider);
@@ -293,7 +324,7 @@ export function Settings() {
                                                 type="button"
                                                 variant="outline"
                                                 size="sm"
-                                                className="mt-2" onClick={() => onResetStorage(getStorageConfig('s3')?.id!)} >
+                                                className="mt-2" onClick={() => handleResetStorage(getStorageConfig('s3')?.id!)} >
                                                 Reset S3 Configuration
                                             </Button>
                                         </div>
@@ -415,7 +446,7 @@ export function Settings() {
                                                 type="button"
                                                 variant="outline"
                                                 size="sm"
-                                                className="mt-2" onClick={() => onResetStorage(getStorageConfig('azure_blob')?.id!)} >
+                                                className="mt-2" onClick={() => handleResetStorage(getStorageConfig('azure_blob')?.id!)} >
                                                 Reset Azure Configuration
                                             </Button>
                                         </div>
