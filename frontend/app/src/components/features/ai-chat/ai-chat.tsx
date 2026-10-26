@@ -83,7 +83,13 @@ export function AIChat() {
             });
             return response
         } catch (error) {
-            throw new Error("Failed to fetch chat history for the session." + (error instanceof Error ? ` ${error.message}` : ''))
+            const wrapped = new Error("Failed to fetch chat history for the session." + (error instanceof Error ? ` ${error.message}` : ''))
+            // Preserve the ApiError status on the wrapper: without it the
+            // caller cannot tell a server rejection from a network failure,
+            // since the wrapped Error itself carries no status.
+            const status = (error as { status?: unknown } | null)?.status
+            if (typeof status === "number") (wrapped as { status?: number }).status = status
+            throw wrapped
         }
 
     }
@@ -202,11 +208,19 @@ export function AIChat() {
 
             } catch (e) {
                 console.error("Failed to load previous conversations...")
+                // A backend response (ApiError status, preserved on the
+                // wrapper by fetchHistories) means the server answered and
+                // rejected the history fetch; a failure with no status is a
+                // network failure, not a bad session, and must not be
+                // reported as a raw "Failed to fetch" message.
+                const hasStatus = typeof (e as { status?: unknown } | null)?.status === "number";
                 setChatState(prev => ({
                     ...prev,
                     messages: [],
                     isLoading: false,
-                    error: e instanceof Error ? e.message : 'An error occurred'
+                    error: hasStatus
+                        ? (e instanceof Error ? e.message : 'An error occurred')
+                        : "Unable to reach the server. Check your connection and try again."
                 }))
             }
 
