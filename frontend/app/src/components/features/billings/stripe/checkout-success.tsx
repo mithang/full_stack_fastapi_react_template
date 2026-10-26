@@ -9,7 +9,11 @@ export function CheckoutSuccess() {
     // not POST to the /checkouts/*/payment/success endpoint yet. Until that
     // finalisation step lands, a visit without a session id must not claim
     // a payment succeeded — that is a direct navigation, not a Stripe return.
-    if (!sessionId) {
+    // Stripe also always appends ?tenant_id= (host checkout) or ?user_id=
+    // (tenant checkout), so a session id with neither is likewise a
+    // hand-crafted link, not a Stripe return — mirror the cancel-page guard
+    // from iteration 159.
+    if (!sessionId || (!searchParams.get("tenant_id") && !searchParams.get("user_id"))) {
         return (
             <div>
                 <h1>Checkout Return</h1>
