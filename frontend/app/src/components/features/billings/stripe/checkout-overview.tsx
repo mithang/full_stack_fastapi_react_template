@@ -22,12 +22,14 @@ import {
     ArrowRight,
 } from "lucide-react";
 import { ShowScreenLoader } from "@/components/shared/show-screen-loader";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useLocation, useNavigate } from "react-router";
 
 export function CheckoutOverview() {
     const { accessToken } = useAuthContext();
     const [records, setRecords] = useState<BillingRecordDto[]>([]);
     const [loading, setLoading] = useState(true);
+    const [fetchError, setFetchError] = useState<string | null>(null);
     const { search, pathname } = useLocation();
     const navigate = useNavigate();
 
@@ -47,6 +49,7 @@ export function CheckoutOverview() {
         if (!accessToken) return;
         try {
             setLoading(true);
+            setFetchError(null);
             const response = await getApiClient(accessToken).stripeCheckout.listCheckoutRecordsApiV1CheckoutsAllGet({
                 skip,
                 limit: pagination.limit,
@@ -61,6 +64,15 @@ export function CheckoutOverview() {
             });
         } catch (error) {
             console.error("Error fetching checkout records:", error);
+            // A backend response (ApiError, which carries a numeric status)
+            // means the server answered; a failure with no status is a
+            // network failure. Previously every failure fell through to the
+            // "No Checkout Records Found" empty state, so an outage looked
+            // exactly like having no checkout sessions at all.
+            const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            setFetchError(hasStatus
+                ? "Failed to load checkout records. Please try again later."
+                : "Unable to reach the server. Check your connection and try again.");
         } finally {
             setLoading(false);
         }
@@ -171,6 +183,17 @@ export function CheckoutOverview() {
 
     if (loading) {
         return <ShowScreenLoader message="Loading checkouts list..." />
+    }
+
+    if (fetchError) {
+        return (
+            <Alert variant="destructive">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertDescription>
+                    {fetchError}
+                </AlertDescription>
+            </Alert>
+        );
     }
 
     return (
