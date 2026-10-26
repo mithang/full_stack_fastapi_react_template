@@ -201,7 +201,12 @@ class BillingRecordService:
             )
         except Exception as e:
             logger.error(f"Error updating plan {plan_id}: {e}")
-            raise BillingRecordNotFoundException(plan_id)
+            # An update failure is not a missing plan: the plan id was
+            # accepted and the Stripe update call itself failed (bad
+            # payload, Stripe outage), so report it as a billing error
+            # (406 via BillingRecordException) rather than a 404, which
+            # previously told the client the plan did not exist.
+            raise BillingRecordException(f"Failed to update plan {plan_id}: {str(e)}") from e
 
     async def get_plan(self, plan_id: str, scope: ScopeType) -> PlanDto:
         try:
