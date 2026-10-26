@@ -18,6 +18,7 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { Plus, RefreshCw, BadgeEuro, Calendar, Package } from "lucide-react";
 import { useAuthContext } from "@/components/providers/auth-provider";
+import { useAppConfig } from "@/components/providers/app-config-provider";
 import { getApiClient } from "@/lib/utils";
 import { ProductDto, CreatePlanDto } from "@/api";
 
@@ -36,6 +37,7 @@ interface AddANewPlanProps {
 
 export function AddANewPlan({ onPlanCreated }: AddANewPlanProps) {
     const { accessToken } = useAuthContext();
+    const { current_tenant } = useAppConfig();
     const [isOpen, setIsOpen] = useState(false);
     const [products, setProducts] = useState<ProductDto[]>([]);
     const [loadingProducts, setLoadingProducts] = useState(false);
@@ -91,7 +93,13 @@ export function AddANewPlan({ onPlanCreated }: AddANewPlanProps) {
         if (isOpen && accessToken) {
             fetchProducts();
         }
-    }, [isOpen, accessToken]);
+        // current_tenant is a dep, not a gate: products are tenant-DB
+        // scoped (TenantMiddleware switches on the X-Tenant-ID header,
+        // which getApiClient reads from the stored tenant that AppConfig
+        // sets when current_tenant arrives), so a fetch that ran before
+        // the tenant loaded must re-run once it arrives; host users have
+        // no tenant, so gating would stop their products loading.
+    }, [isOpen, accessToken, current_tenant]);
 
     const formatPreviewPrice = (amountInCents: number, currency: string) => {
         return new Intl.NumberFormat("en-US", {
