@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from api.common.exceptions import ApiBaseException, AuthenticationFailedException, ConflictException, ForbiddenException, InvalidOperationException, NotFoundException, UnauthorizedException
+from api.common.exceptions import ApiBaseException, AuthenticationFailedException, AwsException, AzureException, ConflictException, ForbiddenException, InvalidOperationException, NotFoundException, UnauthorizedException
 from api.common.utils import get_logger, is_tenancy_enabled
 from api.core.container import container
 from api.core.exceptions import InvalidSubdomainException, TenantNotFoundException
@@ -92,6 +92,14 @@ async def api_exception_handler(req: Request, ex: ApiBaseException) -> JSONRespo
         status_code = status.HTTP_400_BAD_REQUEST
     elif isinstance(ex, InvalidOperationException):
         status_code = status.HTTP_406_NOT_ACCEPTABLE
+    elif isinstance(ex, AwsException) or isinstance(ex, AzureException):
+        # S3/Azure storage failures (S3StorageException, AzureBlobStorageException)
+        # previously fell through to the default 400, so a storage-provider
+        # outage looked like a bad client request. An upstream failure is a
+        # 502, the status the frontend already treats as a server error
+        # (its fallbacks trigger on any non-2xx rejection, as in the
+        # profile-image path), so no client change is needed.
+        status_code = status.HTTP_502_BAD_GATEWAY
 
     
     logger.error(f"API Exception: {ex.message}")
