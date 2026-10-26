@@ -186,9 +186,13 @@ export function CheckoutOverview() {
         navigate(`${pathname}?${query.toString()}`);
     }, [loading, fetchError, pagination, search, pathname, navigate]);
 
+    // Prev/next build on the router's search string, like every other
+    // URL read in this file (fetch effect, clamp/normalise effects,
+    // error-state Retry) — not window.location.search, so the page
+    // they navigate from is always the page the router is showing.
     const handlePrevious = () => {
         const newSkip = Math.max(0, pagination.skip - pagination.limit);
-        const query = new URLSearchParams(window.location.search);
+        const query = new URLSearchParams(search);
         query.set("skip", newSkip.toString());
         query.set("limit", pagination.limit.toString());
         const newUrl = `${pathname}?${query.toString()}`;
@@ -197,7 +201,7 @@ export function CheckoutOverview() {
 
     const handleNext = () => {
         const newSkip = pagination.skip + pagination.limit;
-        const query = new URLSearchParams(window.location.search);
+        const query = new URLSearchParams(search);
         query.set("skip", newSkip.toString());
         query.set("limit", pagination.limit.toString());
         const newUrl = `${pathname}?${query.toString()}`;
