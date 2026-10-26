@@ -445,13 +445,36 @@ export function AIChat() {
 
             let accumulatedContent = ''
 
+            // One decoder for the whole stream, not one per chunk: a
+            // multi-byte character split across network chunks must be
+            // decoded with the bytes that came before it, or each half
+            // decodes as a replacement character. A fresh decoder per
+            // chunk has no such state, so non-ASCII replies (e.g.
+            // Vietnamese) arrived garbled at chunk boundaries.
+            const decoder = new TextDecoder()
+
             while (true) {
                 const { done, value } = await reader.read()
                 if (done) break
 
-                const chunk = new TextDecoder().decode(value, { stream: true })
+                const chunk = decoder.decode(value, { stream: true })
                 accumulatedContent += chunk
 
+                setChatState(prev => ({
+                    ...prev,
+                    messages: prev.messages.map(msg =>
+                        msg.id === assistantMessage.id
+                            ? { ...msg, content: accumulatedContent }
+                            : msg
+                    )
+                }))
+            }
+
+            // Flush any bytes the decoder held for a character split
+            // across the final chunk boundary; empty on clean streams.
+            const flushed = decoder.decode()
+            if (flushed) {
+                accumulatedContent += flushed
                 setChatState(prev => ({
                     ...prev,
                     messages: prev.messages.map(msg =>
