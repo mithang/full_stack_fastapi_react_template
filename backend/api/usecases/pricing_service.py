@@ -21,8 +21,18 @@ class PricingService:
             raise PricingException(str(e))
 
     async def list_prices(self, scope: ScopeType) -> PricingListDto:
-        sc = await self.stripe_resolver.get_stripe_client(scope=scope)
-        result = await sc.v1.prices.list_async(params={"limit": 100})
+        # Wrap the Stripe calls, mirroring create_price/update_price in
+        # this file: any failure here (bad key, Stripe outage) previously
+        # propagated as a raw Stripe exception past the ApiBaseException-only
+        # handler and surfaced as a 500. No 404 distinction is needed for
+        # a list: an empty catalogue is a valid empty result, so a failure
+        # is never a not-found.
+        try:
+            sc = await self.stripe_resolver.get_stripe_client(scope=scope)
+            result = await sc.v1.prices.list_async(params={"limit": 100})
+        except Exception as e:
+            logger.error(f"Error listing prices: {e}")
+            raise PricingException(str(e))
         return PricingListDto(pricings=[pricing for pricing in result.data],  has_more=result.has_more)
     
     async def update_price(self, price_id: str, update: UpdatePricingDto, scope: ScopeType) -> None:
