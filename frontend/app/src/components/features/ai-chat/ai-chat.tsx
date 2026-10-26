@@ -52,6 +52,12 @@ export function AIChat() {
     const inputRef = useRef<HTMLTextAreaElement>(null)
     const [pending, startTransition] = useTransition()
     const [availableAiModels, setAvailableAIModels] = useState<AIModelInfoDto[]>([])
+    // True only once a models fetch has succeeded. The empty-list messages
+    // below must not render before that: while the fetch is in flight the
+    // list is still its initial [], and after a network failure it stays []
+    // while the catch already toasts "Unable to reach the server" — in both
+    // cases "install local models" would blame the user's setup for a
+    // fetch that never answered.
     // Auto-resize textarea
     const adjustTextareaHeight = () => {
         const textarea = inputRef.current
@@ -99,6 +105,7 @@ export function AIChat() {
             const apiClient = getApiClient(accessToken)
             const response = await apiClient.ai.getModelsApiV1AiModelsGet();
             setAvailableAIModels(response)
+            setModelsLoaded(true)
         } catch (error) {
             console.error("Failed to fetch available AI models:", error)
             // A backend response (ApiError, which carries a numeric
@@ -426,7 +433,7 @@ export function AIChat() {
     return (
         <section className="h-full flex flex-col pb-10">
             {/* Page Header */}
-            {availableAiModels?.length == 0 && (
+            {modelsLoaded && availableAiModels?.length == 0 && (
                 <Alert className='mb-5' variant="destructive">
                     <AlertTitle>No AI Models Available</AlertTitle>
                     <AlertDescription>
@@ -700,7 +707,7 @@ export function AIChat() {
                                                 <Loading variant="spinner" size="sm" />
                                             </section>
                                         )}
-                                        {availableAiModels?.length === 0 && (
+                                        {modelsLoaded && availableAiModels?.length === 0 && (
                                             <section className="pt-4 flex items-center">
                                                 <InfoIcon className="w-4 h-4 text-muted-foreground" />
                                                 <span className="ml-2 text-xs text-muted-foreground">No AI models available. Please install a local AI model to start chatting.</span>
