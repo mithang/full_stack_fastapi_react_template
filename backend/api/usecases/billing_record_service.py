@@ -301,6 +301,16 @@ class BillingRecordService:
         )
         if billing_record is None:
             raise BillingRecordNotFoundException(session_id)
+        # Scope-guard the record, mirroring the host success handler:
+        # host-scope records carry no user_id, so the user check below
+        # only rejects them incidentally (str(None) == "None" never
+        # matches a real user id). A host record must finalise through
+        # the host success handler instead, regardless of what user_id
+        # it may carry in future.
+        if billing_record.scope != "tenant":
+            raise BillingRecordException(
+                f"Scope mismatch for the billing record {session_id}"
+            )
         if str(billing_record.user_id) != user_id:
             raise BillingRecordException(
                 f"User ID mismatch for the billing record {session_id}"
