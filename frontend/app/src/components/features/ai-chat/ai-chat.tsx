@@ -353,7 +353,7 @@ export function AIChat() {
             } catch {
                 // getAIChatNewSession already toasts the failure, so there
                 // is nothing more to report — but it must not propagate:
-                // sendMessage is called from onClick/onKeyUp with no
+                // sendMessage is called from onClick/onKeyDown with no
                 // caller awaiting it, so a throw here was an unhandled
                 // rejection. The user's input is left intact to retry.
                 return
@@ -574,6 +574,10 @@ export function AIChat() {
         }
     }
 
+    // Bound to onKeyDown, not onKeyUp: the newline is inserted on
+    // keydown, so preventDefault on keyup arrives too late — Enter
+    // would leave a stray newline in the composer (visible when the
+    // send is blocked, e.g. no model selected) instead of just sending.
     const handleKeyPress = (e: React.KeyboardEvent) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault()
@@ -864,7 +868,7 @@ export function AIChat() {
                                             ref={inputRef}
                                             value={input}
                                             onChange={handleInputChange}
-                                            onKeyUp={handleKeyPress}
+                                            onKeyDown={handleKeyPress}
                                             placeholder="Type your message..."
                                             disabled={chatState.isLoading}
                                             className="pr-8 sm:pr-12 min-h-[40px] sm:min-h-[44px] max-h-[120px] text-sm sm:text-base resize-none"
