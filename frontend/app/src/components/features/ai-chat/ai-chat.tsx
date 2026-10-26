@@ -372,7 +372,13 @@ export function AIChat() {
         // directly and bypassed both guards — so pressing Enter with no
         // model sent a request with model_name undefined instead of
         // doing nothing. Match the button's disabled conditions here.
-        if (!selectedModel?.name || availableAiModels.length === 0) {
+        // The selected model must also still be in the available list:
+        // the list refetches on every access-token rotation, so a model
+        // removed from Ollama after selection stayed selected, the Send
+        // button stayed enabled, and the request went out with a stale
+        // model name — failing as an aborted stream instead of a clear
+        // "select a model" prompt.
+        if (!selectedModel?.name || availableAiModels.length === 0 || !availableAiModels.some((model) => model.name === selectedModel?.name)) {
             toast.error("Please select a local AI model to start chatting.", { richColors: true, position: "top-right" })
             return
         }
@@ -949,7 +955,7 @@ export function AIChat() {
                                     </section>
                                     <Button
                                         onClick={sendMessage}
-                                        disabled={!input.trim() || chatState.isLoading || !selectedModel?.name || availableAiModels.length === 0}
+                                        disabled={!input.trim() || chatState.isLoading || !selectedModel?.name || availableAiModels.length === 0 || !availableAiModels.some((model) => model.name === selectedModel?.name)}
                                         className="px-3 sm:px-6 h-10 sm:h-11"
                                         size="default"
                                     >
