@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAuthContext } from "@/components/providers/auth-provider";
 import { formatDateWithHourAndMinute, formatPrice, getApiClient } from "@/lib/utils";
 import { BillingRecordDto } from "@/api";
@@ -54,8 +54,16 @@ export function CheckoutOverview() {
         hasNext: false,
     });
 
+    // Sequential fetches (fast prev/next navigation, or a Refresh clicked
+    // while a page fetch is in flight) can resolve out of order: without
+    // sequencing, a stale, slower response for the old page would
+    // overwrite the records and pagination of the newer page the URL
+    // already shows. Only the latest request may apply its result.
+    const fetchRequestIdRef = useRef(0);
+
     const fetchCheckoutRecords = async (skip: number = 0, limit: number = pagination.limit) => {
         if (!accessToken) return;
+        const requestId = ++fetchRequestIdRef.current;
         try {
             setLoading(true);
             setFetchError(null);
@@ -63,6 +71,7 @@ export function CheckoutOverview() {
                 skip,
                 limit,
             });
+            if (requestId !== fetchRequestIdRef.current) return;
             setRecords(response.billing_records);
             setPagination({
                 skip: response.skip,
@@ -72,6 +81,11 @@ export function CheckoutOverview() {
                 hasNext: response.has_next,
             });
         } catch (error) {
+            // A stale failure must not overwrite the newer request's
+            // state either: it would show an error for a page whose fetch
+            // is still in flight (and its finally below must not clear
+            // that fetch's loading state).
+            if (requestId !== fetchRequestIdRef.current) return;
             console.error("Error fetching checkout records:", error);
             // A backend response (ApiError, which carries a numeric status)
             // means the server answered; a failure with no status is a
@@ -83,7 +97,11 @@ export function CheckoutOverview() {
                 ? "Failed to load checkout records. Please try again later."
                 : "Unable to reach the server. Check your connection and try again.");
         } finally {
-            setLoading(false);
+            // Only the latest request may clear loading: a stale request
+            // resolving (or failing) first must not hide the newer
+            // request's loading state. (A return in try/catch still runs
+            // this block, which is why the guard lives here, not there.)
+            if (requestId === fetchRequestIdRef.current) setLoading(false);
         }
     };
 
