@@ -550,14 +550,27 @@ class BillingRecordService:
             current_period_end=period_end,
             canceled_at=None,
             cancellation_reason=None,
+            # Guard the metadata values the same way the status/id above
+            # guard malformed values: metadata is Dict[str, str] on
+            # BillingRecord, so a null/non-string billing_reason,
+            # hosted_invoice_url, or invoice_pdf (all nullable in
+            # Stripe's invoice object) would fail validation — outside
+            # the save try/catch, turning a valid invoice.paid delivery
+            # into a 500 that Stripe retries forever. Non-string values
+            # are dropped; the id/period entries are already strings, so
+            # they are always kept, and metadata is informational only.
             metadata={
-                "invoice_id": invoice_id,
-                "stripe_event_id": invoice_id,
-                "billing_reason": invoice.get("billing_reason"),
-                "hosted_invoice_url": invoice.get("hosted_invoice_url"),
-                "invoice_pdf": invoice.get("invoice_pdf"),
-                "period_start": str(period_start),
-                "period_end": str(period_end),
+                key: value
+                for key, value in {
+                    "invoice_id": invoice_id,
+                    "stripe_event_id": invoice_id,
+                    "billing_reason": invoice.get("billing_reason"),
+                    "hosted_invoice_url": invoice.get("hosted_invoice_url"),
+                    "invoice_pdf": invoice.get("invoice_pdf"),
+                    "period_start": str(period_start),
+                    "period_end": str(period_end),
+                }.items()
+                if isinstance(value, str)
             },
         )
 
