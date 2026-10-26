@@ -37,7 +37,7 @@ interface SSOConfigurationProviderProps {
 export default function SSOConfigurationProvider({ children }: SSOConfigurationProviderProps) {
     const [providers, setProviders] = useState<ProviderType>([])
     const { accessToken, can } = useAuthContext();
-    const { enabled_sso_providers, reloadAppConfig } = useAppConfig()
+    const { enabled_sso_providers, reloadAppConfig, current_tenant } = useAppConfig()
     const [availableProviders, setAvailableProviders] = useState<string[]>([]);
     const canManageSSOSettings = can('full:access');
 
@@ -181,7 +181,15 @@ export default function SSOConfigurationProvider({ children }: SSOConfigurationP
         if (accessToken && canManageSSOSettings && enabled_sso_providers) {
             fetchAllSSOProviders();
         }
-    }, [accessToken, canManageSSOSettings, enabled_sso_providers])
+        // current_tenant is a dep, not just a guard: the SSO list is
+        // tenant-scoped (the backend picks the tenant database from the
+        // X-Tenant-ID header, which the client reads from the stored
+        // tenant that AppConfig sets when current_tenant arrives), so a
+        // fetch that ran before the tenant loaded — or before a tenant
+        // switch — must re-run once the tenant is known, mirroring the
+        // users/roles providers' fixes. fetchAllSSOProviders is
+        // idempotent, so the extra fetch on tenant arrival/change is safe.
+    }, [accessToken, canManageSSOSettings, enabled_sso_providers, current_tenant])
 
     if (!canManageSSOSettings) {
         return <NoPermissionToAccessResource message='SSO Settings' />;
