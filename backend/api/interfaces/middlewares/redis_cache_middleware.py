@@ -110,6 +110,19 @@ not_allowed_cache_paths = [
     # and the static available-providers list cached, since neither
     # path ends in "/api/v1/ssos/".
     "/api/v1/ssos/",
+    # Tenant storage settings list, fetched by the SettingsProvider
+    # on load and on tenant change (and after the viewing admin's own
+    # configure/reset, which clears only their own cache keys). A
+    # configure POST or reset PATCH by another
+    # MANAGE_STORAGE_SETTINGS admin would otherwise leave the viewing
+    # admin's list up to the TTL old — a just-configured provider
+    # still shown as unconfigured, or reset settings still shown as
+    # active. Same stale-admin-UI class as the SSO-list bypass above,
+    # not an enforcement fix: upload handlers read settings fresh.
+    # Endswith matching keeps the static available-providers list
+    # cached, since /api/v1/storage/available does not end in
+    # "/api/v1/storage/".
+    "/api/v1/storage/",
 ]
 
 
