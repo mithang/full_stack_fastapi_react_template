@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useState } from "react"
 import { useAuthContext } from "@/components/providers/auth-provider";
 import { toast } from "sonner";
 import { useFeatureCheck } from "@/hooks/use-feature-check";
+import { useAppConfig } from "@/components/providers/app-config-provider";
 import { FeatureDisabledNotice } from "@/components/shared/feature-disabled";
 
 
@@ -29,6 +30,7 @@ export function AIChatProvider({ children }: AIChatProviderProps) {
     const featureCheck = useFeatureCheck();
     const [sessions, setSessions] = useState<AISessionByUserIdDto[]>([]);
     const { accessToken } = useAuthContext();
+    const { current_tenant } = useAppConfig();
     const apiClient = getApiClient(accessToken)
     const isChatFeatureEnabled = featureCheck.requireFeature("chat");
     async function fetchAllSessions() {
@@ -77,7 +79,16 @@ export function AIChatProvider({ children }: AIChatProviderProps) {
             return;
         }
         fetchAllSessions();
-    }, [accessToken, isChatFeatureEnabled])
+        // current_tenant is a dep, not just a guard: the session list is
+        // tenant-scoped (TenantMiddleware switches the database from the
+        // X-Tenant-ID header, which the client reads from the stored tenant
+        // that AppConfig sets when current_tenant arrives). The enabled flag
+        // alone does not cover this: it stays true across a tenant switch
+        // when chat is enabled on both tenants, and for host users it is
+        // true before any tenant loads — so a fetch that ran early was
+        // never re-run, leaving another tenant's (or the host DB's)
+        // sessions on screen.
+    }, [accessToken, isChatFeatureEnabled, current_tenant])
 
     if (!isChatFeatureEnabled) {
         return <FeatureDisabledNotice featureName="AI Chat" />;
