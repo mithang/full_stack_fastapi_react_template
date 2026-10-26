@@ -1,6 +1,6 @@
 import { useAppConfig } from "@/components/providers/app-config-provider";
 import { useAuthContext } from "@/components/providers/auth-provider";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -53,6 +53,22 @@ export function TenantSetting() {
             custom_domain: current_tenant?.custom_domain || ""
         }
     });
+
+    // Sync the form with the tenant once it loads: current_tenant
+    // arrives asynchronously (via the app-config fetch), so the
+    // defaultValues above are read while it is still null and the
+    // form would otherwise stay empty — and saving it would submit
+    // custom_domain: null over a live custom domain. Only reset while
+    // the form is still pristine, so a reload (e.g. after a DNS
+    // update) never discards a domain the admin is in the middle
+    // of typing.
+    useEffect(() => {
+        if (current_tenant && !form.formState.isDirty) {
+            form.reset({
+                custom_domain: current_tenant.custom_domain || ""
+            });
+        }
+    }, [current_tenant, form]);
 
     const checkCustomDomainStatus = async () => {
         if (!current_tenant?.id) {
