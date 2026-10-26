@@ -15,6 +15,7 @@ from api.usecases.stripe_setting_service import StripeSettingService
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from api.core.config import settings
+from api.core.exceptions import StripeSettingsNotFoundException
 
 
 logger = get_logger(__name__)
@@ -87,11 +88,23 @@ async def stripe_webhook(
     event = None
     stripe_webhook_secret = None
     payload = await request.body()
-    stripe_settings = await stripe_setting_service.get_stripe_secret()
 
-    # Check the request context for tenant or host. If tenant then get tenant webhook secret otherwise use host from env
+    # Check the request context for tenant or host. If tenant then get tenant webhook secret otherwise use host from env.
+    # The stored secret must only be fetched in the tenant branch: host
+    # Stripe settings live in env, not the database, so fetching here for
+    # a host webhook raised StripeSettingsNotFoundException (mapped to
+    # 404 by the API exception handler) before signature verification
+    # ever ran — and Stripe retries every non-2xx delivery, so host
+    # invoice.paid events were never processed.
     if request.state.tenant_id:
         # Tenant-scoped webhook
+        try:
+            stripe_settings = await stripe_setting_service.get_stripe_secret()
+        except StripeSettingsNotFoundException:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Tenant webhook secret not configured",
+            )
         if not stripe_settings or not stripe_settings.stripe_webhook_secret:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -101,6 +114,11 @@ async def stripe_webhook(
     else:
         # Host-scoped webhook
         stripe_webhook_secret = settings.stripe_webhook_secret
+        if not stripe_webhook_secret:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Host webhook secret not configured",
+            )
 
     try:
         sig_header = request.headers.get("stripe-signature")
