@@ -118,8 +118,16 @@ async def get_profile_image(
         image_url = await file_service.get_file_url(image_key)
         return UserProfileImageUpdateDto(image_url=image_url)
     except Exception as e:
+        # Do not degrade to an empty URL: get_file_url never returns ""
+        # on success (it returns a presigned URL or raises a mapped
+        # storage exception), so a 200 with image_url="" made a storage
+        # outage indistinguishable from "no image" and bypassed both
+        # client fallbacks, which only trigger on rejection — the
+        # auth-provider's raw-key fallback and the user-table's default
+        # avatar. Re-raising lets the mapped handler answer with a
+        # clean error and lets those fallbacks engage.
         logger.error(f"Error fetching profile image: {e}")
-        return UserProfileImageUpdateDto(image_url="")
+        raise
     
 @router.delete("/{user_id}", status_code=status.HTTP_202_ACCEPTED)
 async def delete_user(
