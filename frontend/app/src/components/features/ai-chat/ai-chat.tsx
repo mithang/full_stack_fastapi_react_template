@@ -298,6 +298,20 @@ export function AIChat() {
                     fetchSelectedSessionHistory()
                 })
             }
+        } else if (!searchParams.get("session_id")) {
+            // No session open: drop any messages from a session that is
+            // no longer selected. Deleting the open session clears only
+            // the URL params (the history list cannot reset this
+            // component's state), and clearChat does its own reset — but
+            // without this branch the deleted session's messages stayed
+            // on screen under an empty URL. The new-session flow always
+            // carries a session_id, so it never hits this branch, and a
+            // fresh page already starts in this state.
+            setChatState({
+                messages: [],
+                isLoading: false,
+                error: null
+            })
         }
         return () => {
             cancelled = true;
