@@ -187,6 +187,20 @@ export function AIChat() {
         }
     }, [user_preferences, availableAiModels, selectedModel])
 
+    // Abort an in-flight stream when this page unmounts (navigating to
+    // another route mid-generation): the history effect's cleanup cannot
+    // do this, since it also runs on token rotation and tenant arrival
+    // and must not abort a live stream there. This effect's cleanup runs
+    // only on unmount — StrictMode's simulated unmount fires before any
+    // stream can exist, so it aborts nothing — and the sendMessage
+    // AbortError path already drops the partial message silently.
+    useEffect(() => {
+        return () => {
+            streamAbortRef.current?.abort()
+            streamAbortRef.current = null
+        }
+    }, [])
+
     useEffect(() => {
         // Cancel a stream from the previous session before loading this
         // one's history: a generation started in another session must not
