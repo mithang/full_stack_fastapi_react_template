@@ -247,11 +247,19 @@ async def passkey_register(
     credential: dict = Body(...),
     passkey_service: PasskeyService = Depends(get_passkey_service)
 ):
-    result = await passkey_service.complete_registration(email, credential)
-    
-    if result is False:
-        raise PassKeyException("Passkey registration failed.")
-    
+    try:
+        result = await passkey_service.complete_registration(email, credential)
+
+        if result is False:
+            raise PassKeyException("Passkey registration failed.")
+    except Exception as e:
+        # verify_registration_response raises the webauthn library's own
+        # exceptions for a malformed/forged credential, not PassKeyException:
+        # without this guard they escape as a 500 instead of the mapped 406,
+        # mirroring the try/except already present on passkey_login.
+        logger.error(f"Passkey registration failed for email: {email} with error: {e}")
+        raise PassKeyException("Passkey registration failed.") from e
+
     return status.HTTP_202_ACCEPTED
     
 
