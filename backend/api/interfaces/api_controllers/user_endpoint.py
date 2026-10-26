@@ -78,18 +78,25 @@ async def update_user(
     # role id already on the target) is allowed so full-DTO clients
     # echoing the current role are not broken.
     if data.role_id is not None:
-        caller_permissions = []
-        if current_user.role_id is not None:
-            caller_role = await role_service.get_role_by_id(role_id=str(current_user.role_id))
-            caller_permissions = caller_role.permissions or []
-        can_assign_roles = (
-            Permission.FULL_ACCESS in caller_permissions
-            or Permission.USER_ROLE_ASSIGN_OR_REMOVE_ONLY in caller_permissions
-            or (is_tenancy_enabled() and Permission.HOST_MANAGE_TENANTS in caller_permissions)
-        )
-        if not can_assign_roles:
-            existing_user = await service.get_user_by_id(user_id)
-            if str(existing_user.role_id) != data.role_id:
+        existing_user = await service.get_user_by_id(user_id)
+        if str(existing_user.role_id) != data.role_id:
+            # A real role change on one's own record is self-assignment
+            # by another route, so it is barred exactly like assign_role
+            # and remove_role are, even for callers who hold the role
+            # assignment permission (a holder could otherwise promote
+            # themselves to an admin role via PUT).
+            if str(current_user.id) == user_id:
+                raise ForbiddenException("Users cannot assign a role to themselves.")
+            caller_permissions = []
+            if current_user.role_id is not None:
+                caller_role = await role_service.get_role_by_id(role_id=str(current_user.role_id))
+                caller_permissions = caller_role.permissions or []
+            can_assign_roles = (
+                Permission.FULL_ACCESS in caller_permissions
+                or Permission.USER_ROLE_ASSIGN_OR_REMOVE_ONLY in caller_permissions
+                or (is_tenancy_enabled() and Permission.HOST_MANAGE_TENANTS in caller_permissions)
+            )
+            if not can_assign_roles:
                 raise ForbiddenException("Only users with role assignment permission can change a user's role.")
     user_doc = await service.update_user(user_id=user_id, user_data=data)
     serialized_user = await user_doc.to_serializable_dict()
