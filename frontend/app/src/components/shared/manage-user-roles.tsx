@@ -71,7 +71,13 @@ export function ManageUserRoles({ open, onDismiss, userId }: ManageUserRolesProp
             onDismiss();
         } catch (error) {
             console.error('Failed to assign role:', error);
-            toast.error("Failed to assign role", { richColors: true, position: "top-right" });
+            // A backend response (ApiError, which carries a numeric
+            // status) means the server answered and rejected the
+            // assignment; a failure with no status is a network
+            // error, not a bad role choice, and must not send the
+            // admin re-picking a role for a connection problem.
+            const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            toast.error(hasStatus ? "Failed to assign role" : "Unable to reach the server. Check your connection and try again.", { richColors: true, position: "top-right" });
         } finally {
             setIsLoading(false);
         }
