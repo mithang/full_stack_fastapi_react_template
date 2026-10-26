@@ -334,7 +334,16 @@ export function AIChat() {
         if (!input.trim() || chatState.isLoading) return
         let sessionId = searchParams.get("session_id")
         if (!sessionId) {
-            sessionId = await getAIChatNewSession()
+            try {
+                sessionId = await getAIChatNewSession()
+            } catch {
+                // getAIChatNewSession already toasts the failure, so there
+                // is nothing more to report — but it must not propagate:
+                // sendMessage is called from onClick/onKeyUp with no
+                // caller awaiting it, so a throw here was an unhandled
+                // rejection. The user's input is left intact to retry.
+                return
+            }
             setSearchParams({ session_id: sessionId, new_session: 'true' })
         }
 
