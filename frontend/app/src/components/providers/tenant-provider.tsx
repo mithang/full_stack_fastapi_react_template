@@ -78,11 +78,20 @@ export function TenantsProvider({ children }: TenantsProviderProps) {
             });
         } catch (error) {
             console.error("Failed to fetch tenants", error);
-            toast.error("Failed to fetch tenants", {
+            // A backend response (ApiError, which carries a numeric status)
+            // means the server answered; a failure with no status is a
+            // network error, not a failed tenant fetch, and must not
+            // send the admin to re-check filters for tenants that never
+            // reached the server. The permission hint only applies to a
+            // real server response (e.g. a 403 for a non-host user).
+            const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            toast.error(hasStatus
+                ? "Failed to fetch tenants"
+                : "Unable to reach the server. Check your connection and try again.", {
                 richColors: true,
                 duration: 5000,
                 position: "top-right",
-                description: !isHost ? "You do not have permission to view this resource." : undefined
+                description: !isHost && hasStatus ? "You do not have permission to view this resource." : undefined
             });
         } finally {
             setPending(false);
