@@ -64,7 +64,13 @@ class PasskeyService():
         tenant_service: TenantService = get_tenant_service()
         if tenant_id is not None:
             tenant = await tenant_service.get_tenant_by_id(tenant_id=str(tenant_id))
-            rp_id = tenant.custom_domain if tenant.custom_domain else tenant.subdomain
+            # A tenant may have neither a custom domain nor a subdomain (both
+            # nullable on the entity), in which case the old expression
+            # produced rp_id=None and generate_registration_options failed.
+            # Fall back to the main domain, as the tenant_id=None branch
+            # above already does (same class as the magic-link domain
+            # fallback); custom-domain and subdomain tenants are unchanged.
+            rp_id = tenant.custom_domain or tenant.subdomain or get_host_main_domain_name()
             rp_name = tenant.name.title()
             return PasskeyRepDto(rp_id=rp_id, rp_name=rp_name)
 
