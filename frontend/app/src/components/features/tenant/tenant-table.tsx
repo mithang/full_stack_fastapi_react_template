@@ -99,7 +99,7 @@ const columns = [
         cell: (c) => {
             const subdomain = c.getValue();
             return subdomain ? (
-                <NavLink to={`https://${subdomain}`} target="_blank" className="hover:underline">
+                <NavLink to={`https://${subdomain}`} target="_blank" rel="noopener noreferrer" className="hover:underline">
                     {`https://${subdomain}`}
                     <IconExternalLink className="inline-block ml-1 mb-1" size={14} />
 
@@ -112,7 +112,7 @@ const columns = [
         cell: (c) => {
             const customDomain = c.getValue();
             return customDomain ? (
-                <NavLink to={`https://${customDomain}`} target="_blank" className=" hover:underline">
+                <NavLink to={`https://${customDomain}`} target="_blank" rel="noopener noreferrer" className=" hover:underline">
                     {`https://${customDomain}`}
                     <IconExternalLink className="inline-block ml-1 mb-1" size={14} />
                     {customDomainStatusIcon(c.row.original.custom_domain_status!)}

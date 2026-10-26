@@ -693,7 +693,7 @@ export function AIChat() {
                     <AlertDescription>
                         Please ensure you have installed locally running AI models.
                         <NavLink to="https://docs.ollama.com/quickstart"
-                            target="_blank" className="underline underline-offset-4 font-medium ml-1">
+                            target="_blank" rel="noopener noreferrer" className="underline underline-offset-4 font-medium ml-1">
                             Learn more
                         </NavLink>
                     </AlertDescription>
