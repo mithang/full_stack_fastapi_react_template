@@ -77,6 +77,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         } catch (error) {
             console.error("Failed to refresh token:", error);
+            // Only a server-answered failure means the refresh cookie
+            // itself is bad. A failure with no numeric status is a
+            // network error — the request never reached the server —
+            // so the cookie may still be valid: keep the session and
+            // do not navigate to /login, where the effect below skips
+            // notProtectedRoutes and could never retry the cookie.
+            // isLoggedIn is already false (set above), so the dashboard
+            // shows Loading until the worker's next tick refreshes via
+            // the cookie and posts a fresh token — the same rule
+            // fetchUser follows for network failures.
+            const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            if (!hasStatus) {
+                console.error("Failed to refresh token (network error, keeping session):", error);
+                return;
+            }
             // Drop the stale client session too, not just the route: this
             // path runs when fetchUser already failed, so the token in
             // state is known-bad, and leaving it (plus the user) set
