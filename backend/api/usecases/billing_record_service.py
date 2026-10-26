@@ -517,6 +517,19 @@ class BillingRecordService:
 
         period_start, period_end = self._extract_period(line)
         price_id, product_id = self._extract_pricing(line)
+        # Guard the caller-supplied tenant_id the same way
+        # handle_invoice_paid guards its own metadata value: the
+        # handler path is guarded, but this method trusts its argument,
+        # so a truthy non-string value (e.g. an int from another
+        # caller) would otherwise short-circuit the `or` below,
+        # bypass _extract_tenant_id entirely, and raise inside
+        # PydanticObjectId() in the record build — outside the save
+        # try/catch, turning a valid invoice.paid delivery into a 500
+        # that Stripe retries forever. A malformed value falls through
+        # to the line-metadata extraction, as an empty value already
+        # did; valid string ids behave as before.
+        if not isinstance(tenant_id, str) or not tenant_id:
+            tenant_id = None
         tenant_id = tenant_id or self._extract_tenant_id(line, scope)
 
         # Guard the currency the same way the lines/period/metadata
