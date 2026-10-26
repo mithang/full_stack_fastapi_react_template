@@ -168,7 +168,15 @@ export function TenantsProvider({ children }: TenantsProviderProps) {
             await fetchTenants();
         } catch (error) {
             console.error("Failed to delete tenant", error);
-            toast.error("Failed to delete tenant", {
+            // A backend response (ApiError, which carries a numeric status)
+            // means the server answered; a failure with no status is a
+            // network error, not a failed tenant deletion, and must not
+            // send the admin to re-check a deletion that never
+            // reached the server.
+            const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            toast.error(hasStatus
+                ? "Failed to delete tenant"
+                : "Unable to reach the server. Check your connection and try again.", {
                 richColors: true,
                 position: "top-right"
             });
