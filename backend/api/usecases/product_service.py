@@ -13,8 +13,19 @@ class ProductService:
         self.stripe_resolver: StripeResolver = stripe_resolver
 
     async def list_products(self, scope: ScopeType, show_active: bool = True) -> ProductListDto:
-        sc = await self.stripe_resolver.get_stripe_client(scope=scope)
-        result =  await sc.v1.products.list_async(params={"limit": 100, "active": show_active})
+        try:
+            sc = await self.stripe_resolver.get_stripe_client(scope=scope)
+            result =  await sc.v1.products.list_async(params={"limit": 100, "active": show_active})
+        except Exception as e:
+            # The list was unwrapped, so a Stripe failure (bad key,
+            # outage, resolver error) reached the client as a raw 500
+            # instead of a mapped API error — unlike every
+            # single-product operation, which now raises
+            # ProductException. A list failure is never a not-found
+            # (an empty catalogue is a valid empty result), so it
+            # always becomes a product error (406 via ProductException).
+            logger.error(f"Failed to list products: {str(e)}")
+            raise ProductException(f"Failed to list products: {str(e)}") from e
         return ProductListDto(products=[product for product in result.data],  has_more=result.has_more)
     
     async def get_product_by_id(self, product_id: str,  scope: ScopeType) -> ProductDto:
