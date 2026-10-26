@@ -1,6 +1,6 @@
 from typing import List
 from beanie import PydanticObjectId
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from api.common.exceptions import NotFoundException
 from api.common.utils import get_logger
 from api.core.container import get_storage_settings_service
@@ -46,14 +46,23 @@ async def configure_storage(
         # We don't expect storage settings to be configured with host context as they are global settings. Only tenants with proper permissions can configure them.
         if current_user.tenant_id is None or current_user.tenant_id.strip() == "":
             logger.error("Tenant ID is missing in the current user context.")
-            return status.HTTP_400_BAD_REQUEST
+            # Raise, don't return the status code as the body: returning
+            # status.HTTP_400_BAD_REQUEST only sets the response body to
+            # 400 while the declared 201 status still goes out, so the
+            # generated client (which throws only on non-2xx) treated a
+            # failed configuration as success and settings-provider
+            # toasted "updated successfully" for a save that never
+            # happened. A real 400 makes the client throw instead.
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Tenant ID is missing in the current user context.")
         
         configuration.updated_by_user_id = current_user.id
         await setting_service.configure_storage(setting=configuration, tenant_id=current_user.tenant_id)
         return status.HTTP_201_CREATED
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to configure storage: {e}")
-        return status.HTTP_400_BAD_REQUEST
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Failed to configure storage.")
 
 
 
