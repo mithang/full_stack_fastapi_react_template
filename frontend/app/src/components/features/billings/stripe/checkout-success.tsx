@@ -44,7 +44,17 @@ export function CheckoutSuccess() {
         const request = tenantId
             ? client.hostCheckoutSuccessApiV1CheckoutsHostPaymentSuccessPost({ sessionId, tenantId })
             : client.tenantCheckoutSuccessApiV1CheckoutsTenantPaymentSuccessPost({ sessionId });
-        request.then(() => setFinalisation("confirmed")).catch(() => setFinalisation("unconfirmed"));
+        // A failed POST clears the guard (but not after a confirmed one):
+        // the token held at POST time may have been expired, and the
+        // effect re-runs when the worker refresh populates a new token —
+        // without this, a failed attempt would block any retry and the
+        // page would sit on "couldn't confirm yet" even with a fresh
+        // token. A confirmed POST keeps its guard, so a later token
+        // rotation does not re-POST or regress the copy.
+        request.then(() => setFinalisation("confirmed")).catch(() => {
+            if (notifiedRef.current === key) notifiedRef.current = null;
+            setFinalisation("unconfirmed");
+        });
     }, [sessionId, tenantId, userId, accessToken]);
 
     // Stripe always appends ?session_id= to the success_url (see
