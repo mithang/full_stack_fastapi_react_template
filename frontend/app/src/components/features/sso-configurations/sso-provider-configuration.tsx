@@ -261,7 +261,7 @@ export function SSOProviderConfiguration() {
                                                 {provider?.redirect_uris?.map((uri) => (
                                                     <CopyText key={uri} text={uri} />
                                                 ))}
-                                                {!provider?.redirect_uris || provider.redirect_uris.length === 0 && (
+                                                {(!provider?.redirect_uris || provider.redirect_uris.length === 0) && (
                                                     <p className="text-sm text-muted-foreground">
                                                         No redirect URIs configured.
                                                     </p>
