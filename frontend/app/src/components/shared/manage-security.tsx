@@ -37,11 +37,18 @@ function PassKeyManagement({ accessToken, shouldRefresh }: PassKeyManagementProp
         fetchPasskeys();
     }
 
+    // accessToken is a dep, not just shouldRefresh: a fetch that runs with
+    // an expired token (dialog opened after expiry but before the worker's
+    // next refresh tick, e.g. a throttled background tab) 401s and nothing
+    // re-ran it, leaving the list empty even after a fresh token arrived.
+    // The fetch is idempotent, so the extra fetch on token arrival/rotation
+    // while the dialog is open is safe; the guard skips the fetch while no
+    // token is held, so no unauthenticated request that can only 401.
     useEffect(() => {
-        if (shouldRefresh) {
+        if (shouldRefresh && accessToken) {
             fetchPasskeys();
         }
-    }, [shouldRefresh]);
+    }, [shouldRefresh, accessToken]);
 
     return (
         <DialogContent>
@@ -90,7 +97,11 @@ export function ManageSecurity() {
     const [shouldRefresh, setShouldRefresh] = useState<boolean>(false);
 
     function onOpen(isOpen: boolean) {
-        if (isOpen && accessToken) {
+        // Do not gate arming the refresh on the token held at open time:
+        // a dialog opened while no token is held (mid refresh) would never
+        // fetch, since shouldRefresh would stay false when the token
+        // arrived. Arm unconditionally; the effect above waits for a token.
+        if (isOpen) {
             setShouldRefresh(true);
         }
         else if (!isOpen) {
