@@ -141,8 +141,23 @@ class RedisCacheMiddleware(BaseHTTPMiddleware):
 
         # Read and rebuild response body
         body = b"".join([chunk async for chunk in response.body_iterator])
-        body_text = body.decode()
         content_type = response.headers.get("content-type", "")
+        try:
+            body_text = body.decode()
+        except UnicodeDecodeError as e:
+            # Fail open: a non-UTF-8 body (a binary download, or a
+            # non-UTF-8 upstream error page) must not turn into a 500
+            # raised by this middleware itself, masking the handler's
+            # own response — the same fail-open class as the cache
+            # read/write guards above. Return the raw bytes uncached;
+            # today's JSON GETs decode as before and are unaffected.
+            logger.warning(f"Non-UTF-8 response body, returning raw: {e}")
+            return Response(
+                content=body,
+                status_code=response.status_code,
+                headers=dict(response.headers),
+                media_type=content_type,
+            )
 
         # Cache only 200 OK + JSON responses
         if response.status_code == 200  and "application/json" in content_type:
