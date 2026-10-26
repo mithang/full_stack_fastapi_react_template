@@ -31,8 +31,14 @@ class RedisCacheMiddleware(BaseHTTPMiddleware):
         self.expiry = expiry
 
     async def _clear_cache(self, user_id: str, tenant_id: str):
-        async for key in redis.scan_iter(f"cache:cu{user_id}:ct{tenant_id}:*"):
-            await redis.delete(key)
+        # Fail open: a cache outage must not block the mutation itself.
+        # Stale entries expire on their own (self.expiry); the request
+        # proceeds and the handler runs either way.
+        try:
+            async for key in redis.scan_iter(f"cache:cu{user_id}:ct{tenant_id}:*"):
+                await redis.delete(key)
+        except Exception as e:
+            logger.warning(f"Cache clear failed, continuing without it: {e}")
 
     async def dispatch(self, request: Request, call_next):
         token = None
@@ -76,17 +82,27 @@ class RedisCacheMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
            
 
-        # --- Try reading from cache
-        cached_value = await redis.get(cache_key)
+        # --- Try reading from cache; fail open on any cache failure
+        # (Redis down, corrupted entry) so the handler still runs.
+        cached_value = None
+        try:
+            cached_value = await redis.get(cache_key)
+        except Exception as e:
+            logger.warning(f"Cache read failed, treating as miss: {e}")
         if cached_value:
             logger.debug(f"Cache hit for key: {cache_key}")
-            cached = json.loads(cached_value)
-            return Response(
-                content=cached["body"],
-                status_code=cached["status"],
-                media_type=cached["media_type"],
-                headers=cached.get("headers", {}),
-            )
+            try:
+                cached = json.loads(cached_value)
+                return Response(
+                    content=cached["body"],
+                    status_code=cached["status"],
+                    media_type=cached["media_type"],
+                    headers=cached.get("headers", {}),
+                )
+            except Exception as e:
+                # Corrupt or wrong-shape entry: fall through to the
+                # handler (which will re-cache a fresh response).
+                logger.warning(f"Corrupt cache entry, treating as miss: {e}")
 
         # --- Cache miss → execute route handler
         response = await call_next(request)
@@ -103,8 +119,14 @@ class RedisCacheMiddleware(BaseHTTPMiddleware):
                 "status": response.status_code,
                 "media_type": content_type,
             })
-            await redis.set(cache_key, to_cache, ex=self.expiry)
-            logger.debug(f"Cache set for key: {cache_key}")
+            # Fail open: a cache-write failure must not turn a
+            # successful handler response into a 500 for the client.
+            try:
+                await redis.set(cache_key, to_cache, ex=self.expiry)
+            except Exception as e:
+                logger.warning(f"Cache set failed, returning response anyway: {e}")
+            else:
+                logger.debug(f"Cache set for key: {cache_key}")
 
         if response.status_code == 401 and "application/json" in content_type and request.url.path not in not_allowed_cache_paths:
             logger.debug(f"Response status {response.status_code} not cached.")
