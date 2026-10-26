@@ -140,6 +140,14 @@ async def update_profile_picture(
     user_service: UserService = Depends(get_user_service),
     file_service: FileService = Depends(get_file_service),
 ):
+    # The frontend checks for an image file, but a direct API call bypasses
+    # it, so validate server-side (mirroring the branding logo upload):
+    # anything stored as a profile picture is later served back via a
+    # public-ish file URL, so a non-image upload (e.g. HTML) must not
+    # reach storage. content_type comes from the multipart header, so
+    # this check consumes nothing from the upload stream.
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise InvalidOperationException("Profile picture must be an image file.")
     await user_service.get_user_by_id(user_id)
     file_location = await file_service.upload_file(file)
     await user_service.update_user(user_id=user_id, user_data=UpdateUserDto(image_url=file_location))
