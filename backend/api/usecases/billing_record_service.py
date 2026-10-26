@@ -78,10 +78,19 @@ class BillingRecordService:
         if tenant_id:
             return tenant_id
 
-        # Fallback: subscription metadata
-        parent = line.get("parent") or {}
-        sub_details = parent.get("subscription_details") or {}
-        metadata = sub_details.get("metadata") or {}
+        # Fallback: subscription metadata. Guard null/non-dict values the
+        # same way _extract_pricing guards price_details: a null or
+        # non-dict parent or subscription_details value would otherwise
+        # raise AttributeError here, outside the save try/catch, turning
+        # a valid invoice.paid delivery into a 500 that Stripe retries
+        # forever.
+        parent = line.get("parent")
+        sub_details = (
+            parent.get("subscription_details") if isinstance(parent, dict) else None
+        )
+        metadata = (
+            sub_details.get("metadata") if isinstance(sub_details, dict) else None
+        )
 
         if isinstance(metadata, dict):
             return metadata.get("tenant_id")
