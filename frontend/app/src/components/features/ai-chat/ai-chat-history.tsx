@@ -25,8 +25,14 @@ export function AIChatHistory({ mobile }: AIChatHistoryProps) {
     const navigate = useNavigate()
     const histories = sessions || []
     function getTitle(historyId: string) {
-        const historyItem = histories.find(h => h.sessions.find(s => s.id === historyId))?.sessions[0]
-        return historyItem ? historyItem.histories[0].query : "Untitled"
+        // Use the matched history document, not just the group's first
+        // one, and tolerate an empty histories list: a freshly created
+        // session has no exchanges yet, so histories[0] is undefined and
+        // reading .query off it threw during render, crashing the whole
+        // history list. Such a session now shows "Untitled" until its
+        // first exchange lands.
+        const historyItem = histories.find(h => h.sessions.find(s => s.id === historyId))?.sessions.find(s => s.id === historyId)
+        return historyItem?.histories[0]?.query || "Untitled"
     }
 
     async function onDelete(sessionId: string) {
