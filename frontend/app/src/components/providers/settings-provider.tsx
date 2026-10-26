@@ -145,7 +145,13 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
     useEffect(() => {
         if ((!canManageSettings || !accessToken) && !current_tenant) return;
         fetchSettings();
-    }, [accessToken, canManageSettings])
+        // current_tenant is a dep, not just a guard: storage settings are
+        // tenant-scoped (via the X-Tenant-ID the client sends), so a fetch
+        // that ran before the tenant loaded — or before a tenant switch —
+        // must re-run once the tenant is known, mirroring the products
+        // page's configuredStripeSetting dep. Without it the page could
+        // keep showing another tenant's (or host-mode) storage settings.
+    }, [accessToken, canManageSettings, current_tenant])
 
     if (!canManageSettings || !current_tenant) {
         return <NoPermissionToAccessResource message='Storage Settings' />;
