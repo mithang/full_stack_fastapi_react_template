@@ -288,11 +288,24 @@ export function CheckoutOverview() {
     }
 
     if (fetchError) {
+        // The error branch previously offered no way back: no Refresh
+        // button and no pagination, so a transient failure left the user
+        // stuck unless they reloaded the whole page. A retry reuses the
+        // current page (fetchCheckoutRecords clears the error first, so a
+        // success returns to the table and a failure re-shows this branch).
         return (
             <Alert variant="destructive">
                 <AlertTriangle className="h-4 w-4" />
-                <AlertDescription>
-                    {fetchError}
+                <AlertDescription className="flex items-center justify-between gap-4">
+                    <span>{fetchError}</span>
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => fetchCheckoutRecords(pagination.skip, pagination.limit)}
+                    >
+                        <RefreshCw className="h-4 w-4 mr-2" />
+                        Retry
+                    </Button>
                 </AlertDescription>
             </Alert>
         );
