@@ -332,7 +332,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             if (event.data && 'access_token' in event.data) {
                 setAccessToken(event.data.access_token);
             } else if (event.data && 'code' in event.data) {
-                if (event.data.code === 401 || event.data.code === 400) {
+                // 403 joins 401/400 here because the refresh endpoint's
+                // missing-cookie error is a ForbiddenException, which the
+                // backend handler now maps to 403 instead of the previous
+                // default 400: without this, a worker refresh with no
+                // cookie would post 403, be ignored, and leave a dead
+                // session standing on protected routes until the next
+                // interaction. The public-route guard below still applies.
+                if (event.data.code === 401 || event.data.code === 400 || event.data.code === 403) {
                     setIsLoggedInState(false);
                     setUser(null);
                     setAccessToken("");

@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from api.common.exceptions import ApiBaseException, ConflictException, InvalidOperationException, NotFoundException, UnauthorizedException
+from api.common.exceptions import ApiBaseException, ConflictException, ForbiddenException, InvalidOperationException, NotFoundException, UnauthorizedException
 from api.common.utils import get_logger, is_tenancy_enabled
 from api.core.container import container
 from api.core.exceptions import InvalidSubdomainException, TenantNotFoundException
@@ -75,6 +75,14 @@ async def api_exception_handler(req: Request, ex: ApiBaseException) -> JSONRespo
         status_code = status.HTTP_409_CONFLICT
     elif isinstance(ex, UnauthorizedException):
         status_code = status.HTTP_401_UNAUTHORIZED
+    elif isinstance(ex, ForbiddenException):
+        # ForbiddenException previously fell through to the default 400,
+        # so permission denials, self-action guards, and the refresh
+        # endpoint's missing-cookie error all surfaced as "bad request"
+        # instead of 403 — including FeatureNotEnabledException, which
+        # subclasses ForbiddenException. 403 is the status the frontend
+        # already expects for these cases (e.g. tenant-provider).
+        status_code = status.HTTP_403_FORBIDDEN
     elif isinstance(ex, InvalidSubdomainException):
         status_code = status.HTTP_400_BAD_REQUEST
     elif isinstance(ex, InvalidOperationException):
