@@ -327,23 +327,35 @@ class BillingRecordService:
         """
         Create a Stripe checkout session for tenant scope for tenant's users
         """
-        sc: StripeClient = await self.stripe_resolver.get_stripe_client(scope="tenant")
-        customer = await sc.v1.customers.create_async(
-            params={
-                "email": checkout_req.email,
-                "metadata": {"tenant_id": checkout_req.tenant_id, "user_id": user_id},
-            }
-        )
+        # The checkout endpoint does not wrap this call, so an unwrapped
+        # Stripe failure (bad key, outage, unknown price id) propagated as
+        # a raw Stripe exception past the ApiBaseException-only handler
+        # and surfaced as a 500 — unlike the host-scope counterpart, which
+        # now raises BillingRecordException (-> 406 via the handler).
+        # Only the Stripe calls are wrapped; the billing-record DB save
+        # below stays outside, so a DB failure keeps its existing behaviour.
+        try:
+            sc: StripeClient = await self.stripe_resolver.get_stripe_client(scope="tenant")
+            customer = await sc.v1.customers.create_async(
+                params={
+                    "email": checkout_req.email,
+                    "metadata": {"tenant_id": checkout_req.tenant_id, "user_id": user_id},
+                }
+            )
 
-        checkout_session = await sc.v1.checkout.sessions.create_async(
-            params={
-                "mode": checkout_req.mode,
-                "customer": customer.id,
-                "line_items": [{"price": checkout_req.price_id, "quantity": 1}],
-                "success_url": f"{frontend_url}/checkout/success?session_id={{CHECKOUT_SESSION_ID}}&user_id={user_id}",
-                "cancel_url": f"{frontend_url}/checkout/cancel?user_id={user_id}",
-            }
-        )
+            checkout_session = await sc.v1.checkout.sessions.create_async(
+                params={
+                    "mode": checkout_req.mode,
+                    "customer": customer.id,
+                    "line_items": [{"price": checkout_req.price_id, "quantity": 1}],
+                    "success_url": f"{frontend_url}/checkout/success?session_id={{CHECKOUT_SESSION_ID}}&user_id={user_id}",
+                    "cancel_url": f"{frontend_url}/checkout/cancel?user_id={user_id}",
+                }
+            )
+        except Exception as e:
+            raise BillingRecordException(
+                f"Failed to create tenant checkout session: {str(e)}"
+            ) from e
 
         billing_record = BillingRecord(
             scope="tenant",
