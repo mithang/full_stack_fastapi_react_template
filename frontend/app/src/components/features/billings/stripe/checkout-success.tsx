@@ -1,4 +1,4 @@
-import { useSearchParams } from "react-router";
+import { Link, useSearchParams } from "react-router";
 
 export function CheckoutSuccess() {
     const [searchParams] = useSearchParams();
@@ -13,7 +13,7 @@ export function CheckoutSuccess() {
         return (
             <div>
                 <h1>Checkout Return</h1>
-                <p>We could not confirm a payment from this link. If you just completed a checkout, please check your billing page for its status.</p>
+                <p>We could not confirm a payment from this link. If you just completed a checkout, please check <Link to="/billing/checkouts">your billing page</Link> for its status.</p>
             </div>
         );
     }
@@ -22,6 +22,7 @@ export function CheckoutSuccess() {
         <div>
             <h1>Checkout Success</h1>
             <p>Your payment was successful. Thank you for your purchase!</p>
+            <p><Link to="/billing/checkouts">View your checkouts</Link></p>
         </div>
     );
 }
