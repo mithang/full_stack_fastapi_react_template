@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 from api.common.exceptions import InvalidOperationException
 from api.core.container import get_billing_record_service, get_tenant_service
 from api.domain.dtos.billing_dto import BillingRecordListDto
@@ -116,7 +116,12 @@ async def tenant_checkout_canceled(
 
 @router.get("/all", response_model=BillingRecordListDto, status_code=status.HTTP_200_OK)
 async def list_checkout_records(
-    skip: int = 0, limit: int = 100,
+    # The frontend defaults to limit 10, but a direct API call passed
+    # skip/limit straight into the DB query unbounded, so a single request
+    # could dump the whole checkout-record table (limit=1000000) or pass
+    # negative values; out-of-range values now fail fast with a 422.
+    # Default limit 100 preserved (unlike the limit-10 list endpoints).
+    skip: int = Query(0, ge=0), limit: int = Query(100, ge=1, le=100),
     _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.MANAGE_BILLING])),
     billing_service: BillingRecordService = Depends(get_billing_record_service)
 ):
