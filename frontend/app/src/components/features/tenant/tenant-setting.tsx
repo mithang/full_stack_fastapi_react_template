@@ -178,7 +178,13 @@ export function TenantSetting() {
 
         } catch (error: any) {
             console.error("Error updating tenant DNS:", error);
-            toast.error(error?.body?.detail || "Failed to update custom domain");
+            // A status-less failure (e.g. raw TypeError on network failure) is a
+            // connectivity problem, not a failed DNS update, and must not send the
+            // admin to re-enter a domain for an update that never reached the server.
+            const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            toast.error(hasStatus
+                ? (error?.body?.detail || "Failed to update custom domain")
+                : "Unable to reach the server. Check your connection and try again.");
         } finally {
             setIsLoading(false);
         }
