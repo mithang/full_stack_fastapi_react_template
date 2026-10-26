@@ -117,7 +117,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setUser({ ...user, image_url: imageUrl });
 
         } catch (error) {
-            await refreshToken();
+            // Only fall through to the refresh path when the server
+            // actually answered (ApiError carries a numeric status,
+            // e.g. 401 for an expired token). A failure with no status
+            // is a network error — the request never reached the server
+            // — so it is not an expired session: refreshing would fail
+            // the same way, and refreshToken's failure path clears the
+            // session and navigates to /login, turning a transient
+            // outage into a forced re-login (which cannot self-heal,
+            // since the effect above skips notProtectedRoutes and the
+            // still-valid refresh cookie is never retried there). The
+            // worker's next tick retries the refresh instead, and the
+            // [accessToken] effect re-fetches the user then — the same
+            // rule the worker itself follows for network failures.
+            const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            if (hasStatus) {
+                await refreshToken();
+            } else {
+                console.error("Failed to fetch user (network error, keeping session):", error);
+            }
         }
 
     }, [accessToken]);
