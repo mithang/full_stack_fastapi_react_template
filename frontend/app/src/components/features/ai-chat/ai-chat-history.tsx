@@ -66,9 +66,11 @@ export function AIChatHistory({ mobile }: AIChatHistoryProps) {
                         Chat History
                     </CardTitle>
                     <CardContent className="p-4 overflow-auto">
-                        <Select onValueChange={(value) => {
-                            navigate(`?session_id=${value}`)
-                        }}>
+                        <Select
+                            value={searchParams.get("session_id") ?? undefined}
+                            onValueChange={(value) => {
+                                navigate(`?session_id=${value}`)
+                            }}>
                             <SelectTrigger className="w-full">
                                 <SelectValue placeholder="Show History" />
                             </SelectTrigger>
