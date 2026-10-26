@@ -249,8 +249,15 @@ class BillingRecordService:
         """
         Handle cancelled checkout for host scope
         """
+        # The stored tenant_id is a PydanticObjectId (see ApiBaseModel),
+        # so searching with the raw str (as before) never matched and
+        # pending host records were silently never marked canceled —
+        # the same class as the tenant-cancel fix, which converts the
+        # string user id. The endpoint already guarantees tenant_id is
+        # a non-empty string equal to current_user.tenant_id, so the
+        # conversion cannot fail on a missing/invalid value here.
         billing_records = await self.billing_record_repository.search(
-            {"tenant_id": tenant_id, "status": "pending"}
+            {"tenant_id": PydanticObjectId(tenant_id), "status": "pending"}
         )
         for record in billing_records:
             record.status = "canceled"
