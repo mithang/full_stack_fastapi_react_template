@@ -227,6 +227,23 @@ not_allowed_cache_paths = [
     # confirmed as /api/v1 + router prefix /billing + GET "/plans"
     # (api/__init__.py:130,154; billing_endpoint.py:13,16).
     "/api/v1/billing/plans",
+    # Tenant list: list_tenants reads all tenants fresh on every call,
+    # and the tenant provider fetches it on load and on page change.
+    # Tenants are created and deleted by other HOST_MANAGE_TENANTS
+    # admins, and a mutation clears only the acting admin's cache
+    # keys, so a viewing host admin would otherwise keep a list up
+    # to the TTL old — a just-created tenant missing, or a
+    # just-deleted tenant still offered while they review tenants.
+    # Same stale-viewer class as the users/roles bypasses above, not
+    # an enforcement fix: tenant mutations read/write fresh. The
+    # query string (skip/limit) is part of the cache key, so this
+    # bypass is the only way to keep the list live. Endswith
+    # matching keeps the detail route (/tenants/{id}) and the
+    # search/check routes cached, since none ends in
+    # "/api/v1/tenants/". Full path confirmed as /api/v1 + router
+    # prefix /tenants + GET "/" (api/__init__.py:130,136;
+    # tenant_endpoint.py:24,26).
+    "/api/v1/tenants/",
 ]
 
 
