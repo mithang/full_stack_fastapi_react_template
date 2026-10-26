@@ -62,15 +62,33 @@ class BillingRecordService:
         if not pricing or not isinstance(pricing, dict):
             return None, None
 
+        # Guard expanded price/product objects the same way the record
+        # build guards an expanded subscription (iteration 273): a price
+        # or product value fetched with expand[] is a dict, not the id
+        # string the record's Optional[str] fields require, so passing
+        # it straight through would fail BillingRecord validation —
+        # outside the save try/catch, turning a valid invoice.paid
+        # delivery into a 500 that Stripe retries forever. An expanded
+        # object keeps its id; anything else malformed falls back to
+        # None and the paid record is still persisted.
+        def _id_or_none(value: Any) -> Optional[str]:
+            if isinstance(value, dict):
+                value = value.get("id")
+            return value if isinstance(value, str) and value else None
+
         # New Stripe format
         details = pricing.get("price_details")
         if isinstance(details, dict):
-            return details.get("price"), details.get("product")
+            return _id_or_none(details.get("price")), _id_or_none(
+                details.get("product")
+            )
         # Legacy line-item format: no price_details wrapper, so the price
         # object itself carries the id/product. Indexing price_details
         # unconditionally raised KeyError here, turning a valid
         # invoice.paid delivery into a 500 that Stripe retries forever.
-        return pricing.get("id"), pricing.get("product")
+        return _id_or_none(pricing.get("id")), _id_or_none(
+            pricing.get("product")
+        )
 
     def _extract_tenant_id(self, line: dict[str, Any], scope: str) -> Optional[str]:
         if scope != "tenant":
