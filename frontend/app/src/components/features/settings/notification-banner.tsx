@@ -56,16 +56,28 @@ export function NotificationBanner() {
     const isEnabled = watch("is_enabled");
     const message = watch("message");
 
-    const fetchNotificationBanner = async () => {
+    const fetchNotificationBanner = async (forceReset = false) => {
         if (!accessToken) return;
         try {
             setLoading(true);
             const response = await getApiClient(accessToken).notifications.getNotificationBannerApiV1NotificationsBannerGet();
             setCurrentNotification(response);
-            reset({
-                is_enabled: response.is_enabled,
-                message: response.message || "",
-            });
+            // The effect refetches on every access-token rotation (~10
+            // minutes via the refresh worker) and on tenant arrival, so
+            // an unconditional reset would discard a banner message the
+            // admin is mid-edit — the same class as the storage-settings
+            // fix in iteration 196. Skip the reset while the form is
+            // dirty; the server value is still kept in
+            // currentNotification. Explicit refreshes (the header
+            // Refresh button and the post-save refresh) pass forceReset
+            // so a deliberate re-sync still applies server values and
+            // clears the dirty flag after a save.
+            if (forceReset || !isDirty) {
+                reset({
+                    is_enabled: response.is_enabled,
+                    message: response.message || "",
+                });
+            }
         } catch (error) {
             console.error("Error fetching notification banner:", error);
             // If no notification exists yet, keep defaults
@@ -118,7 +130,7 @@ export function NotificationBanner() {
             // would surface that as an unhandled rejection. The banner save
             // itself already succeeded, so a refresh failure must not fall
             // through to the "Failed to save" toast below.
-            await Promise.all([fetchNotificationBanner(), reloadAppConfig()]).catch((error) => {
+            await Promise.all([fetchNotificationBanner(true), reloadAppConfig()]).catch((error) => {
                 console.warn("Failed to refresh banner after save:", error);
             });
         } catch (error: unknown) {
@@ -157,7 +169,7 @@ export function NotificationBanner() {
                         Manage the notification banner displayed to users across your application
                     </p>
                 </div>
-                <Button onClick={fetchNotificationBanner} variant="outline">
+                <Button onClick={() => fetchNotificationBanner(true)} variant="outline">
                     <RefreshCw className="h-4 w-4 mr-2" />
                     Refresh
                 </Button>
