@@ -40,6 +40,12 @@ export function ListLocalAIModels({ onModelSelect, selectedModel, avilableModels
             setLoading(false);
             return;
         }
+        // The caller always passes an array (starting as []), so the
+        // falsy branch above never fires on a successful load: without
+        // this, loading stayed true forever and the select kept showing
+        // "Loading models..." / "Fetching Models..." after models arrived.
+        setLoading(false);
+        setError(null);
     }, [avilableModels])
 
     if (error) {
