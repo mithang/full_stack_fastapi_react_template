@@ -634,10 +634,23 @@ def _encode_idna(host: str) -> str | None:
     # scripts (Bengali, Gurmukhi, Oriya) are the same class but
     # separate ranges, assessed separately.
     _punycode_devanagari = frozenset(range(0x0958, 0x0960))
+    # The same class covers the Bengali letters with nukta
+    # U+09DC/U+09DD/U+09DF (ড়/ঢ়/য়, the single-codepoint forms
+    # of base letter + NUKTA U+09BC): the strict IDNA2008 path
+    # rejects them all, while UTS46 punycodes them as-is
+    # (ড় -> "xn--15b8c", ঢ় -> "xn--25b6c", য় -> "xn--g6b0a"),
+    # matching Node's WHATWG parser. A translate table cannot
+    # express this class (there is no plain-letter target), so
+    # they join the UTS46 retry here; the pipeline's lower()
+    # leaves them unchanged, so the forms above are what the
+    # retry sees in practice. The nukta letters of the remaining
+    # Indic scripts (Gurmukhi, Oriya) are the same class but
+    # separate ranges, assessed separately.
+    _punycode_bengali = frozenset([0x09DC, 0x09DD, 0x09DF])
     if any(
         ord(c) in _punycode_modifiers or ord(c) in _punycode_letterlike
         or ord(c) in _punycode_digraphs or ord(c) in _punycode_cherokee
-        or ord(c) in _punycode_devanagari
+        or ord(c) in _punycode_devanagari or ord(c) in _punycode_bengali
         for c in host
     ):
         try:
