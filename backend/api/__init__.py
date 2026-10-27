@@ -822,6 +822,19 @@ def _encode_idna(host: str) -> str | None:
     # flagged alongside them are the same class but separate
     # ranges, assessed separately.
     _punycode_arabic = frozenset([0x0675, 0x0676, 0x0677, 0x0678])
+    # The same class covers the Lao letters U+0EDC/U+0EDD
+    # (ໜ/ໝ): the strict IDNA2008 path rejects them both,
+    # while UTS46 punycodes them as-is (ໜ -> "xn--e7c9a",
+    # ໝ -> "xn--m7ct"), matching Node's WHATWG parser. A
+    # translate table cannot express this class (there is no
+    # plain-letter target), so they join the UTS46 retry here;
+    # the pipeline's lower() leaves them unchanged, so the
+    # forms above are what the retry sees in practice. A full
+    # scan of U+0E80-U+0EFF confirmed exactly these two are
+    # strict-reject/UTS46-ok after lower(). The Georgian and
+    # Latin forms flagged alongside them are the same class
+    # but separate ranges, assessed separately.
+    _punycode_lao = frozenset([0x0EDC, 0x0EDD])
     if any(
         ord(c) in _punycode_modifiers or ord(c) in _punycode_letterlike
         or ord(c) in _punycode_digraphs or ord(c) in _punycode_cherokee
@@ -830,6 +843,7 @@ def _encode_idna(host: str) -> str | None:
         or ord(c) in _punycode_tibetan or ord(c) in _punycode_mod02
         or ord(c) in _punycode_subschwa or ord(c) in _punycode_greek
         or ord(c) in _punycode_armenian or ord(c) in _punycode_arabic
+        or ord(c) in _punycode_lao
         for c in host
     ):
         try:
