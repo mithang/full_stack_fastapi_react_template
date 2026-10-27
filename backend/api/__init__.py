@@ -566,6 +566,16 @@ def _encode_idna(host: str) -> str | None:
             0x2122: "tm", 0x213B: "fax",
         }
     )
+    # UTS46 likewise maps the currency symbol RUPEE SIGN U+20A8 to
+    # its letter expansion (₨ -> "rs"), which the strict IDNA2008
+    # path likewise rejects, so it is mapped here too, as the
+    # counterpart of the multi-letter letterlike symbols above.
+    # It survives the pipeline's lower() unchanged, which is why
+    # it is the gap, and a scan of U+20A0-U+20CF confirmed it is
+    # the only currency symbol of that range in this class.
+    host = host.translate(
+        {0x20A8: "rs"}
+    )
     # UTS46 likewise maps the Latin modifier letters LATIN
     # SUBSCRIPT SMALL LETTER J U+2C7C and MODIFIER LETTER CAPITAL
     # V U+2C7D to their plain letters (ⱼ -> "j", ⱽ -> "v"),
