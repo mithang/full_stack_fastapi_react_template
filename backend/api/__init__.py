@@ -1831,6 +1831,70 @@ def _encode_idna(host: str) -> str | None:
         0x32F6: "ラ", 0x32F7: "リ", 0x32F8: "ル", 0x32F9: "レ", 0x32FA: "ロ",
         0x32FB: "ワ", 0x32FC: "ヰ", 0x32FD: "ヱ", 0x32FE: "ヲ", 0x32FF: "令和",
     }
+    # Kangxi radicals the as-is branch must remap first:
+    # every member of _punycode_kangxi above remaps under
+    # UTS46 to a single unified CJK ideograph (e.g. ⼀ -> 一,
+    # ⼐ -> 凵, ⿵ -> 龠), verified against the package's
+    # uts46_remap for all 214. The as-is branch below
+    # punycodes its label directly, because the package
+    # rejects the as-is member under both strict and UTS46
+    # processing -- but browsers remap the radical first, so
+    # a label mixing one with an as-is member punycoded raw
+    # never matched ("©⼀" -> helper "xn--gba048u",
+    # browser "xn--gba2170b", which decodes to the remapped
+    # "©一"). Translating through this table before
+    # punycoding reproduces the browser form; labels without
+    # a kangxi radical are unchanged, and the table's outputs
+    # need no further remap (unified CJK ideographs; translate
+    # does not recurse, matching UTS46's single mapping pass).
+    # The standalone as-is branch below applies it; mixes
+    # with other UTS46-remapped classes keep their existing
+    # behaviour for separate assessment.
+    _kangxi_remap = {
+        0x2F00: "一", 0x2F01: "丨", 0x2F02: "丶", 0x2F03: "丿", 0x2F04: "乙",
+        0x2F05: "亅", 0x2F06: "二", 0x2F07: "亠", 0x2F08: "人", 0x2F09: "儿",
+        0x2F0A: "入", 0x2F0B: "八", 0x2F0C: "冂", 0x2F0D: "冖", 0x2F0E: "冫",
+        0x2F0F: "几", 0x2F10: "凵", 0x2F11: "刀", 0x2F12: "力", 0x2F13: "勹",
+        0x2F14: "匕", 0x2F15: "匚", 0x2F16: "匸", 0x2F17: "十", 0x2F18: "卜",
+        0x2F19: "卩", 0x2F1A: "厂", 0x2F1B: "厶", 0x2F1C: "又", 0x2F1D: "口",
+        0x2F1E: "囗", 0x2F1F: "土", 0x2F20: "士", 0x2F21: "夂", 0x2F22: "夊",
+        0x2F23: "夕", 0x2F24: "大", 0x2F25: "女", 0x2F26: "子", 0x2F27: "宀",
+        0x2F28: "寸", 0x2F29: "小", 0x2F2A: "尢", 0x2F2B: "尸", 0x2F2C: "屮",
+        0x2F2D: "山", 0x2F2E: "巛", 0x2F2F: "工", 0x2F30: "己", 0x2F31: "巾",
+        0x2F32: "干", 0x2F33: "幺", 0x2F34: "广", 0x2F35: "廴", 0x2F36: "廾",
+        0x2F37: "弋", 0x2F38: "弓", 0x2F39: "彐", 0x2F3A: "彡", 0x2F3B: "彳",
+        0x2F3C: "心", 0x2F3D: "戈", 0x2F3E: "戶", 0x2F3F: "手", 0x2F40: "支",
+        0x2F41: "攴", 0x2F42: "文", 0x2F43: "斗", 0x2F44: "斤", 0x2F45: "方",
+        0x2F46: "无", 0x2F47: "日", 0x2F48: "曰", 0x2F49: "月", 0x2F4A: "木",
+        0x2F4B: "欠", 0x2F4C: "止", 0x2F4D: "歹", 0x2F4E: "殳", 0x2F4F: "毋",
+        0x2F50: "比", 0x2F51: "毛", 0x2F52: "氏", 0x2F53: "气", 0x2F54: "水",
+        0x2F55: "火", 0x2F56: "爪", 0x2F57: "父", 0x2F58: "爻", 0x2F59: "爿",
+        0x2F5A: "片", 0x2F5B: "牙", 0x2F5C: "牛", 0x2F5D: "犬", 0x2F5E: "玄",
+        0x2F5F: "玉", 0x2F60: "瓜", 0x2F61: "瓦", 0x2F62: "甘", 0x2F63: "生",
+        0x2F64: "用", 0x2F65: "田", 0x2F66: "疋", 0x2F67: "疒", 0x2F68: "癶",
+        0x2F69: "白", 0x2F6A: "皮", 0x2F6B: "皿", 0x2F6C: "目", 0x2F6D: "矛",
+        0x2F6E: "矢", 0x2F6F: "石", 0x2F70: "示", 0x2F71: "禸", 0x2F72: "禾",
+        0x2F73: "穴", 0x2F74: "立", 0x2F75: "竹", 0x2F76: "米", 0x2F77: "糸",
+        0x2F78: "缶", 0x2F79: "网", 0x2F7A: "羊", 0x2F7B: "羽", 0x2F7C: "老",
+        0x2F7D: "而", 0x2F7E: "耒", 0x2F7F: "耳", 0x2F80: "聿", 0x2F81: "肉",
+        0x2F82: "臣", 0x2F83: "自", 0x2F84: "至", 0x2F85: "臼", 0x2F86: "舌",
+        0x2F87: "舛", 0x2F88: "舟", 0x2F89: "艮", 0x2F8A: "色", 0x2F8B: "艸",
+        0x2F8C: "虍", 0x2F8D: "虫", 0x2F8E: "血", 0x2F8F: "行", 0x2F90: "衣",
+        0x2F91: "襾", 0x2F92: "見", 0x2F93: "角", 0x2F94: "言", 0x2F95: "谷",
+        0x2F96: "豆", 0x2F97: "豕", 0x2F98: "豸", 0x2F99: "貝", 0x2F9A: "赤",
+        0x2F9B: "走", 0x2F9C: "足", 0x2F9D: "身", 0x2F9E: "車", 0x2F9F: "辛",
+        0x2FA0: "辰", 0x2FA1: "辵", 0x2FA2: "邑", 0x2FA3: "酉", 0x2FA4: "釆",
+        0x2FA5: "里", 0x2FA6: "金", 0x2FA7: "長", 0x2FA8: "門", 0x2FA9: "阜",
+        0x2FAA: "隶", 0x2FAB: "隹", 0x2FAC: "雨", 0x2FAD: "靑", 0x2FAE: "非",
+        0x2FAF: "面", 0x2FB0: "革", 0x2FB1: "韋", 0x2FB2: "韭", 0x2FB3: "音",
+        0x2FB4: "頁", 0x2FB5: "風", 0x2FB6: "飛", 0x2FB7: "食", 0x2FB8: "首",
+        0x2FB9: "香", 0x2FBA: "馬", 0x2FBB: "骨", 0x2FBC: "高", 0x2FBD: "髟",
+        0x2FBE: "鬥", 0x2FBF: "鬯", 0x2FC0: "鬲", 0x2FC1: "鬼", 0x2FC2: "魚",
+        0x2FC3: "鳥", 0x2FC4: "鹵", 0x2FC5: "鹿", 0x2FC6: "麥", 0x2FC7: "麻",
+        0x2FC8: "黃", 0x2FC9: "黍", 0x2FCA: "黑", 0x2FCB: "黹", 0x2FCC: "黽",
+        0x2FCD: "鼎", 0x2FCE: "鼓", 0x2FCF: "鼠", 0x2FD0: "鼻", 0x2FD1: "齊",
+        0x2FD2: "齒", 0x2FD3: "龍", 0x2FD4: "龜", 0x2FD5: "龠",
+    }
     _punycode_asis = frozenset(
         [
             # Latin-1 symbols the browser punycodes as-is (© ->
@@ -2261,14 +2325,16 @@ def _encode_idna(host: str) -> str | None:
                 # identity for them, and the fraction branch
                 # above already handles fraction mixes itself.
                 # Enclosed CJK members are likewise expanded
-                # through _enclosed_cjk_remap (see there);
-                # labels without one are unchanged by it.
+                # through _enclosed_cjk_remap (see there),
+                # and kangxi radicals through _kangxi_remap;
+                # labels without one are unchanged by them.
                 encoded_labels.append(
                     "xn--"
                     + label.translate(_asis_map)
                     .translate(_double_excl_map)
                     .translate(_greek_extended_remap)
                     .translate(_enclosed_cjk_remap)
+                    .translate(_kangxi_remap)
                     .encode("punycode")
                     .decode("ascii")
                 )
