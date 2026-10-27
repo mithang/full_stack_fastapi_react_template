@@ -2668,15 +2668,15 @@ def _encode_idna(host: str) -> str | None:
                 # already fall through to None, and leaving the
                 # host alone is the browser form for them. The
                 # gates mirror the enclosed-CJK branch: the
-                # UTS46 remap must be identity (so an NFC
-                # normalizing label such as "a\u0301-" keeps its
-                # existing behaviour rather than gaining a raw
-                # punycode that differs from the browser's
-                # normalized form), the first character must not
-                # be a mark (a hyphen-first label such as
-                # "-\u0300a" passes this, as the browser carries
-                # it, while a mark-first label such as "\u0300-"
-                # is browser-rejected and falls through to None
+                # UTS46 remap must be identity, except for the
+                # one NFC-normalizing exception below (a label
+                # such as "a\u0301-" whose remap is exactly its
+                # NFC form "á-", punycoded as "xn----tfa"),
+                # the first character must not be a mark (a
+                # hyphen-first label such as "-\u0300a" passes
+                # this, as the browser carries it, while a
+                # mark-first label such as "\u0300-" is
+                # browser-rejected and falls through to None
                 # as before), and every character must be an
                 # ASCII letter, digit, hyphen or underscore, or
                 # a non-ASCII letter, mark, number, symbol or
@@ -2695,9 +2695,44 @@ def _encode_idna(host: str) -> str | None:
                     )
                 except (UnicodeError, ValueError):
                     _hyph_remapped = None
+                # The one exception to the identity gate: an
+                # NFC-normalizing hyphen-edge label such as
+                # "a\u0301-" was previously left at None, but
+                # UTS46 processing NFC-normalizes it to "á-"
+                # before punycoding, so the browser form is the
+                # punycode of the normalized form ("xn----tfa"),
+                # not of the raw label. Accept the remapped form
+                # only when it is exactly that NFC form (so no
+                # other UTS46 mapping can ride along) and it is
+                # itself remap-stable; every gate below then runs
+                # against the form actually punycoded. Any other
+                # remap leaves _hyph_form None and falls through
+                # exactly as before.
+                _hyph_form = None
+                if _hyph_remapped == label:
+                    _hyph_form = label
+                elif _hyph_remapped is not None:
+                    _hyph_nfc = _hyph_unicodedata.normalize(
+                        "NFC", label
+                    )
+                    if _hyph_remapped == _hyph_nfc:
+                        try:
+                            _hyph_stable = _idna.uts46_remap(
+                                _hyph_nfc, std3_rules=False,
+                                transitional=False,
+                            )
+                        except (UnicodeError, ValueError):
+                            _hyph_stable = None
+                        if _hyph_stable == _hyph_nfc:
+                            _hyph_form = _hyph_nfc
                 if (
-                    _hyph_remapped == label
-                    and _hyph_unicodedata.category(label[0])[0] != "M"
+                    _hyph_form is not None
+                    and (
+                        _hyph_form.startswith("-")
+                        or _hyph_form.endswith("-")
+                    )
+                    and _hyph_unicodedata.category(_hyph_form[0])[0]
+                    != "M"
                     and all(
                         c
                         in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"
@@ -2708,11 +2743,12 @@ def _encode_idna(host: str) -> str | None:
                             and _hyph_unicodedata.bidirectional(c)
                             not in ("R", "AL", "AN")
                         )
-                        for c in label
+                        for c in _hyph_form
                     )
                 ):
                     encoded_labels.append(
-                        "xn--" + label.encode("punycode").decode("ascii")
+                        "xn--"
+                        + _hyph_form.encode("punycode").decode("ascii")
                     )
                 elif "_" not in label:
                     encoded_labels.append(
