@@ -895,6 +895,17 @@ def _encode_idna(host: str) -> str | None:
     # the only strict-reject/UTS46-ok member of the block
     # after lower().
     _punycode_combining = frozenset([0x0345])
+    # The same class covers GREEK NUMERAL SIGN U+0374 (ʹ):
+    # the strict IDNA2008 path rejects it, while UTS46
+    # punycodes it as-is (ʹ -> "xn--jqa"), matching
+    # Node's WHATWG parser. A translate table cannot express
+    # this class (there is no plain-letter target), so it joins
+    # the UTS46 retry here; the pipeline's lower() leaves it
+    # unchanged, so the form above is what the retry sees in
+    # practice. A full scan of U+0370-U+03CF confirmed it is
+    # the only strict-reject/UTS46-ok member of the range
+    # after lower().
+    _punycode_greek_numeral = frozenset([0x0374])
     if any(
         ord(c) in _punycode_modifiers or ord(c) in _punycode_letterlike
         or ord(c) in _punycode_digraphs or ord(c) in _punycode_cherokee
@@ -906,6 +917,7 @@ def _encode_idna(host: str) -> str | None:
         or ord(c) in _punycode_lao or ord(c) in _punycode_georgian
         or ord(c) in _punycode_latin or ord(c) in _punycode_cyrillic
         or ord(c) in _punycode_combining
+        or ord(c) in _punycode_greek_numeral
         for c in host
     ):
         try:
