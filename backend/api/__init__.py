@@ -1933,7 +1933,22 @@ def _encode_idna(host: str) -> str | None:
                 # one of those keep their existing behaviour,
                 # and a gate failure falls through to the same
                 # "_" / strict / plain handling below rather
-                # than adding a new failure mode.
+                # than adding a new failure mode. A label
+                # mixing U+1DFA (not first) with U+1ABE never
+                # reaches the U+1ABE branch below, because
+                # this branch claims every label containing
+                # U+1DFA first — and its first-character gate
+                # then fails it, so "a᷺᪾" fell through to the
+                # strict path and returned None instead of
+                # the browser form "xn--a-67kx8n". The
+                # fallback alternative in the gate below
+                # mirrors the U+1ABE branch's gates (the mark
+                # survives the remap, the first character is
+                # not a mark, every other character passes
+                # the same category / bidirectional check),
+                # so such a mix now punycodes its remapped
+                # form while a mark-first, RTL, or otherwise
+                # gated mix still falls through as before.
                 import unicodedata as _dfl_unicodedata
 
                 try:
@@ -1958,6 +1973,15 @@ def _encode_idna(host: str) -> str | None:
                     and (
                         ord(_dfl_remapped[0]) == 0x1DFA
                         or 0x1AC1 <= ord(_dfl_remapped[0]) <= 0x1ACE
+                        or (
+                            any(
+                                ord(c) == 0x1ABE
+                                for c in _dfl_remapped
+                            )
+                            and _dfl_unicodedata.category(
+                                _dfl_remapped[0]
+                            )[0] != "M"
+                        )
                     )
                     and all(
                         c in _dfl_label_chars
