@@ -1,3 +1,5 @@
+import secrets
+
 from beanie import PydanticObjectId
 from fastapi_mail import MessageType
 from fastapi_sso import OpenID
@@ -168,7 +170,12 @@ class AuthService:
                 email=email,
                 first_name=first_name or display_name or "N/A",
                 last_name=last_name or display_name or "N/A",
-                password=f"signed_up_via_sso_{provider_name}",
+                # Random, undisclosed password: the previous placeholder was
+                # predictable (provider name only), and password login checks
+                # only the hash, so anyone knowing the victim's email and SSO
+                # provider could log in as an SSO-created user. SSO login
+                # never uses this password, so a random value breaks nothing.
+                password=secrets.token_urlsafe(32),
                 gender="prefer_not_to_say",
                 role_id=role.id if role else None,
                 tenant_id=tenant_id if tenant_id else None,
