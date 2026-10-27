@@ -201,7 +201,15 @@ async def react_router(full_path: str):
             status_code=404, content={"detail": "API route not found"}
         )
     if os.path.exists(os.path.join(build_path, "index.html")):
-        return FileResponse(os.path.join(build_path, "index.html"))
+        # Never cache the SPA shell: asset filenames are content-hashed
+        # per build, so a cached index.html from before a deploy can
+        # reference asset files the new build no longer ships, leaving
+        # the client broken until its cache expires. The hashed assets
+        # themselves are cacheable; only the shell must stay fresh.
+        return FileResponse(
+            os.path.join(build_path, "index.html"),
+            headers={"Cache-Control": "no-store"},
+        )
     else:
         # No UI build exists, so there is no SPA shell to serve: return
         # a 404 JSON (same {"detail": ...} shape as the API guard
