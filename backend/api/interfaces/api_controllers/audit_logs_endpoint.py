@@ -31,7 +31,12 @@ router.tags = ["Audit Logs"]
 async def list_audit_logs(
     current_user: CurrentUser,
     limit: int = Query(10, ge=1, le=100),
-    skip: int = Query(0, ge=0),
+    # Bound skip as well as limit: the repository keeps a deque of
+    # skip + limit DTOs while scanning, so an unbounded skip let one
+    # request force the server to hold an arbitrary number of entries
+    # in memory. 10000 still covers 1000 pages at the default limit
+    # (100 at the max limit); bulk export goes through /download.
+    skip: int = Query(0, ge=0, le=10000),
     action: Optional[AuditActionType] = None,
     log_service: AuditLogsService = Depends(get_audit_logs_service)
 ):
