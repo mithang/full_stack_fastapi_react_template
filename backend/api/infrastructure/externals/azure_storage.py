@@ -1,6 +1,5 @@
 
-import datetime
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from azure.storage.blob import BlobServiceClient, generate_blob_sas, BlobSasPermissions
 from fastapi import UploadFile
 
@@ -29,7 +28,11 @@ class AzureBlobStorage:
                 container_name=self.container_name,
                 blob_name=blob_name,
                 permission=BlobSasPermissions(read=True),
-                expiry=datetime.utcnow() + timedelta(seconds=expires_in)
+                # Timezone-aware UTC expiry: datetime.utcnow() is deprecated
+                # and returns a naive datetime; the rest of the codebase
+                # (get_utc_now()) is UTC-aware, and the Azure SDK accepts
+                # aware datetimes. Same instant as before, no behaviour change.
+                expiry=datetime.now(timezone.utc) + timedelta(seconds=expires_in)
             )
             blob_client = self.container_client.get_blob_client(blob_name)
             return f"{blob_client.url}?{sas_token}"
