@@ -454,6 +454,35 @@ def _encode_idna(host: str) -> str | None:
     host = host.translate(
         {0x02B0: "h", 0x02B2: "j", 0x02B3: "r", 0x02B7: "w", 0x02B8: "y"}
     )
+    # UTS46 likewise maps the letterlike symbols in U+2100-U+214F
+    # that denote a single plain letter (ℂ -> "c", ℊ -> "g",
+    # ℋ/ℌ/ℍ/ℎ -> "h", ℐ/ℑ/ℹ/ⅈ -> "i", ℒ/ℓ -> "l", ℕ -> "n",
+    # ℙ -> "p", ℚ -> "q", ℛ/ℜ/ℝ -> "r", ℤ/ℨ -> "z",
+    # ℬ -> "b", ℭ -> "c", ℯ/ℰ/ⅇ -> "e", ℱ -> "f", ℳ -> "m",
+    # ℴ -> "o", ⅅ/ⅆ -> "d", ⅉ -> "j") to that letter before IDNA
+    # processing, so browsers serialize an Origin from e.g.
+    # "https://ℂ.example" as "https://c.example" — but the `idna`
+    # package follows strict IDNA2008, where those codepoints are
+    # disallowed, so encoding failed and the entry was left alone
+    # and never matched. Map them up front; they survive the
+    # pipeline's lower() unchanged, which is why they are the gap.
+    # The other members of the range are a different fix class and
+    # are left alone here: multi-letter mappings (№ -> "no",
+    # ℠ -> "sm", ℡ -> "tel", ™ -> "tm", ℻ -> "fax"), punycode
+    # forms (℃, ℇ, ℈, ℉, ℏ, and the like), and codepoints the
+    # browser itself rejects (℀, ℁, ℅, ℆).
+    host = host.translate(
+        {
+            0x2102: "c", 0x210A: "g", 0x210B: "h", 0x210C: "h",
+            0x210D: "h", 0x210E: "h", 0x2110: "i", 0x2111: "i",
+            0x2112: "l", 0x2113: "l", 0x2115: "n", 0x2119: "p",
+            0x211A: "q", 0x211B: "r", 0x211C: "r", 0x211D: "r",
+            0x2124: "z", 0x2128: "z", 0x212C: "b", 0x212D: "c",
+            0x212F: "e", 0x2130: "e", 0x2131: "f", 0x2133: "m",
+            0x2134: "o", 0x2139: "i", 0x2145: "d", 0x2146: "d",
+            0x2147: "e", 0x2148: "i", 0x2149: "j",
+        }
+    )
     # UTS46 likewise maps the fullwidth ASCII forms U+FF01-U+FF5E to
     # their ASCII equivalents (ｅｘａｍｐｌｅ -> "example", including
     # the fullwidth full stop U+FF0E -> ".") before IDNA processing,
