@@ -177,6 +177,40 @@ def _canonical_ipv4(host: str) -> str | None:
         if value > 0xFFFFFFFF:
             return None
         return ".".join(str((value >> shift) & 0xFF) for shift in (24, 16, 8, 0))
+    # WHATWG 2- and 3-part forms ("127.1" and "127.0.1" both mean
+    # 127.0.0.1) are likewise IPv4 addresses, and browsers serialize
+    # the Origin host in dotted-decimal form, so a configured 2- or
+    # 3-part host would otherwise never match either. The last part
+    # carries the remaining bytes: 24 bits for 2 parts, 16 bits for 3
+    # parts; every earlier part is a single octet. Digit parts are
+    # read as decimal, consistent with the padded-decimal choice
+    # above (WHATWG-octal forms are deliberately not handled here),
+    # and hex parts use the same "0x" rule as the 4-part branch.
+    # Hostnames are left alone: any non-numeric part returns None.
+    if len(parts) in (2, 3):
+        values = []
+        for p in parts:
+            if p.lower().startswith("0x"):
+                digits = p[2:]
+                if not digits or not all(
+                    c in "0123456789abcdefABCDEF" for c in digits
+                ):
+                    return None
+                values.append(int(digits, 16))
+            elif p.isdigit():
+                values.append(int(p))
+            else:
+                return None
+        if any(v > 0xFF for v in values[:-1]):
+            return None
+        last_bits = 24 if len(parts) == 2 else 16
+        if values[-1] > (1 << last_bits) - 1:
+            return None
+        tail = [
+            str((values[-1] >> shift) & 0xFF)
+            for shift in range(last_bits - 8, -1, -8)
+        ]
+        return ".".join(str(v) for v in values[:-1]) + "." + ".".join(tail)
     if len(parts) != 4:
         return None
     values = []
