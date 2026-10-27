@@ -424,9 +424,9 @@ def _encode_idna(host: str) -> str | None:
     # the capital and small forms are listed. The other members of
     # the range (e.g. ᴭ, ᵄ) are valid as-is under UTS46 and
     # serialize as punycode, not as plain letters, so they are a
-    # separate fix class and are left alone here, as are the
-    # plain-letter U+02B0-U+02BF members (mapped in the next
-    # table below).
+    # separate fix class and are handled by the UTS46 retry below,
+    # not here, as are the plain-letter U+02B0-U+02BF members
+    # (mapped in the next table below).
     host = host.translate(
         {
             0x1D2C: "a", 0x1D2E: "b", 0x1D30: "d", 0x1D31: "e",
@@ -445,12 +445,12 @@ def _encode_idna(host: str) -> str | None:
     # ʸ -> "y"), which the strict IDNA2008 path likewise rejects,
     # so they are mapped here too. They survive the pipeline's
     # lower() unchanged, which is why they are the gap. The other
-    # members of the range are a different fix class and are left
-    # alone: ʱ/ʴ/ʵ/ʶ serialize as punycode under UTS46 (ʱ ->
-    # "xn--5na", etc.) but are rejected by the strict IDNA2008
-    # path, so this helper still returns None for them — the same
-    # separate class as ᴭ/ᵄ — while U+02B9-U+02BF already pass the
-    # strict path and serialize as punycode, matching the browser.
+    # members of the range are a different fix class and are handled
+    # by the UTS46 retry below, not here: ʱ/ʴ/ʵ/ʶ serialize as
+    # punycode under UTS46 (ʱ -> "xn--5na", etc.) but are rejected
+    # by the strict IDNA2008 path — the same separate class as
+    # ᴭ/ᵄ — while U+02B9-U+02BF already pass the strict path and
+    # serialize as punycode, matching the browser.
     host = host.translate(
         {0x02B0: "h", 0x02B2: "j", 0x02B3: "r", 0x02B7: "w", 0x02B8: "y"}
     )
@@ -478,6 +478,36 @@ def _encode_idna(host: str) -> str | None:
         return _idna.encode(host).decode("ascii")
     except (UnicodeError, ValueError):
         pass
+    # UTS46 retry for punycode-valid modifier letters only: the
+    # remaining modifier letters in U+02B0-U+02BF (ʱ/ʴ/ʵ/ʶ) and
+    # U+1D2C-U+1D6A (ᴭ, ᵄ and the other members listed below) are
+    # valid as-is under UTS46 and serialize as punycode (ʱ ->
+    # "xn--5na", ᴭ -> "xn--6ca"), but the strict IDNA2008 path
+    # above rejects them, so the entry was left alone and never
+    # matched. A translate table cannot express this class (there
+    # is no plain-letter target), so retry just these hosts with
+    # the package's UTS46 processing, which matches the browser
+    # serialization verified against Node's WHATWG parser. The
+    # guard keeps every other strict-rejected host unchanged: the
+    # retry only runs when one of the listed codepoints is present,
+    # and a failure here still falls through to the underscore
+    # fallback below (e.g. a host with both a modifier letter and
+    # "_", which UTS46 rejects) and then to None, as before.
+    _punycode_modifiers = frozenset(
+        [
+            0x02B1, 0x02B4, 0x02B5, 0x02B6,
+            0x1D2D, 0x1D32, 0x1D3D, 0x1D44, 0x1D45, 0x1D46,
+            0x1D4A, 0x1D4B, 0x1D4C, 0x1D51, 0x1D53, 0x1D54,
+            0x1D55, 0x1D59, 0x1D5A, 0x1D5C, 0x1D5D, 0x1D5E,
+            0x1D5F, 0x1D60, 0x1D61, 0x1D66, 0x1D67, 0x1D68,
+            0x1D69, 0x1D6A,
+        ]
+    )
+    if any(ord(c) in _punycode_modifiers for c in host):
+        try:
+            return _idna.encode(host, uts46=True).decode("ascii")
+        except (UnicodeError, ValueError):
+            pass
     # Fallback for underscore labels: the `idna` package follows
     # IDNA2008, where "_" is disallowed, but browsers serialize Origin
     # hosts per WHATWG URL (UTS46 without STD3 rules), which keeps "_"
