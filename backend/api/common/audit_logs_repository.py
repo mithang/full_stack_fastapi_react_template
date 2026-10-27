@@ -12,7 +12,12 @@ class AuditLogRepository:
     async def _get_files_matching_pattern(self, tenant_id: str | None = None) -> List[str]:
         file_path_pattern = "/tmp/audit_logs_forhost_*.jsonl"
         if tenant_id:
-            file_path_pattern = f"/tmp/audit_logs_for{tenant_id}_*.jsonl"
+            # tenant_id is interpolated into a glob pattern, so escape it:
+            # a metacharacter (e.g. "*") in an id would otherwise match
+            # other tenants' log files and leak their audit entries to
+            # this tenant's AUDIT_LOGS_VIEW_ONLY reader. The trailing
+            # "_*" date wildcard is intentional and stays unescaped.
+            file_path_pattern = f"/tmp/audit_logs_for{glob.escape(tenant_id)}_*.jsonl"
 
         logger.info(f"Reading audit logs from files matching pattern: {file_path_pattern}")
 
