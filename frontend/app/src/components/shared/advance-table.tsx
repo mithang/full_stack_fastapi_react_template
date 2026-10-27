@@ -84,7 +84,13 @@ export default function AdvanceTable<T>({
     // previously propagated as NaN/negative through totalPage, currentPage
     // and pageSize, breaking the "Page X of Y" label. A missing limit
     // still reads as 0 and falls back to the default, as before.
-    const limit = Number.isFinite(pageLimit) && pageLimit > 0 ? pageLimit : DEFAULT_PAGE_LIMIT;
+    // Clamp to 100 as well: every AdvanceTable-backed list endpoint
+    // (audit logs, roles, tenants, users) bounds limit to le=100, and
+    // the audit-log provider already clamps its fetch to 100 (iteration
+    // 398) — so an unclamped display limit of e.g. 500 labelled pages
+    // of 500 while only 100 rows were fetched, and derived the page
+    // index from the wrong page size. In-range limits are unchanged.
+    const limit = Number.isFinite(pageLimit) && pageLimit > 0 ? Math.min(pageLimit, 100) : DEFAULT_PAGE_LIMIT;
 
     // The backend treats ?skip= as a record offset (Mongo .skip(), and the
     // audit-log slice newest_first[skip:skip+limit]), not a page number, so
