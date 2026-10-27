@@ -42,8 +42,11 @@ class CoolifyApp:
             logger.error(f"Failed to fetch Coolify app details: {e}")
             raise CoolifyIntegrationException("Failed to fetch Coolify app details.") from e
         if response.status_code != 200:
+            # The Coolify response body is logged server-side above; the
+            # exception itself carries only a generic message so Coolify
+            # internals do not leak into the Celery task's error handling.
             logger.error(f"Failed to fetch Coolify app details: {response.text}")
-            raise CoolifyIntegrationException(f"{response.text}")
+            raise CoolifyIntegrationException("Failed to fetch Coolify app details.")
 
         data: CoolifyAppDto = response.json()
         return CoolifyAppDto(**data)
@@ -117,5 +120,6 @@ class CoolifyApp:
         if response.status_code == 200:
             return True
 
+        # Same as get_app_details above: body stays in the server log only.
         logger.error(f"Failed to restart Coolify app: {response.text}")
-        raise CoolifyIntegrationException(f"{response.text}")
+        raise CoolifyIntegrationException("Failed to restart Coolify app.")
