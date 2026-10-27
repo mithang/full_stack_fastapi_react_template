@@ -146,7 +146,10 @@ class SSOAuthProvider:
         sso = await self._provider_instance(provider_name, sso_provider)
         user = await sso.verify_and_process(req)
         logger.info(f"SSO callback processed for provider: {provider_name}")
-        logger.debug(f"User information retrieved from SSO: {user}")
+        # Log only the provider and the SSO subject id: the full OpenID object
+        # carries the user's email/name from the provider, which does not belong
+        # in server logs (the api logger runs at DEBUG in all environments).
+        logger.debug(f"SSO user retrieved for provider: {provider_name} (id: {getattr(user, 'id', 'unknown')})")
         return user
     
     def get_redirect_uri_to_app(self) -> str:
