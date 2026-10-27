@@ -179,6 +179,9 @@ class AuthService:
             user.is_active = True
             user.activated_at = get_utc_now()
             user.sso_provider_id = provider_name
+            # Direct .save() bypasses BaseRepository.update()'s central
+            # updated_at stamp (iteration 411), so stamp it here.
+            user.updated_at = get_utc_now()
             await user.save()
         return await self._get_token_set(user)
 
