@@ -65,7 +65,9 @@ async def _get_current_tenant_db(tenant_id: str) -> Database:
 
 async def _handle_post_tenant_creation_async(payload: str):
     worker_payload = WorkerPayloadDto[CreateUserDto].model_validate_json(payload)
-    logger.info(f"Admin user details: {worker_payload.data}")
+    # Do not log worker_payload.data: CreateUserDto carries the new admin's
+    # plaintext password, which must never reach server logs. The email and
+    # tenant id are logged below once the task label is confirmed.
     logger.info(f"Handling task with label: {worker_payload.label}")
     if worker_payload.label == "post-tenant-creation":
         db = await _get_current_tenant_db(tenant_id=worker_payload.tenant_id)
