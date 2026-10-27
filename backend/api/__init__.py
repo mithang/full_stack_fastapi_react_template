@@ -1739,6 +1739,44 @@ def _encode_idna(host: str) -> str | None:
     # label keeps the existing behaviour, and a label mixing a
     # listed symbol with "_" still punycodes with "_" preserved,
     # as the browser does ("a_℃" -> "xn--a_c-tfa").
+    # Greek Extended members the as-is branch must remap first:
+    # every member of _punycode_greek_extended above remaps under
+    # UTS46 (the seven oxia/tonos forms to a single tonos letter,
+    # e.g. ά U+1F71 -> ά U+03AC, and the rest to a base letter
+    # plus iota subscript, e.g. ᾀ U+1F80 -> ἀι, ι U+1FBE -> ι),
+    # verified against the package's uts46_remap for all 46. The
+    # as-is branch below punycodes its label directly, because
+    # the package rejects the as-is member under both strict and
+    # UTS46 processing — but browsers remap the Greek Extended
+    # member first, so a label mixing one with an as-is member
+    # punycoded raw never matched ("ά©" -> helper "xn--gba378m",
+    # browser "xn--gba55m", which decodes to the remapped "ά©").
+    # Translating through this table before punycoding reproduces
+    # the browser form; labels without a Greek Extended member
+    # are unchanged, and the table's outputs are plain Greek
+    # letters that need no further remap (translate does not
+    # recurse, matching UTS46's single mapping pass). This covers
+    # only the standalone as-is branch: fraction labels claim
+    # their branch first, and FB29 labels claim theirs, so mixes
+    # with those classes keep their existing behaviour for
+    # separate assessment, as do as-is mixes with other
+    # UTS46-remapped classes (enclosed CJK, Kangxi, and the
+    # like), which are a broader class than this one.
+    _greek_extended_remap = {
+        0x1F71: "ά", 0x1F73: "έ", 0x1F75: "ή", 0x1F77: "ί",
+        0x1F79: "ό", 0x1F7B: "ύ", 0x1F7D: "ώ",
+        0x1F80: "ἀι", 0x1F81: "ἁι", 0x1F82: "ἂι", 0x1F83: "ἃι",
+        0x1F84: "ἄι", 0x1F85: "ἅι", 0x1F86: "ἆι", 0x1F87: "ἇι",
+        0x1F90: "ἠι", 0x1F91: "ἡι", 0x1F92: "ἢι", 0x1F93: "ἣι",
+        0x1F94: "ἤι", 0x1F95: "ἥι", 0x1F96: "ἦι", 0x1F97: "ἧι",
+        0x1FA0: "ὠι", 0x1FA1: "ὡι", 0x1FA2: "ὢι", 0x1FA3: "ὣι",
+        0x1FA4: "ὤι", 0x1FA5: "ὥι", 0x1FA6: "ὦι", 0x1FA7: "ὧι",
+        0x1FB2: "ὰι", 0x1FB3: "αι", 0x1FB4: "άι", 0x1FB7: "ᾶι",
+        0x1FBE: "ι",
+        0x1FC2: "ὴι", 0x1FC3: "ηι", 0x1FC4: "ήι", 0x1FC7: "ῆι",
+        0x1FD3: "ΐ", 0x1FE3: "ΰ",
+        0x1FF2: "ὼι", 0x1FF3: "ωι", 0x1FF4: "ώι", 0x1FF7: "ῶι",
+    }
     _punycode_asis = frozenset(
         [
             # Latin-1 symbols the browser punycodes as-is (© ->
@@ -2077,6 +2115,7 @@ def _encode_idna(host: str) -> str | None:
                 encoded_labels.append(
                     "xn--"
                     + label.translate(_asis_map)
+                    .translate(_greek_extended_remap)
                     .encode("punycode")
                     .decode("ascii")
                 )
