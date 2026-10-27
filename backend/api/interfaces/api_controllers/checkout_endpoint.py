@@ -98,10 +98,21 @@ async def host_checkout_success(
     current_user: CurrentUser,
     billing_service: BillingRecordService = Depends(get_billing_record_service)
 ):
+    # A host payment success finalises the caller's tenant-scope
+    # record, so a caller without a tenant — a host user, whose
+    # tenant_id is None — previously failed closed only incidentally
+    # through the mismatch check below (None never equals the query
+    # tenant_id), surfacing as a misleading "Tenant ID mismatch"
+    # error. Fail fast with the explicit tenant-required error the
+    # tenant success/cancel endpoints use; tenant callers still hit
+    # the mismatch check below unchanged, and no Stripe call is made
+    # for the rejected caller.
+    if current_user.tenant_id is None:
+        raise InvalidOperationException("A tenant is required to confirm a host checkout session.")
     if current_user.tenant_id != tenant_id:
         logger.error(f"Tenant ID mismatch for the current user. And current user's tenant id is: {current_user.tenant_id} and requested tenant id is: {tenant_id}")
         raise InvalidOperationException(f"Tenant ID mismatch for the current user. {tenant_id}")
-    
+
     await billing_service.handle_host_checkout_success(session_id=session_id, tenant_id=current_user.tenant_id)
     return status.HTTP_202_ACCEPTED
 
@@ -112,10 +123,18 @@ async def host_checkout_canceled(
     current_user: CurrentUser,
     billing_service: BillingRecordService = Depends(get_billing_record_service)
 ):
+    # Same explicit tenant-required guard as the host success
+    # endpoint above: a tenant-less caller previously failed closed
+    # only incidentally through the mismatch check, with a
+    # misleading "Tenant ID mismatch" error. Tenant callers still
+    # hit the mismatch check below unchanged, and no service call
+    # is made for the rejected caller.
+    if current_user.tenant_id is None:
+        raise InvalidOperationException("A tenant is required to cancel a host checkout session.")
     if current_user.tenant_id != tenant_id:
         logger.error(f"Tenant ID mismatch for the current user. And current user's tenant id is: {current_user.tenant_id} and requested tenant id is: {tenant_id}")
         raise InvalidOperationException(f"Tenant ID mismatch for the current user. {tenant_id}")
-    
+
     await billing_service.handle_host_checkout_canceled(tenant_id=current_user.tenant_id)
     return status.HTTP_202_ACCEPTED
 
