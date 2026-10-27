@@ -227,6 +227,8 @@ class PasskeyService():
                 cred.last_used_at = get_utc_now().isoformat()
                 break
 
+        # Direct .save() bypasses BaseRepository.update()'s central updated_at stamp.
+        user_passkey.updated_at = get_utc_now()
         await user_passkey.save()
         await self.challenges_repo.delete_challenge(email=email, type="authentication")
         logger.info(f"Passkey Authentication verified for user {email}.")
