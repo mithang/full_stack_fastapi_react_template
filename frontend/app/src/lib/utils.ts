@@ -95,8 +95,15 @@ export function getApiBaseUrl(): string {
   // client call would 404. A subpath base without that segment
   // ('https://host/myapp') is left untouched. Only the exact
   // segment is stripped, so '/api/v1beta' and '/api/v10' are safe.
-  const withoutSlashes = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/+$/, '');
-  return withoutSlashes.replace(/\/api\/v1$/, '');
+  // Trim surrounding whitespace first: a pasted value like
+  // 'https://api.example.com ' (e.g. quoted in .env) would otherwise
+  // keep the space, and every caller would request a URL with a
+  // space before '/api/v1/...'. The segment strip is
+  // case-insensitive: paths are lowercase on this backend, so an
+  // '.../API/V1' base would otherwise double the prefix just like
+  // the lowercase form and 404 every client call.
+  const withoutSlashes = (import.meta.env.VITE_API_BASE_URL ?? '').trim().replace(/\/+$/, '');
+  return withoutSlashes.replace(/\/api\/v1$/i, '');
 }
 
 export function getApiClient(accessToken?: string) {
