@@ -363,6 +363,17 @@ def _encode_idna(host: str) -> str | None:
 # (the production default) so the rest of the pipeline applies to it.
 def _normalize_cors_origin(origin: str) -> str:
     o = origin.strip().rstrip("/").lower()
+    # The WHATWG URL parser removes ASCII tab, LF and CR from anywhere
+    # in the input before parsing, so a browser serializes an Origin
+    # from "https://app.ex<TAB>ample.com" as "https://app.example.com"
+    # (and "https://app.example.com:44<TAB>3" as port 443, which the
+    # default-port strip below then drops). strip() above only handles
+    # the ends, so a stray tab/newline pasted into the middle of a
+    # configured origin would otherwise survive every branch below
+    # and never match. Remove them up front; a space is not removed
+    # by the URL parser (it fails host parsing instead), so spaces
+    # are deliberately left alone.
+    o = o.replace("\t", "").replace("\n", "").replace("\r", "")
     if not o:
         return ""
     # Leave "*" untouched: the wildcard filter below drops it with a
