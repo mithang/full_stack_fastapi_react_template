@@ -144,13 +144,30 @@ def _canonical_ipv4(host: str) -> str | None:
     # canonical Origin browsers send ("192.168.1.10"), and ipaddress
     # rejects leading zeros outright, so without this a padded private
     # host would also miss the scheme-less http assumption below.
-    # Normalize digit octets through int() and re-validate; hostnames,
-    # hex forms, and out-of-range octets are left alone (None).
+    # Normalize digit octets through int() and re-validate; hostnames
+    # and out-of-range octets are left alone (None). Hex octets are
+    # normalized too: the WHATWG URL parser accepts "0xc0.0xa8.1.10"
+    # as an IPv4 address and browsers serialize the Origin host in
+    # decimal form ("192.168.1.10"), so a configured hex host would
+    # otherwise never match, just as a zero-padded one did before.
+    # A part is hex only with a "0x" prefix and hex digits; anything
+    # else non-digit (e.g. "0xzz", a hostname label) is left alone.
     parts = host.split(".")
-    if len(parts) != 4 or not all(p.isdigit() for p in parts):
+    if len(parts) != 4:
         return None
+    values = []
+    for p in parts:
+        if p.lower().startswith("0x"):
+            digits = p[2:]
+            if not digits or not all(c in "0123456789abcdefABCDEF" for c in digits):
+                return None
+            values.append(int(digits, 16))
+        elif p.isdigit():
+            values.append(int(p))
+        else:
+            return None
     try:
-        canonical = ".".join(str(int(p)) for p in parts)
+        canonical = ".".join(str(v) for v in values)
         ipaddress.IPv4Address(canonical)
     except ValueError:
         return None
