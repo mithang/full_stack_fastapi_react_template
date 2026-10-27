@@ -365,7 +365,20 @@ class RedisCacheMiddleware(BaseHTTPMiddleware):
         # already-bypassed list harmlessly. Same stale-viewer class
         # as the products-list bypass, not an enforcement fix:
         # product mutations read/write fresh.
-        if any(request.url.path.endswith(path) for path in not_allowed_cache_paths) or "/check_subdomain/" in request.url.path or "/search_by_subdomain/" in request.url.path or "/search_by_name/" in request.url.path or "/ai/sessions/" in request.url.path or "/api/v1/products/" in request.url.path or token is None:
+        # Live Stripe detail: /api/v1/billing/plans/{plan_id} reads
+        # the plan fresh from Stripe on every call (retrieve_async),
+        # and the list bypass above keeps only the list live; the
+        # detail route cannot go in not_allowed_cache_paths for the
+        # same trailing-variable reason, so it is bypassed here. A
+        # plan edited or deleted by another admin (or in the Stripe
+        # dashboard) would otherwise stay stale in the viewing
+        # admin's billing view for the rest of the TTL, since a
+        # mutation clears only the acting admin's cache keys. The
+        # list path has no trailing slash, so this substring matches
+        # only the detail route. Same stale-viewer class as the
+        # products-detail bypass, not an enforcement fix: plan
+        # mutations read/write fresh.
+        if any(request.url.path.endswith(path) for path in not_allowed_cache_paths) or "/check_subdomain/" in request.url.path or "/search_by_subdomain/" in request.url.path or "/search_by_name/" in request.url.path or "/ai/sessions/" in request.url.path or "/api/v1/products/" in request.url.path or "/api/v1/billing/plans/" in request.url.path or token is None:
             logger.debug(f"Bypassing cache for path: {request.url.path}")
             return await call_next(request)
             
