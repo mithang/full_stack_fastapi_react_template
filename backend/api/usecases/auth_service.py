@@ -378,6 +378,9 @@ class AuthService:
         
         user.is_active = True
         user.activated_at = get_utc_now()
+        # Direct .save() bypasses BaseRepository.update()'s central
+        # updated_at stamp (iteration 411), so stamp it here.
+        user.updated_at = get_utc_now()
         await user.save()
         logger.info(f"User {user.id} ({user.email}) has been activated.")
         
