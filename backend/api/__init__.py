@@ -2175,8 +2175,38 @@ def _encode_idna(host: str) -> str | None:
     # browser's "xn--a_14-2g7a"). The superscript and ordinal
     # forms (²/³/¹/º/ª) need no entry here: the package's UTS46
     # processing already maps them to plain forms, as the
-    # probe in this iteration confirmed.
-    _fraction_map = {0x00BC: "1⁄4", 0x00BD: "1⁄2", 0x00BE: "3⁄4"}
+    # probe in this iteration confirmed. The same class covers
+    # the remaining Number Forms vulgar fractions, which the
+    # package likewise rejects while browsers expand them
+    # (⅓ -> "1⁄3", "ا⅓" -> "xn--13-btd558x"): U+2150-U+215E
+    # (⅐ ⅑ ⅒ ⅓ ⅔ ⅕ ⅖ ⅗ ⅘ ⅙ ⅚ ⅛ ⅜ ⅝ ⅞), U+215F (⅟ -> "1⁄",
+    # the fraction slash with an empty denominator) and U+2189
+    # (↉ -> "0⁄3"). They need no new branch: every gate in
+    # the fraction branch below is built from this map, so
+    # adding the entries extends the main, recovery, as-is
+    # and RTL gates to them unchanged.
+    _fraction_map = {
+        0x00BC: "1⁄4",
+        0x00BD: "1⁄2",
+        0x00BE: "3⁄4",
+        0x2150: "1⁄7",
+        0x2151: "1⁄9",
+        0x2152: "1⁄10",
+        0x2153: "1⁄3",
+        0x2154: "2⁄3",
+        0x2155: "1⁄5",
+        0x2156: "2⁄5",
+        0x2157: "3⁄5",
+        0x2158: "4⁄5",
+        0x2159: "1⁄6",
+        0x215A: "5⁄6",
+        0x215B: "1⁄8",
+        0x215C: "3⁄8",
+        0x215D: "5⁄8",
+        0x215E: "7⁄8",
+        0x215F: "1⁄",
+        0x2189: "0⁄3",
+    }
     # UTS46 maps DOUBLE EXCLAMATION MARK U+203C to "!!" (see the
     # dedicated branch in the label loop below).
     _double_excl_map = {0x203C: "!!"}
@@ -2431,8 +2461,22 @@ def _encode_idna(host: str) -> str | None:
                 # to the real UTS46 remap: any other remapped
                 # character fails every candidate and falls
                 # through unchanged, as before.
+                # A space in the label fails WHATWG host parsing
+                # (the pipeline deliberately leaves interior spaces
+                # alone in _normalize_cors_origin for exactly this
+                # reason), yet the remap/translate gate above passes
+                # it through, so a space label was punycoded with
+                # the space still in it ("¼ " -> "xn--14 -ot0a"),
+                # a form no browser origin could carry. Exclude
+                # space labels from the main gate; they fall to
+                # the strict path below, which rejects them, so
+                # they return None as a browser-rejected label
+                # should. Without this guard the new fraction
+                # entries above would extend that over-emission
+                # to every new vulgar fraction ("⅓ " likewise).
                 if (
                     _frac_remapped is not None
+                    and " " not in label
                     and (
                         _frac_remapped
                         == label.translate(_fraction_excl_map)
