@@ -1064,6 +1064,32 @@ def _encode_idna(host: str) -> str | None:
     # so they are a separate case and are left alone here).
     _punycode_kanbun = frozenset(range(0x3192, 0x31A0))
     _punycode_halfwidth_katakana = frozenset(range(0xFF66, 0xFF9E))
+    # Greek Extended (U+1F00-U+1FFF): a full scan of the block
+    # against the actual helper isolated 46 strict-reject/UTS46-ok
+    # members after lower() — the rest of the block already passes
+    # the strict path or fails under both strict and UTS46 (the
+    # latter, e.g. U+1F16/U+1F46/U+1FBD, are deliberately left
+    # alone, as browsers reject them too). UTS46 punycodes the
+    # survivors as-is (ά -> "xn--hxa", ᾀ -> "xn--uxa970l",
+    # ᾳ -> "xn--mxaq", ι -> "xn--uxa"), matching Node's WHATWG
+    # parser on all 46. A translate table cannot express this
+    # class (there is no plain-letter target), so they join the
+    # UTS46 retry here. The set lists the lowercased forms: the
+    # capitals U+1F88-U+1F8F/U+1F98-U+1F9F/U+1FA8-U+1FAF and
+    # U+1FBB/U+1FBC/U+1FC9/U+1FCB/U+1FDB/U+1FEB/U+1FF9/U+1FFB
+    # fold to members of this set under the pipeline's lower(),
+    # so they are covered without separate entries.
+    _punycode_greek_extended = frozenset(
+        [
+            0x1F71, 0x1F73, 0x1F75, 0x1F77, 0x1F79, 0x1F7B, 0x1F7D,
+            0x1F80, 0x1F81, 0x1F82, 0x1F83, 0x1F84, 0x1F85, 0x1F86,
+            0x1F87, 0x1F90, 0x1F91, 0x1F92, 0x1F93, 0x1F94, 0x1F95,
+            0x1F96, 0x1F97, 0x1FA0, 0x1FA1, 0x1FA2, 0x1FA3, 0x1FA4,
+            0x1FA5, 0x1FA6, 0x1FA7, 0x1FB2, 0x1FB3, 0x1FB4, 0x1FB7,
+            0x1FBE, 0x1FC2, 0x1FC3, 0x1FC4, 0x1FC7, 0x1FD3, 0x1FE3,
+            0x1FF2, 0x1FF3, 0x1FF4, 0x1FF7,
+        ]
+    )
     if any(
         ord(c) in _punycode_modifiers or ord(c) in _punycode_letterlike
         or ord(c) in _punycode_digraphs or ord(c) in _punycode_cherokee
@@ -1085,6 +1111,7 @@ def _encode_idna(host: str) -> str | None:
         or ord(c) in _punycode_phonetic_supplement
         or ord(c) in _punycode_kanbun
         or ord(c) in _punycode_halfwidth_katakana
+        or ord(c) in _punycode_greek_extended
         for c in host
     ):
         try:
