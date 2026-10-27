@@ -194,7 +194,7 @@ async def list_checkout_records(
     # could dump the whole checkout-record table (limit=1000000) or pass
     # negative values; out-of-range values now fail fast with a 422.
     # Default limit 100 preserved (unlike the limit-10 list endpoints).
-    skip: int = Query(0, ge=0), limit: int = Query(100, ge=1, le=100),
+    skip: int = Query(0, ge=0, le=10000), limit: int = Query(100, ge=1, le=100),
     _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.MANAGE_BILLING])),
     billing_service: BillingRecordService = Depends(get_billing_record_service)
 ):
