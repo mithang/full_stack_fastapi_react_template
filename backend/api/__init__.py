@@ -189,6 +189,17 @@ app.include_router(router)
 # Catch-all route for React Router (only in production with static files)
 @app.get("/{full_path:path}", include_in_schema=False)
 async def react_router(full_path: str):
+    # API paths must never serve the SPA shell: a web/mobile client
+    # calling a mistyped or removed /api/v1 route previously got a 200
+    # index.html (or a 200 "not found" message below), so the client
+    # could not tell the route did not exist and failed opaquely on
+    # the HTML body. Unmatched API paths are a 404 JSON instead, in
+    # the same {"detail": ...} shape FastAPI returns for unknown routes.
+    # SPA routes are unaffected: only the api/ prefix is intercepted.
+    if full_path == "api" or full_path.startswith("api/"):
+        return JSONResponse(
+            status_code=404, content={"detail": "API route not found"}
+        )
     if os.path.exists(os.path.join(build_path, "index.html")):
         return FileResponse(os.path.join(build_path, "index.html"))
     else:
