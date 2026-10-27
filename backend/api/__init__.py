@@ -1583,9 +1583,11 @@ def _encode_idna(host: str) -> str | None:
             # browser-stripped forms (U+200B, U+2060-U+2064,
             # U+206A-U+206F — browsers drop them rather than
             # punycode them, like the soft hyphen U+00AD),
-            # the UTS46-mapped U+203C (‼ -> "!!", which becomes
-            # pure ASCII and needs an up-front translate instead
-            # of this branch), and the browser-rejected forms
+            # the UTS46-mapped U+203C (‼ -> "!!"), which has its
+            # own branch in the label loop below (an up-front
+            # translate alone would not work, since the strict
+            # path rejects the mapped "!"), and the
+            # browser-rejected forms
             # (U+2017, U+200C/U+200D, spaces, U+2024, U+2028/29).
             0x2010, 0x2011, 0x2012, 0x2013, 0x2014, 0x2015,
             0x2016, 0x2018, 0x2019, 0x201A, 0x201B, 0x201C,
@@ -1615,6 +1617,9 @@ def _encode_idna(host: str) -> str | None:
     # processing already maps them to plain forms, as the
     # probe in this iteration confirmed.
     _fraction_map = {0x00BC: "1⁄4", 0x00BD: "1⁄2", 0x00BE: "3⁄4"}
+    # UTS46 maps DOUBLE EXCLAMATION MARK U+203C to "!!" (see the
+    # dedicated branch in the label loop below).
+    _double_excl_map = {0x203C: "!!"}
     try:
         encoded_labels = []
         for label in host.split("."):
@@ -1675,6 +1680,38 @@ def _encode_idna(host: str) -> str | None:
                     .encode("punycode")
                     .decode("ascii")
                 )
+            elif any(ord(c) in _double_excl_map for c in label):
+                # UTS46 maps DOUBLE EXCLAMATION MARK U+203C to "!!"
+                # before IDNA processing, while the `idna` package
+                # rejects both the raw codepoint and the mapped "!"
+                # under strict and UTS46 processing — so a
+                # configured origin containing one was left alone
+                # and never matched under Starlette's exact
+                # allow_origins matching. An up-front translate
+                # alone would not fix it: the mapped "!" would
+                # hit _idna.encode below and fail the whole host.
+                # Remap and handle the remapped form directly, as
+                # the fraction branch does: a pure-ASCII remap
+                # passes through unchanged (browsers leave ASCII
+                # labels alone: "‼.example" -> "!!.example",
+                # "a‼b.example" -> "a!!b.example"), while a remap
+                # that still has non-ASCII punycodes directly
+                # ("‼münchen" -> "xn--!!mnchen-85a"). Placed
+                # after the as-is branch, so labels combining
+                # U+203C with an as-is/expansion form keep their
+                # existing (already non-matching) behaviour, and
+                # labels combining it with a fraction keep the
+                # fraction branch's behaviour above.
+                _excl_remapped = label.translate(_double_excl_map)
+                if any(ord(c) > 127 for c in _excl_remapped):
+                    encoded_labels.append(
+                        "xn--"
+                        + _excl_remapped.encode("punycode").decode(
+                            "ascii"
+                        )
+                    )
+                else:
+                    encoded_labels.append(_excl_remapped)
             elif "_" not in label:
                 encoded_labels.append(_idna.encode(label).decode("ascii"))
             elif any(ord(c) > 127 for c in label):
