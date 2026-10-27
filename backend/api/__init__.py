@@ -1987,6 +1987,103 @@ def _encode_idna(host: str) -> str | None:
                     )
                 else:
                     encoded_labels.append(label)
+            elif any(ord(c) == 0x1ABE for c in label):
+                # COMBINING PARENTHESES OVERLAY U+1ABE: the
+                # `idna` package rejects it under both strict
+                # and UTS46 processing even after a base
+                # character ("a\u1abe" -> InvalidCodepoint),
+                # so a configured origin containing one was
+                # left alone and never matched under
+                # Starlette's exact allow_origins matching —
+                # but browsers punycode a label with it after
+                # a base character as-is ("a\u1abe" ->
+                # "xn--a-67k", "a\u1abeb" -> "xn--ab-4pq",
+                # stacked "a\u1abe\u1abe" -> "xn--a-67ka"),
+                # matching the punycode form. A mark alone
+                # at a label start is browser-rejected
+                # ("\u1abea" is an invalid URL), so the
+                # first-character gate below excludes
+                # mark-first labels, which fall through to
+                # the existing handling (None, as before).
+                # The label is punycoded in its UTS46-remapped
+                # form, not raw: the remap normalizes a
+                # decomposed base ("a\u0300\u1abe" -> "à\u1abe")
+                # and maps other characters first ("µ\u1abe"
+                # -> "μ\u1abe"), matching the browser, while
+                # the raw punycode is not. The gates mirror
+                # the U+20D0 branch: the remap must succeed
+                # and be idempotent, the mark must survive
+                # it, the first character must not be a
+                # mark, and every other character must be an
+                # ASCII label character ("+" included, since
+                # browsers accept a literal "+" in a label:
+                # "a\u1abe+" -> "xn--a+-4pq") or a non-ASCII
+                # letter, mark, number, symbol or punctuation
+                # that is not right-to-left (so a ZWJ, a
+                # remap to a disallowed form, or an RTL mix
+                # still falls through). Placed after the
+                # fraction/as-is/double-exclamation/U+20D0/
+                # U+1DFA branches, so labels mixing U+1ABE
+                # with one of those keep their existing
+                # behaviour ("a\u1abe\u20d0" via the U+20D0
+                # branch, "\u1dfaa\u1abe" via the U+1DFA
+                # branch), and a gate failure falls through
+                # to the same "_" / strict / plain handling
+                # below rather than adding a new failure mode.
+                import unicodedata as _pov_unicodedata
+
+                try:
+                    _pov_remapped = _idna.uts46_remap(
+                        label, std3_rules=False, transitional=False
+                    )
+                    _pov_remapped_again = _idna.uts46_remap(
+                        _pov_remapped, std3_rules=False,
+                        transitional=False,
+                    )
+                except (UnicodeError, ValueError):
+                    _pov_remapped = None
+                    _pov_remapped_again = None
+                _pov_label_chars = (
+                    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                    "0123456789_+-"
+                )
+                if (
+                    _pov_remapped is not None
+                    and _pov_remapped_again == _pov_remapped
+                    and any(
+                        ord(c) == 0x1ABE for c in _pov_remapped
+                    )
+                    and _pov_unicodedata.category(
+                        _pov_remapped[0]
+                    )[0] != "M"
+                    and all(
+                        c in _pov_label_chars
+                        or (
+                            ord(c) > 127
+                            and _pov_unicodedata.category(c)[0]
+                            in "LMNSP"
+                            and _pov_unicodedata.bidirectional(c)
+                            not in ("R", "AL", "AN")
+                        )
+                        for c in _pov_remapped
+                    )
+                ):
+                    encoded_labels.append(
+                        "xn--"
+                        + _pov_remapped.encode("punycode").decode(
+                            "ascii"
+                        )
+                    )
+                elif "_" not in label:
+                    encoded_labels.append(
+                        _idna.encode(label).decode("ascii")
+                    )
+                elif any(ord(c) > 127 for c in label):
+                    encoded_labels.append(
+                        "xn--" + label.encode("punycode").decode("ascii")
+                    )
+                else:
+                    encoded_labels.append(label)
             elif "_" not in label:
                 encoded_labels.append(_idna.encode(label).decode("ascii"))
             elif any(ord(c) > 127 for c in label):
