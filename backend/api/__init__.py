@@ -139,7 +139,7 @@ if is_tenancy_enabled():
 # requests, so it is added last (Starlette runs last-added first).
 # Only enabled when CORS_ALLOW_ORIGINS is explicitly configured, and
 # only for those exact origins, so cookie auth is not opened up.
-def _canonical_ipv4(host: str) -> str | None:
+def _canonical_ipv4_decimal(host: str) -> str | None:
     # A zero-padded IPv4 octet ("192.168.001.010") never matches the
     # canonical Origin browsers send ("192.168.1.10"), and ipaddress
     # rejects leading zeros outright, so without this a padded private
@@ -157,10 +157,12 @@ def _canonical_ipv4(host: str) -> str | None:
     # and "0x7f000001" both mean 127.0.0.1), and browsers serialize
     # the Origin host in dotted-decimal form, so a configured
     # single-number host would otherwise never match either. Only
-    # decimal and 0x-hex single numbers are canonicalized: a
+    # decimal and 0x-hex single numbers are canonicalized here: a
     # leading-zero single number ("03007000001") is WHATWG-octal, and
     # guessing decimal for it would conflict with the padded-decimal
-    # choice above, so it is left alone, as are out-of-range values.
+    # choice above, so this branch returns None for it (the wrapper
+    # below resolves it via the octal branch instead, which does not
+    # guess decimal), as are out-of-range values.
     if len(parts) == 1:
         p = parts[0]
         if p.lower().startswith("0x"):
@@ -230,6 +232,63 @@ def _canonical_ipv4(host: str) -> str | None:
     except ValueError:
         return None
     return canonical
+
+
+def _canonical_ipv4_octal(host: str) -> str | None:
+    # WHATWG fallback for leading-zero parts the decimal branch
+    # rejected: the WHATWG URL parser reads a leading-zero part as
+    # octal, so "0300.0250.1.1" means 192.168.1.1 and browsers
+    # serialize the Origin host that way. This runs only when the
+    # decimal branch returned None (see _canonical_ipv4 below), so
+    # it can only rescue entries that currently never match at all;
+    # it never overrides the padded-decimal choice for entries the
+    # decimal branch already canonicalizes ("192.168.001.010" stays
+    # 192.168.1.10). A leading-zero part containing 8 or 9 is not
+    # valid octal and returns None, as does any non-numeric part, so
+    # hostnames are left alone. Hex parts keep the "0x" rule.
+    parts = host.split(".")
+    if len(parts) not in (1, 2, 3, 4):
+        return None
+    values = []
+    for p in parts:
+        if p.lower().startswith("0x"):
+            digits = p[2:]
+            if not digits or not all(c in "0123456789abcdefABCDEF" for c in digits):
+                return None
+            values.append(int(digits, 16))
+        elif len(p) > 1 and p.startswith("0"):
+            if not p.isdigit() or not all(c in "01234567" for c in p):
+                return None
+            values.append(int(p, 8))
+        elif p.isdigit():
+            values.append(int(p))
+        else:
+            return None
+    if len(parts) == 1:
+        if values[0] > 0xFFFFFFFF:
+            return None
+        return ".".join(str((values[0] >> shift) & 0xFF) for shift in (24, 16, 8, 0))
+    if any(v > 0xFF for v in values[:-1]):
+        return None
+    last_bits = {2: 24, 3: 16, 4: 8}[len(parts)]
+    if values[-1] > (1 << last_bits) - 1:
+        return None
+    tail = [
+        str((values[-1] >> shift) & 0xFF)
+        for shift in range(last_bits - 8, -1, -8)
+    ]
+    if len(parts) == 4:
+        return ".".join(str(v) for v in values)
+    return ".".join(str(v) for v in values[:-1]) + "." + ".".join(tail)
+
+
+def _canonical_ipv4(host: str) -> str | None:
+    # Decimal/padded first, WHATWG-octal only as a fallback, so the
+    # two readings of a leading-zero part can never conflict: an
+    # entry the decimal branch canonicalizes keeps that reading, and
+    # the octal branch only rescues entries that otherwise never
+    # match (e.g. "0300.0250.1.1", whose decimal 300 is out of range).
+    return _canonical_ipv4_decimal(host) or _canonical_ipv4_octal(host)
 
 
 def _encode_idna(host: str) -> str | None:
