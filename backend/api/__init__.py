@@ -1,3 +1,4 @@
+import ipaddress
 import os
 from fastapi import FastAPI, APIRouter, Request, status
 from contextlib import asynccontextmanager
@@ -242,6 +243,31 @@ def _normalize_cors_origin(origin: str) -> str:
         # and are left alone; a host of only dots is left alone
         # rather than being emptied.
         rest = o[scheme_end + 3 :]
+        # Browsers send IPv6 Origin hosts in compressed lowercase form
+        # (WHATWG URL serialization), so an expanded configured host
+        # like "[0:0:0:0:0:0:0:1]" or an uncompressed
+        # "[2001:0db8:0000:0000:0000:ff00:0042:8329]" would never
+        # match even though it names the
+        # same host as "[::1]" / "[2001:db8::ff00:42:8329]". Compress
+        # bracketed hosts here, before the port branches below, so
+        # portless bracketed origins benefit too; zone-id hosts and
+        # unparseable hosts are left alone.
+        if rest.startswith("[") and "]" in rest:
+            inner = rest[1 : rest.find("]")]
+            if "%" not in inner:
+                try:
+                    canonical = ipaddress.IPv6Address(inner).compressed
+                except ValueError:
+                    canonical = None
+                if canonical is not None and canonical != inner:
+                    o = (
+                        o[: scheme_end + 3]
+                        + "["
+                        + canonical
+                        + "]"
+                        + rest[rest.find("]") + 1 :]
+                    )
+                    rest = o[scheme_end + 3 :]
         if (
             rest.startswith("[")
             and "]" in rest
