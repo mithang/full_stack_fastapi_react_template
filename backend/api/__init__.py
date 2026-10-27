@@ -203,5 +203,13 @@ async def react_router(full_path: str):
     if os.path.exists(os.path.join(build_path, "index.html")):
         return FileResponse(os.path.join(build_path, "index.html"))
     else:
-        return {"message": "API endpoint not found", "available_docs": "/docs", "api_base": "/api/v1"}
+        # No UI build exists, so there is no SPA shell to serve: return
+        # a 404 JSON (same {"detail": ...} shape as the API guard
+        # above) instead of a 200 body claiming an endpoint was not
+        # found, which a client could mistake for a successful
+        # response. API paths never reach here (intercepted above),
+        # so this branch only serves SPA routes with no build.
+        return JSONResponse(
+            status_code=404, content={"detail": "UI build not found"}
+        )
 
