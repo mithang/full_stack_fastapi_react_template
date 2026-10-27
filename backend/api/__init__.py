@@ -350,6 +350,15 @@ def _encode_idna(host: str) -> str | None:
             # outright, so they are deliberately left alone.)
             0x00AA: "a",
             0x00BA: "o",
+            # UTS46 likewise maps LATIN SMALL LETTER N PRECEDED BY
+            # APOSTROPHE U+0149 to MODIFIER LETTER APOSTROPHE
+            # U+02BC + "n" before IDNA processing, which the
+            # strict IDNA2008 path likewise rejects, so it is mapped
+            # here too. The mapped form punycodes under the strict
+            # path to the browser-serialized form (U+0149.example ->
+            # "xn--n-y6a.example"); it survives the pipeline's
+            # lower() unchanged, which is why it is the gap.
+            0x0149: "\u02bcn",
         }
     )
     # UTS46 likewise maps the circled letters U+24B6-U+24CF (capitals)
