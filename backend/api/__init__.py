@@ -310,6 +310,35 @@ def _encode_idna(host: str) -> str | None:
     try:
         return _idna.encode(host).decode("ascii")
     except (UnicodeError, ValueError):
+        pass
+    # Fallback for underscore labels: the `idna` package follows
+    # IDNA2008, where "_" is disallowed, but browsers serialize Origin
+    # hosts per WHATWG URL (UTS46 without STD3 rules), which keeps "_"
+    # and punycodes only the non-ASCII part — so "mün_chen.example"
+    # becomes "xn--mn_chen-n2a.example" in the browser while the whole
+    # host above fails and the entry never matches. Retry per label:
+    # labels without "_" are re-encoded with the package (a label that
+    # fails for another reason still returns None, as before), ASCII
+    # underscore labels pass through unchanged (as browsers send
+    # them), and non-ASCII underscore labels get the "xn--" + punycode
+    # form, which preserves both "_" and characters like ß (unlike the
+    # stdlib codec's ß -> "ss" mapping). Empty labels (a trailing dot)
+    # pass through unchanged.
+    try:
+        encoded_labels = []
+        for label in host.split("."):
+            if not label:
+                encoded_labels.append(label)
+            elif "_" not in label:
+                encoded_labels.append(_idna.encode(label).decode("ascii"))
+            elif any(ord(c) > 127 for c in label):
+                encoded_labels.append(
+                    "xn--" + label.encode("punycode").decode("ascii")
+                )
+            else:
+                encoded_labels.append(label)
+        return ".".join(encoded_labels)
+    except (UnicodeError, ValueError):
         return None
 
 
