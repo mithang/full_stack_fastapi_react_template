@@ -2140,9 +2140,21 @@ def _encode_idna(host: str) -> str | None:
                 else:
                     encoded_labels.append(label)
             elif any(ord(c) in _punycode_asis for c in label):
+                # A label combining an as-is form with DOUBLE
+                # EXCLAMATION MARK U+203C ("©‼" -> browser
+                # "xn--!!-sda") previously punycoded the raw
+                # U+203C here, since this branch runs before the
+                # double-exclamation branch below and never
+                # expanded it. UTS46 maps U+203C to "!!" before
+                # IDNA processing, so expand it alongside the
+                # as-is map before punycoding; labels without
+                # U+203C are unchanged, since the translate is
+                # identity for them, and the fraction branch
+                # above already handles fraction mixes itself.
                 encoded_labels.append(
                     "xn--"
                     + label.translate(_asis_map)
+                    .translate(_double_excl_map)
                     .translate(_greek_extended_remap)
                     .encode("punycode")
                     .decode("ascii")
@@ -2164,11 +2176,12 @@ def _encode_idna(host: str) -> str | None:
                 # "a‼b.example" -> "a!!b.example"), while a remap
                 # that still has non-ASCII punycodes directly
                 # ("‼münchen" -> "xn--!!mnchen-85a"). Placed
-                # after the as-is branch, so labels combining
-                # U+203C with an as-is/expansion form keep their
-                # existing (already non-matching) behaviour, and
-                # labels combining it with a fraction keep the
-                # fraction branch's behaviour above.
+                # after the as-is branch, which now expands
+                # U+203C itself for as-is mixes (see there), so
+                # this branch handles U+203C labels without an
+                # as-is form, and labels combining it with a
+                # fraction keep the fraction branch's behaviour
+                # above.
                 _excl_remapped = label.translate(_double_excl_map)
                 if any(ord(c) > 127 for c in _excl_remapped):
                     encoded_labels.append(
