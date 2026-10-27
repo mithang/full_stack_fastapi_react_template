@@ -615,7 +615,16 @@ def _normalize_cors_origin(origin: str) -> str:
         # and other percent-encodings are deliberately untouched —
         # "%2f", "%3a" and "%25" in a host are invalid URLs for
         # browsers (Node rejects them), not hosts that ever need to
-        # match.
+        # match. The same WHATWG percent-decoding also applies to
+        # UTF-8 bytes of a non-ASCII host, so a configured
+        # "https://m%c3%bcnchen.example" is serialized by browsers
+        # as the punycode Origin "https://xn--mnchen-3ya.example" —
+        # but with only the ASCII decode above it kept "%c3%bc" and
+        # never reached the IDN step below, so it never matched.
+        # Decode runs of %XX that form valid UTF-8 with at least one
+        # non-ASCII character here, so the IDN step then punycodes
+        # them; invalid UTF-8, ASCII-only runs, and runs decoding to
+        # a host separator are left alone, as above.
         _rest_pre = o[scheme_end + 3 :]
         if not _rest_pre.startswith("[") and _rest_pre.count(":") <= 1:
             _host_seg, _sep, _port_seg = _rest_pre.partition(":")
@@ -624,7 +633,20 @@ def _normalize_cors_origin(origin: str) -> str:
                 _ch = chr(int(_m.group(1), 16))
                 return _ch if _ch.isascii() and (_ch.isalnum() or _ch in "-_.") else _m.group(0)
 
+            def _decode_utf8_run(_m: re.Match[str]) -> str:
+                _raw = _m.group(0)
+                try:
+                    _decoded = bytes.fromhex(_raw.replace("%", "")).decode("utf-8")
+                except (ValueError, UnicodeDecodeError):
+                    return _raw
+                if not any(ord(c) > 127 for c in _decoded):
+                    return _raw
+                if any(ord(c) < 0x20 or c in "/\\?#@:" for c in _decoded):
+                    return _raw
+                return _decoded
+
             _decoded_seg = re.sub(r"%([0-9a-f]{2})", _decode_safe_hex, _host_seg)
+            _decoded_seg = re.sub(r"(?:%[0-9a-f]{2})+", _decode_utf8_run, _decoded_seg)
             if _decoded_seg != _host_seg:
                 o = o[: scheme_end + 3] + _decoded_seg
                 if _sep:
