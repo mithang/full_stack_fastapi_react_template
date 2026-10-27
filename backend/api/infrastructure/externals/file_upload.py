@@ -1,3 +1,6 @@
+import os
+import uuid
+
 from fastapi import UploadFile
 
 from api.common.utils import get_logger
@@ -16,6 +19,15 @@ class FileUpload:
 
     
     async def upload_file(self, file: UploadFile) -> str:
+        # The filename comes from the multipart header, so it is
+        # client-controlled: a name like "../../other/avatar.png" would
+        # otherwise become part of the storage key, and two users
+        # uploading "avatar.png" would overwrite each other's object
+        # (Azure uploads with overwrite=True). Strip any directory
+        # components and prefix a random id, so the key is flat and
+        # unique. Callers store the returned key and retrieve by it
+        # verbatim, so previously stored keys keep working.
+        safe_name = f"{uuid.uuid4().hex}_{os.path.basename(file.filename or 'upload')}"
         active_provider: StorageSettings = await self.storage_repository.single_or_none(is_enabled=True)
         try:
             if active_provider is None:
@@ -29,14 +41,14 @@ class FileUpload:
                     aws_secret_key=active_provider.aws_secret_key,
                     region=active_provider.region
                 )
-                return await s3.upload_file(file, active_provider.aws_bucket_name + "/" + file.filename)
+                return await s3.upload_file(file, active_provider.aws_bucket_name + "/" + safe_name)
             elif active_provider.provider.value == StorageProvider.AZURE_BLOB.value:
                 logger.info(f"Uploading file to Azure Blob Storage: {file.filename}")
                 azure = AzureBlobStorage(
                     connection_string=active_provider.azure_connection_string,
                     container_name=active_provider.azure_container_name
                 )
-                return await azure.upload_file(file, active_provider.azure_container_name + "/" + file.filename)
+                return await azure.upload_file(file, active_provider.azure_container_name + "/" + safe_name)
             else:
                 raise StorageNotEnabledException()
                 
@@ -48,4 +60,4 @@ class FileUpload:
                 aws_secret_key=settings.aws_secret_access_key,
                 region=settings.aws_region
             )
-            return await s3.upload_file(file, settings.aws_s3_bucket_name + "/" + file.filename)
+            return await s3.upload_file(file, settings.aws_s3_bucket_name + "/" + safe_name)
