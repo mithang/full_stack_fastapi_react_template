@@ -2013,7 +2013,9 @@ def _encode_idna(host: str) -> str | None:
                     # accept the result only under the same gate
                     # as the normal path (it must equal the label
                     # with exactly the fractions and double
-                    # exclamation marks expanded): any other
+                    # exclamation marks expanded, optionally
+                    # further expanded through the as-is map
+                    # and the Greek Extended remap): any other
                     # remapped character (e.g. MICRO SIGN -> mu,
                     # or a remap that raises, e.g. an ellipsis or
                     # a browser-rejected U+1ADE/U+1ADF mark) fails
@@ -2042,7 +2044,29 @@ def _encode_idna(host: str) -> str | None:
                         try:
                             _frac_parts = []
                             for _c in label:
-                                if (
+                                if ord(_c) in _asis_map:
+                                    # An as-is expansion form
+                                    # (DEGREE CELSIUS U+2103 ->
+                                    # "°c", DEGREE FAHRENHEIT
+                                    # U+2109 -> "°f", the square
+                                    # CJK and punctuation
+                                    # expansions): keeping it
+                                    # verbatim here, as the
+                                    # plain as-is members are
+                                    # kept below, passed the old
+                                    # gate with the raw form and
+                                    # punycoded it ("¼℃᫏" ->
+                                    # "xn--14-mrq114al1a"
+                                    # instead of the browser's
+                                    # "xn--14c-tfa0554an3g"),
+                                    # so expand it through the
+                                    # helper's own as-is map,
+                                    # which the gate below then
+                                    # matches exactly.
+                                    _frac_parts.append(
+                                        _asis_map[ord(_c)]
+                                    )
+                                elif (
                                     ord(_c) in _punycode_asis
                                     or ord(_c)
                                     in _punycode_arabic_presentation_as_is
@@ -2068,6 +2092,14 @@ def _encode_idna(host: str) -> str | None:
                             == label.translate(_fraction_excl_map).translate(
                                 _greek_extended_remap
                             )
+                            or _frac_recovered
+                            == label.translate(_fraction_excl_map).translate(
+                                _asis_map
+                            )
+                            or _frac_recovered
+                            == label.translate(_fraction_excl_map)
+                            .translate(_asis_map)
+                            .translate(_greek_extended_remap)
                         )
                         if any(
                             ord(c)
@@ -2104,6 +2136,21 @@ def _encode_idna(host: str) -> str | None:
                             )
                         if _frac_recovered_ok:
                             _frac_remapped = _frac_recovered
+                # A label mixing a fraction with an as-is
+                # expansion form (DEGREE CELSIUS U+2103 ->
+                # "°c", DEGREE FAHRENHEIT U+2109 -> "°f"):
+                # the whole-label remap expands both the
+                # fraction and the degree form, so it equals
+                # neither the fraction-only expansion nor its
+                # Greek-remapped form, and the label fell
+                # through to the as-is branch, which punycoded
+                # the raw fraction ("¼℃" -> "xn--c-0ca9a"
+                # instead of the browser's "xn--14c-tfa2351b").
+                # Accepting the as-is-expanded form (and its
+                # Greek-remapped form) as well is still anchored
+                # to the real UTS46 remap: any other remapped
+                # character fails every candidate and falls
+                # through unchanged, as before.
                 if (
                     _frac_remapped is not None
                     and (
@@ -2113,6 +2160,14 @@ def _encode_idna(host: str) -> str | None:
                         == label.translate(_fraction_excl_map).translate(
                             _greek_extended_remap
                         )
+                        or _frac_remapped
+                        == label.translate(_fraction_excl_map).translate(
+                            _asis_map
+                        )
+                        or _frac_remapped
+                        == label.translate(_fraction_excl_map)
+                        .translate(_asis_map)
+                        .translate(_greek_extended_remap)
                     )
                 ):
                     if any(ord(c) > 127 for c in _frac_remapped):
