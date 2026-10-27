@@ -5,7 +5,7 @@ from typing import Dict
 from celery import Celery
 
 from api.common.dtos.worker_dto import WorkerPayloadDto
-from api.common.utils import get_host_main_domain_name, get_logger
+from api.common.utils import get_host_main_domain_name, get_logger, get_utc_now
 from api.core.container import  get_audit_logs_service, get_dns_resolver, get_role_service, get_tenant_service, get_user_service, get_coolify_app_service
 from api.core.exceptions import CoolifyIntegrationException
 from api.domain.dtos.coolify_app_dto import UpdateDomainDto
@@ -156,6 +156,8 @@ async def _update_tenant_custom_domain_status(tenant_id: str, status: str):
     
     tenant = await tenant_service.get_tenant_by_id(tenant_id=tenant_id)
     tenant.custom_domain_status = status
+    # Direct .save() bypasses BaseRepository.update()'s central updated_at stamp (iteration 411).
+    tenant.updated_at = get_utc_now()
     await tenant.save()
     await db.close()
     
