@@ -469,7 +469,7 @@ def _encode_idna(host: str) -> str | None:
     # The other members of the range are a different fix class and
     # are left alone here: the punycode forms handled by the UTS46
     # retry below (ℇ, ℏ and the like), the punycode-as-is forms
-    # the package's UTS46 processing rejects (℃, ℈, ℉ and the
+    # handled by the fallback below (℃, ℈, ℉ and the
     # like), and codepoints the browser itself rejects
     # (℀, ℁, ℅, ℆). The multi-letter mappings of the range
     # (№ -> "no", ℠ -> "sm", ℡ -> "tel", ™ -> "tm", ℻ -> "fax")
@@ -550,8 +550,9 @@ def _encode_idna(host: str) -> str | None:
     # for direct calls — the same reason the circled and Roman
     # capital ranges are listed). They are kept in a separate
     # set so the two fix classes stay distinct. The remaining
-    # letterlike members are a different fix class and are left
-    # alone here: symbols the browser punycodes as-is but the
+    # letterlike members are a different fix class, handled by
+    # the punycode-as-is fallback below rather than here:
+    # symbols the browser punycodes as-is but the
     # package's UTS46 processing rejects (℃ -> "°c", ℈, ℉ ->
     # "°f", ℄, ℔ and the like), and codepoints the browser
     # itself rejects (℀, ℁, ℅, ℆).
@@ -592,12 +593,44 @@ def _encode_idna(host: str) -> str | None:
     # them), and non-ASCII underscore labels get the "xn--" + punycode
     # form, which preserves both "_" and characters like ß (unlike the
     # stdlib codec's ß -> "ss" mapping). Empty labels (a trailing dot)
-    # pass through unchanged.
+    # pass through unchanged. Labels with a punycode-as-is
+    # letterlike symbol are handled first, before the "_" branches:
+    # the browser punycodes these symbols as-is (℄ -> "xn--31g",
+    # ℈ -> "xn--71g") while the package's UTS46 processing
+    # rejects them, so neither the strict path nor the retry above
+    # reproduces them. Four of them map first per WHATWG (℃ ->
+    # "°c", ℉ -> "°f", ⅀ -> "∑", and Ⅎ -> "ⅎ", which the
+    # pipeline's lower() already folds before this helper runs, so
+    # it matters only for direct calls, as with the circled and
+    # Roman capital ranges); the rest punycode as-is. The branch
+    # only runs when a listed codepoint is present, so every other
+    # label keeps the existing behaviour, and a label mixing a
+    # listed symbol with "_" still punycodes with "_" preserved,
+    # as the browser does ("a_℃" -> "xn--a_c-tfa").
+    _punycode_asis = frozenset(
+        [
+            0x2103, 0x2104, 0x2108, 0x2109, 0x2114, 0x2117,
+            0x2118, 0x211E, 0x211F, 0x2123, 0x2125, 0x2127,
+            0x2129, 0x212E, 0x2132, 0x213A, 0x2140, 0x2141,
+            0x2142, 0x2143, 0x2144, 0x214A, 0x214B, 0x214C,
+            0x214D, 0x214F,
+        ]
+    )
+    _asis_map = {
+        0x2103: "°c", 0x2109: "°f", 0x2132: "ⅎ", 0x2140: "∑",
+    }
     try:
         encoded_labels = []
         for label in host.split("."):
             if not label:
                 encoded_labels.append(label)
+            elif any(ord(c) in _punycode_asis for c in label):
+                encoded_labels.append(
+                    "xn--"
+                    + label.translate(_asis_map)
+                    .encode("punycode")
+                    .decode("ascii")
+                )
             elif "_" not in label:
                 encoded_labels.append(_idna.encode(label).decode("ascii"))
             elif any(ord(c) > 127 for c in label):
