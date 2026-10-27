@@ -276,6 +276,27 @@ def _normalize_cors_origin(origin: str) -> str:
         # and are left alone; a host of only dots is left alone
         # rather than being emptied.
         rest = o[scheme_end + 3 :]
+        # An explicitly-schemed unbracketed IPv6 host (e.g.
+        # "https://2001:db8::1") likewise never matches: browsers send
+        # IPv6 Origins bracketed, and the port branch below would
+        # mangle it by splitting on the last colon. Re-bracket it here
+        # so the compression step below applies — but only when the
+        # whole host parses as an address while the prefix before the
+        # last colon does not; otherwise (e.g. "::1:3000") it cannot
+        # be told apart from host:port safely, and it is left alone,
+        # as with the scheme-less compressed forms. Zone-id hosts are
+        # left alone, as in the compression step below.
+        if ":" in rest and not rest.startswith("[") and "%" not in rest:
+            try:
+                ipaddress.IPv6Address(rest)
+            except ValueError:
+                pass
+            else:
+                try:
+                    ipaddress.IPv6Address(rest.rsplit(":", 1)[0])
+                except ValueError:
+                    o = o[: scheme_end + 3] + "[" + rest + "]"
+                    rest = o[scheme_end + 3 :]
         # Browsers send IPv6 Origin hosts in compressed lowercase form
         # (WHATWG URL serialization), so an expanded configured host
         # like "[0:0:0:0:0:0:0:1]" or an uncompressed
