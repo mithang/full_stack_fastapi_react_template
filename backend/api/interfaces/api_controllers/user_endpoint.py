@@ -24,7 +24,7 @@ async def list_users(
     # single request could dump the whole user table (limit=1000000)
     # or behave unpredictably on negative values. Cap server-side;
     # out-of-range values now fail fast with a 422 instead.
-    skip: int = Query(0, ge=0),
+    skip: int = Query(0, ge=0, le=10000),
     limit: int = Query(10, ge=1, le=100),
     service: UserService = Depends(get_user_service),
     _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.USER_VIEW_ONLY]))
