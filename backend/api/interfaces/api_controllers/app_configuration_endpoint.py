@@ -1,5 +1,5 @@
 
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, status
 
 from api.common.dtos.app_configuration_dto import AppConfigurationDto
@@ -79,8 +79,12 @@ async def get_app_configuration(
             contact_info=None,
             favicon_url=None,
             theme_config=branding_theme_default,
-            created_at=datetime.now().isoformat(),
-            updated_at=datetime.now().isoformat()
+            # UTC-aware timestamps, matching the audit-log timestamp fix
+            # (iteration 394): a naive local string would be read as
+            # browser-local time by any consumer parsing it, and could
+            # disagree with the server's UTC date near midnight.
+            created_at=datetime.now(timezone.utc).isoformat(),
+            updated_at=datetime.now(timezone.utc).isoformat()
         )
 
 
