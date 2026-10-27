@@ -605,9 +605,26 @@ def _encode_idna(host: str) -> str | None:
             0x01F1, 0x01F2, 0x01F3,
         ]
     )
+    # The same class covers the Cherokee small letters U+AB70-U+ABBF
+    # and U+13F8-U+13FD: the strict IDNA2008 path rejects them all
+    # (the U+13F8-U+13FD forms are the lowercases of U+13F0-U+13F5,
+    # whose other capitals fold to U+AB70-U+ABBF), while UTS46
+    # punycodes them as-is (ꭰ -> "xn--58d", ᏽ -> "xn--lce"),
+    # matching Node's WHATWG parser. A translate table cannot
+    # express this class (there is no plain-letter target), so
+    # they join the UTS46 retry here; the pipeline's lower()
+    # already folds the capitals to these small forms before this
+    # helper runs, so the small forms are what the retry sees in
+    # practice, but the capitals pass the strict path directly
+    # and need no entry. Verified against Node's WHATWG parser,
+    # which matches the package's UTS46 processing for every
+    # member of both ranges.
+    _punycode_cherokee = frozenset(
+        list(range(0xAB70, 0xABC0)) + list(range(0x13F8, 0x13FE))
+    )
     if any(
         ord(c) in _punycode_modifiers or ord(c) in _punycode_letterlike
-        or ord(c) in _punycode_digraphs
+        or ord(c) in _punycode_digraphs or ord(c) in _punycode_cherokee
         for c in host
     ):
         try:
