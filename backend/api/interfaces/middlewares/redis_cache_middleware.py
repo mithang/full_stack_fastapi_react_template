@@ -537,10 +537,25 @@ class RedisCacheMiddleware(BaseHTTPMiddleware):
 
         # Cache only 200 OK + JSON responses
         if response.status_code == 200  and "application/json" in content_type:
+            # Preserve the handler's headers on cache hits: the hit path
+            # above already restores cached["headers"], but nothing ever
+            # stored them, so every hit silently dropped them. Never
+            # store Set-Cookie: a cached Set-Cookie would replay a cookie
+            # (e.g. a rotated refresh token, or a logout deletion) to a
+            # later request without the handler running. No cached GET
+            # sets cookies today; this keeps that guarantee if one ever
+            # does. Old entries without a "headers" key still hit via
+            # the .get("headers", {}) fallback above.
+            cacheable_headers = {
+                key: value
+                for key, value in response.headers.items()
+                if key.lower() != "set-cookie"
+            }
             to_cache = json.dumps({
                 "body": body_text,
                 "status": response.status_code,
                 "media_type": content_type,
+                "headers": cacheable_headers,
             })
             # Fail open: a cache-write failure must not turn a
             # successful handler response into a 500 for the client.
