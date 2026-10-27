@@ -807,6 +807,21 @@ def _encode_idna(host: str) -> str | None:
     # forms flagged alongside it are the same class but
     # separate ranges, assessed separately.
     _punycode_armenian = frozenset([0x0587])
+    # The same class covers the Arabic high-hamza letters
+    # U+0675/U+0676/U+0677/U+0678 (ٵ/ٶ/ٷ/ٸ): the strict
+    # IDNA2008 path rejects them all, while UTS46 punycodes
+    # them as-is (ٵ -> "xn--mgb8m", ٶ -> "xn--khb2g",
+    # ٷ -> "xn--tib9n", ٸ -> "xn--mhb8f"), matching Node's
+    # WHATWG parser. A translate table cannot express this
+    # class (there is no plain-letter target), so they join
+    # the UTS46 retry here; the pipeline's lower() leaves
+    # them unchanged, so the forms above are what the retry
+    # sees in practice. A full scan of U+0600-U+06FF
+    # confirmed exactly these four are strict-reject/UTS46-ok
+    # after lower(). The Lao, Georgian and Latin forms
+    # flagged alongside them are the same class but separate
+    # ranges, assessed separately.
+    _punycode_arabic = frozenset([0x0675, 0x0676, 0x0677, 0x0678])
     if any(
         ord(c) in _punycode_modifiers or ord(c) in _punycode_letterlike
         or ord(c) in _punycode_digraphs or ord(c) in _punycode_cherokee
@@ -814,7 +829,7 @@ def _encode_idna(host: str) -> str | None:
         or ord(c) in _punycode_gurmukhi or ord(c) in _punycode_oriya
         or ord(c) in _punycode_tibetan or ord(c) in _punycode_mod02
         or ord(c) in _punycode_subschwa or ord(c) in _punycode_greek
-        or ord(c) in _punycode_armenian
+        or ord(c) in _punycode_armenian or ord(c) in _punycode_arabic
         for c in host
     ):
         try:
