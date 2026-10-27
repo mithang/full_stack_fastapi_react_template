@@ -675,13 +675,29 @@ def _encode_idna(host: str) -> str | None:
     # sees in practice. A full block scan (U+0B01-U+0B7F)
     # confirmed exactly these two are strict-reject/UTS46-ok.
     # The Tibetan forms are the same class but a separate
-    # range, assessed separately.
+    # range, handled below.
     _punycode_oriya = frozenset([0x0B5C, 0x0B5D])
+    # The same class covers the Tibetan forms U+0F0C/U+0F43/
+    # U+0F4D/U+0F52/U+0F57/U+0F5C/U+0F69 (༌/གྷ/ཌྷ/དྷ/བྷ/ཛྷ/ཀྵ):
+    # the strict IDNA2008 path rejects them all, while UTS46
+    # punycodes them as-is (༌ -> "xn--nbd", གྷ -> "xn--7cd8u",
+    # ཌྷ -> "xn--idd8s", དྷ -> "xn--ndd8r", བྷ -> "xn--sdd8q",
+    # ཛྷ -> "xn--xdd8p", ཀྵ -> "xn--5cd8u"), matching Node's
+    # WHATWG parser. A translate table cannot express this
+    # class (there is no plain-letter target), so they join
+    # the UTS46 retry here; the pipeline's lower() leaves
+    # them unchanged, so the forms above are what the retry
+    # sees in practice. A full block scan (U+0F00-U+0FFF)
+    # confirmed exactly these seven are strict-reject/UTS46-ok.
+    _punycode_tibetan = frozenset(
+        [0x0F0C, 0x0F43, 0x0F4D, 0x0F52, 0x0F57, 0x0F5C, 0x0F69]
+    )
     if any(
         ord(c) in _punycode_modifiers or ord(c) in _punycode_letterlike
         or ord(c) in _punycode_digraphs or ord(c) in _punycode_cherokee
         or ord(c) in _punycode_devanagari or ord(c) in _punycode_bengali
         or ord(c) in _punycode_gurmukhi or ord(c) in _punycode_oriya
+        or ord(c) in _punycode_tibetan
         for c in host
     ):
         try:
