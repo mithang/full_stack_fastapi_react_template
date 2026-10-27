@@ -1162,6 +1162,16 @@ def _encode_idna(host: str) -> str | None:
     # package — the valid mixed forms are RTL-context ones (e.g.
     # "اﺀ"), which the retry reproduces exactly.
     _punycode_arabic_presentation_b = frozenset(range(0xFE80, 0xFEFD))
+    # CJK Compatibility Ideographs (U+F900-U+FAD9): UTS46 maps each
+    # to its unified ideograph before encoding, while strict IDNA2008
+    # rejects them all, so the helper left a configured origin
+    # containing one alone and never matched under Starlette's exact
+    # allow_origins matching. Two runs share the class; U+FA6E-U+FA6F
+    # and U+FADA-U+FAFF are unassigned, fail under both strict and
+    # UTS46, and are left alone.
+    _punycode_cjk_compat = frozenset(range(0xF900, 0xFA6E)) | frozenset(
+        range(0xFA70, 0xFADA)
+    )
     if any(
         ord(c) in _punycode_modifiers or ord(c) in _punycode_letterlike
         or ord(c) in _punycode_digraphs or ord(c) in _punycode_cherokee
@@ -1188,6 +1198,7 @@ def _encode_idna(host: str) -> str | None:
         or ord(c) in _punycode_enclosed_cjk
         or ord(c) in _punycode_square_cjk
         or ord(c) in _punycode_arabic_presentation_b
+        or ord(c) in _punycode_cjk_compat
         for c in host
     ):
         try:
