@@ -45,8 +45,13 @@ export function CheckoutOverview() {
     // missing values behave as before.
     const parsedInitialSkip = parseInt(searchQuery.get("skip") || "0", 10);
     const parsedInitialLimit = parseInt(searchQuery.get("limit") || "10", 10);
-    const initialSkip = Number.isFinite(parsedInitialSkip) && parsedInitialSkip >= 0 ? parsedInitialSkip : 0;
-    const initialLimit = Number.isFinite(parsedInitialLimit) && parsedInitialLimit > 0 ? parsedInitialLimit : 10;
+    // Clamped to the backend bounds (iteration 403: skip le=10000,
+    // limit le=100), mirroring the roles/tenants/users providers
+    // (iteration 402): without this clamp, a hand-edited ?skip=/?limit=
+    // above the bounds would fail with 422 at fetch time instead of
+    // showing a page.
+    const initialSkip = Number.isFinite(parsedInitialSkip) && parsedInitialSkip >= 0 ? Math.min(parsedInitialSkip, 10000) : 0;
+    const initialLimit = Number.isFinite(parsedInitialLimit) && parsedInitialLimit > 0 ? Math.min(parsedInitialLimit, 100) : 10;
 
     const [pagination, setPagination] = useState({
         skip: initialSkip,
@@ -124,11 +129,13 @@ export function CheckoutOverview() {
             // state limit while the URL kept showing the edited one.
             // Guarded the same way as initialLimit above; the fetch
             // overwrites pagination with the backend-echoed values, so
-            // no loop is possible here.
+            // no loop is possible here. Both values are additionally
+            // clamped to the backend bounds (iteration 403), as with
+            // initialSkip/initialLimit above.
             const urlLimit = parseInt(new URLSearchParams(search).get("limit") || "10", 10);
             fetchCheckoutRecords(
-                Number.isFinite(urlSkip) && urlSkip >= 0 ? urlSkip : 0,
-                Number.isFinite(urlLimit) && urlLimit > 0 ? urlLimit : 10,
+                Number.isFinite(urlSkip) && urlSkip >= 0 ? Math.min(urlSkip, 10000) : 0,
+                Number.isFinite(urlLimit) && urlLimit > 0 ? Math.min(urlLimit, 100) : 10,
             );
         }
         // current_tenant is a dep, not a gate: checkout records are
@@ -347,8 +354,8 @@ export function CheckoutOverview() {
                             const urlSkip = parseInt(new URLSearchParams(search).get("skip") || "0", 10);
                             const urlLimit = parseInt(new URLSearchParams(search).get("limit") || "10", 10);
                             fetchCheckoutRecords(
-                                Number.isFinite(urlSkip) && urlSkip >= 0 ? urlSkip : 0,
-                                Number.isFinite(urlLimit) && urlLimit > 0 ? urlLimit : 10,
+                                Number.isFinite(urlSkip) && urlSkip >= 0 ? Math.min(urlSkip, 10000) : 0,
+                                Number.isFinite(urlLimit) && urlLimit > 0 ? Math.min(urlLimit, 100) : 10,
                             );
                         }}
                     >
