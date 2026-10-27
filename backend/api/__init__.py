@@ -203,10 +203,23 @@ def _normalize_cors_origin(origin: str) -> str:
         # The whole 127.0.0.0/8 range is loopback (127.0.0.2, 127.0.1.1,
         # ...), not just 127.0.0.1, so a scheme-less entry for any of
         # them would otherwise assume https and never match the
-        # plain-http Origin a dev frontend sends.
+        # plain-http Origin a dev frontend sends. Likewise an expanded
+        # bracketed loopback ("[0:0:0:0:0:0:0:1]:3000") is not the
+        # literal "[::1]" string, so without this check it assumed
+        # https and never matched the dev http Origin even though the
+        # later compression step rewrites it to "[::1]"; parse it to
+        # test loopback instead of comparing strings.
+        is_loopback_v6 = False
+        if host.startswith("[") and host.endswith("]"):
+            try:
+                is_loopback_v6 = ipaddress.IPv6Address(host[1:-1]).is_loopback
+            except ValueError:
+                is_loopback_v6 = False
         scheme = (
             "http"
-            if host in ("localhost", "[::1]") or host.startswith("127.")
+            if host in ("localhost", "[::1]")
+            or is_loopback_v6
+            or host.startswith("127.")
             else "https"
         )
         o = scheme + "://" + bare if not o.startswith("//") else scheme + ":" + o
