@@ -220,6 +220,23 @@ def _normalize_cors_origin(origin: str) -> str:
         # stripped from the rebuilt origin by the scheme branch below.
         if host.endswith("."):
             host = host.rstrip(".") or host
+        # The same http assumption applies to private and link-local
+        # IPv4 hosts (RFC 1918, CGNAT, link-local, unspecified): a
+        # scheme-less "192.168.1.10:3000" — a dev frontend reached
+        # over the LAN, e.g. from a phone — previously became
+        # https://192.168.1.10:3000 and never matched the plain-http
+        # Origin the browser sends, just as scheme-less loopback did
+        # before. Public IPv4 hosts still assume https; explicit
+        # schemes are untouched, so https://192.168.1.10 still means
+        # https. is_global is False for every non-routable address,
+        # so one check covers private, link-local, loopback and
+        # unspecified hosts alike.
+        is_private_v4 = False
+        if "." in host and not host.startswith("["):
+            try:
+                is_private_v4 = not ipaddress.IPv4Address(host).is_global
+            except ValueError:
+                is_private_v4 = False
         # The whole 127.0.0.0/8 range is loopback (127.0.0.2, 127.0.1.1,
         # ...), not just 127.0.0.1, so a scheme-less entry for any of
         # them would otherwise assume https and never match the
@@ -239,6 +256,7 @@ def _normalize_cors_origin(origin: str) -> str:
             "http"
             if host in ("localhost", "[::1]")
             or is_loopback_v6
+            or is_private_v4
             or host.startswith("127.")
             else "https"
         )
