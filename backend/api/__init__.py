@@ -1525,12 +1525,26 @@ def _encode_idna(host: str) -> str | None:
             # The as-is punycode form matches the browser for
             # mixed and underscore labels too ("a©" -> "xn--a-nca",
             # "a_©" -> "xn--a_-uda"), so no separate branch is
-            # needed. Other Latin-1 symbols (¡, ¢, £, ®, ±, …)
-            # are the same class and are left for separate
-            # assessment; the soft hyphen U+00AD is deliberately
+            # needed. The same class covers the remaining
+            # Latin-1 symbols browsers punycode as-is (¡ -> "xn--7a",
+            # ¢ -> "xn--8a", £ -> "xn--9a", ¤ -> "xn--bba",
+            # ¥ -> "xn--cba", ¦ -> "xn--dba", § -> "xn--eba",
+            # « -> "xn--iba", ® -> "xn--lba", ± -> "xn--oba",
+            # ¶ -> "xn--tba", · -> "xn--uba", » -> "xn--yba",
+            # ¿ -> "xn--2ba", × -> "xn--rca", ÷ -> "xn--oda"),
+            # which likewise returned None standalone and never
+            # matched. The soft hyphen U+00AD is deliberately
             # excluded, since browsers strip it rather than
-            # punycode it.
+            # punycode it; the UTS46-mapped forms (² -> "2",
+            # ³ -> "3", ¹ -> "1", º -> "o") and fractions
+            # (¼ -> "1⁄4", ½ -> "1⁄2", ¾ -> "3⁄4") need a
+            # remap-before-qualify path rather than as-is
+            # entries and are left for separate assessment, as
+            # are the browser-rejected forms (¨, ¯, ´, ¸).
             0x00A9, 0x00B0,
+            0x00A1, 0x00A2, 0x00A3, 0x00A4, 0x00A5, 0x00A6,
+            0x00A7, 0x00AB, 0x00AE, 0x00B1, 0x00B6, 0x00B7,
+            0x00BB, 0x00BF, 0x00D7, 0x00F7,
             0x2103, 0x2104, 0x2108, 0x2109, 0x2114, 0x2117,
             0x2118, 0x211E, 0x211F, 0x2123, 0x2125, 0x2127,
             0x2129, 0x212E, 0x2132, 0x213A, 0x2140, 0x2141,
