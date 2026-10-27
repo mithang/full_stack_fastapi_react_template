@@ -2652,6 +2652,78 @@ def _encode_idna(host: str) -> str | None:
                     )
                 else:
                     encoded_labels.append(label)
+            elif (label.startswith("-") or label.endswith("-")) and any(
+                ord(c) > 127 for c in label
+            ):
+                # A non-ASCII label with a leading or trailing
+                # hyphen: WHATWG URL serialization punycodes it
+                # as-is ("münchen-" -> "xn--mnchen--n2a",
+                # "-münchen" -> "xn---mnchen-o2a", "é-" ->
+                # "xn----9fa"), but the `idna` package rejects
+                # hyphen-edge labels under its strict path, so
+                # the fallback below raised and the whole host
+                # fell through to None and never matched — even
+                # a multi-label host such as "münchen-.example".
+                # Pure-ASCII hyphen labels need no branch: they
+                # already fall through to None, and leaving the
+                # host alone is the browser form for them. The
+                # gates mirror the enclosed-CJK branch: the
+                # UTS46 remap must be identity (so an NFC
+                # normalizing label such as "a\u0301-" keeps its
+                # existing behaviour rather than gaining a raw
+                # punycode that differs from the browser's
+                # normalized form), the first character must not
+                # be a mark (a hyphen-first label such as
+                # "-\u0300a" passes this, as the browser carries
+                # it, while a mark-first label such as "\u0300-"
+                # is browser-rejected and falls through to None
+                # as before), and every character must be an
+                # ASCII letter, digit, hyphen or underscore, or
+                # a non-ASCII letter, mark, number, symbol or
+                # punctuation that is not right-to-left — so an
+                # RTL hyphen-edge label such as "م-" stays None,
+                # matching the browser's rejection, while the
+                # mid-label RTL form "م-م" keeps working via
+                # the strict path above. A gate failure falls
+                # through to the same fallback below rather
+                # than adding a new failure mode.
+                import unicodedata as _hyph_unicodedata
+
+                try:
+                    _hyph_remapped = _idna.uts46_remap(
+                        label, std3_rules=False, transitional=False
+                    )
+                except (UnicodeError, ValueError):
+                    _hyph_remapped = None
+                if (
+                    _hyph_remapped == label
+                    and _hyph_unicodedata.category(label[0])[0] != "M"
+                    and all(
+                        c
+                        in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"
+                        or (
+                            ord(c) > 127
+                            and _hyph_unicodedata.category(c)[0]
+                            in "LMNSP"
+                            and _hyph_unicodedata.bidirectional(c)
+                            not in ("R", "AL", "AN")
+                        )
+                        for c in label
+                    )
+                ):
+                    encoded_labels.append(
+                        "xn--" + label.encode("punycode").decode("ascii")
+                    )
+                elif "_" not in label:
+                    encoded_labels.append(
+                        _idna.encode(label).decode("ascii")
+                    )
+                elif any(ord(c) > 127 for c in label):
+                    encoded_labels.append(
+                        "xn--" + label.encode("punycode").decode("ascii")
+                    )
+                else:
+                    encoded_labels.append(label)
             elif "_" not in label:
                 encoded_labels.append(_idna.encode(label).decode("ascii"))
             elif any(ord(c) > 127 for c in label):
