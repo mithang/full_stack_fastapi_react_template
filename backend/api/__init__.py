@@ -396,15 +396,21 @@ def _encode_idna(host: str) -> str | None:
     # Superscript digits are SUPERSCRIPT ONE U+00B9, SUPERSCRIPT TWO
     # U+00B2, SUPERSCRIPT THREE U+00B3, and SUPERSCRIPT ZERO plus
     # FOUR-NINE U+2070/U+2074-U+2079; subscript digits are
-    # U+2080-U+2089. SUPERSCRIPT LATIN SMALL LETTER I U+2071 maps
-    # under UTS46 to "i" and is left for the modifier-letter
-    # assessment, as are the superscript/subscript signs U+207A-U+207C
-    # and U+208A-U+208C, which UTS46 does not map to a valid domain
-    # form (they fail under both strict and UTS46 processing and are
-    # deliberately left alone).
+    # U+2080-U+2089. SUPERSCRIPT LATIN SMALL LETTER I U+2071 likewise
+    # maps under UTS46 to "i", which the strict IDNA2008 path likewise
+    # rejects, so it is mapped here too. It survives the pipeline's
+    # lower() unchanged, which is why it is the gap. The remaining
+    # modifier letters (e.g. U+1D2C-U+1D6A, U+02B0-U+02BF) are left
+    # for a separate assessment: some map to plain letters under UTS46
+    # while others are valid as-is (punycoded, not mapped), so they
+    # are not all the same fix class. The superscript/subscript signs
+    # U+207A-U+207C and U+208A-U+208C, which UTS46 does not map to a
+    # valid domain form (they fail under both strict and UTS46
+    # processing), are deliberately left alone.
     host = host.translate(
         {0x00B9: "1", 0x00B2: "2", 0x00B3: "3"}
         | {0x2070: "0"}
+        | {0x2071: "i"}
         | {cp: str(cp - 0x2070) for cp in range(0x2074, 0x207A)}
         | {cp: str(cp - 0x2080) for cp in range(0x2080, 0x208A)}
     )
