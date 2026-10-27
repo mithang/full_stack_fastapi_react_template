@@ -270,14 +270,20 @@ class AuthService:
 
 
     async def logout(self, user_id: str, tenant_id: str | None) -> None:
+        # Do not claim token invalidation here: logout only deletes the
+        # refresh cookie (account_endpoint) — there is no server-side
+        # token denylist, so a copied refresh token stays valid until
+        # expiry. Recording "invalidated" in the audit trail would
+        # mislead an incident responder into believing a compromised
+        # session was killed. A real denylist remains a larger change.
         await self.audit_log_service.create_audit_log(audit_log=AuditLogDto(
             entity="User",
             action="logout",
             user_id=user_id,
             tenant_id=tenant_id,
-            changes={"Info": f"User logged out and refresh tokens invalidated."}
+            changes={"Info": f"User logged out."}
         ))
-        logger.info(f"User {user_id} logged out successfully and refresh tokens invalidated.")
+        logger.info(f"User {user_id} logged out successfully.")
     
     async def refresh_token(self, token: TokenRefreshRequestDto) -> TokenSetDto:
         """
