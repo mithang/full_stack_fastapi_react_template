@@ -1352,6 +1352,22 @@ def _encode_idna(host: str) -> str | None:
         0x2011: "‐", 0x2033: "′′", 0x2034: "′′′",
         0x2036: "‵‵", 0x2037: "‵‵‵", 0x2057: "′′′′",
     }
+    # Combining marks U+1ACF-U+1AEB punycoded as-is (the same
+    # 27 codepoints listed in _punycode_asis below for standalone
+    # labels: 0x1ACF, 0x1AD0-0x1ADD, 0x1AE0-0x1AEB, excluding
+    # the browser-rejected 0x1ADE/0x1ADF). This Python's Unicode
+    # data leaves them unassigned (category Cn) and the `idna`
+    # package rejects them, so the U+FB29 mixed-label gate below
+    # fails them on both its category check and its remap check,
+    # and the label then fell through to a wrong form punycoding
+    # U+FB29 itself ("a᫏﬩" -> "xn--a-58k1995i" instead of the
+    # browser's "xn--a+-lrq"). Defined here, ahead of the FB29
+    # branch, because _punycode_asis itself is defined below it.
+    _fb29_punycode_asis_marks = frozenset(
+        [0x1ACF]
+        + list(range(0x1AD0, 0x1ADE))
+        + list(range(0x1AE0, 0x1AEC))
+    )
     # U+FB29 (HEBREW LETTER ALTERNATE PLUS SIGN): UTS46 maps it
     # to "+" before IDNA processing, but the `idna` package
     # rejects "+" itself under both strict and UTS46 processing,
@@ -1472,25 +1488,20 @@ def _encode_idna(host: str) -> str | None:
                     for c in _v
                     if ord(c) > 127
                 )
+                # The remap gate cannot be applied verbatim to
+                # a label containing a _fb29_punycode_asis_marks
+                # member: the package rejects the mark itself, so
+                # the remap raises even though browsers leave it
+                # as-is. Retry with each such mark replaced by a
+                # plain letter: that proves the remaining
+                # characters are remap-stable (a character
+                # browsers map elsewhere still changes the
+                # placeholder label or raises, failing the gate),
+                # while a normalization difference caused by the
+                # substitution only fails conservatively.
                 try:
-                    _fb29_mapped_ok = (
-                        _fb29_unicodedata.category(_fb29_mapped_t[0])[0]
-                        != "M"
-                        and all(
-                            c in _fb29_label_chars
-                            or (
-                                ord(c) > 127
-                                and (
-                                    _fb29_unicodedata.category(c)[0]
-                                    in "LMNSP"
-                                    or c in _fb29_asis_outputs
-                                )
-                                and _fb29_unicodedata.bidirectional(c)
-                                not in ("R", "AL", "AN")
-                            )
-                            for c in _fb29_mapped_t
-                        )
-                        and _idna.uts46_remap(
+                    _fb29_remap_ok = (
+                        _idna.uts46_remap(
                             _fb29_mapped_t,
                             std3_rules=False,
                             transitional=False,
@@ -1498,7 +1509,50 @@ def _encode_idna(host: str) -> str | None:
                         == _fb29_mapped_t
                     )
                 except (UnicodeError, ValueError):
-                    _fb29_mapped_ok = False
+                    if any(
+                        ord(c) in _fb29_punycode_asis_marks
+                        for c in _fb29_mapped_t
+                    ):
+                        try:
+                            _fb29_placeholder = "".join(
+                                "a"
+                                if ord(c)
+                                in _fb29_punycode_asis_marks
+                                else c
+                                for c in _fb29_mapped_t
+                            )
+                            _fb29_remap_ok = (
+                                _idna.uts46_remap(
+                                    _fb29_placeholder,
+                                    std3_rules=False,
+                                    transitional=False,
+                                )
+                                == _fb29_placeholder
+                            )
+                        except (UnicodeError, ValueError):
+                            _fb29_remap_ok = False
+                    else:
+                        _fb29_remap_ok = False
+                _fb29_mapped_ok = (
+                    _fb29_unicodedata.category(_fb29_mapped_t[0])[0]
+                    != "M"
+                    and all(
+                        c in _fb29_label_chars
+                        or (
+                            ord(c) > 127
+                            and (
+                                _fb29_unicodedata.category(c)[0]
+                                in "LMNSP"
+                                or c in _fb29_asis_outputs
+                                or ord(c) in _fb29_punycode_asis_marks
+                            )
+                            and _fb29_unicodedata.bidirectional(c)
+                            not in ("R", "AL", "AN")
+                        )
+                        for c in _fb29_mapped_t
+                    )
+                    and _fb29_remap_ok
+                )
                 if not _fb29_mapped_ok:
                     # UTS46-mapped symbols mixed with U+FB29
                     # (e.g. "¼﬩"): the gate above fails because
