@@ -177,6 +177,11 @@ async def update_profile_picture(
         if size > max_size:
             raise InvalidOperationException("Profile picture must be less than 5MB.")
     await file.seek(0)
+    # The branding logo upload rejects empty files; mirror it here, before
+    # any user lookup or storage call, so an empty upload cannot replace
+    # a working avatar with a zero-byte object.
+    if size == 0:
+        raise InvalidOperationException("Profile picture must not be empty.")
     await user_service.get_user_by_id(user_id)
     file_location = await file_service.upload_file(file)
     await user_service.update_user(user_id=user_id, user_data=UpdateUserDto(image_url=file_location))
