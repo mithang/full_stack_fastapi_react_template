@@ -1,14 +1,17 @@
 from datetime import datetime
 from typing import Optional
 from beanie import Document, PydanticObjectId
-from pydantic import field_serializer
+from pydantic import Field, field_serializer
 
 from api.common.utils import get_utc_now
 
 
 class ApiBaseModel(Document):
-    created_at: datetime = get_utc_now()
-    updated_at: datetime = get_utc_now()
+    # default_factory (not a plain get_utc_now() call): a plain call is
+    # evaluated once at class definition, so every inheriting document
+    # created without explicit timestamps would share the server-start time.
+    created_at: datetime = Field(default_factory=get_utc_now)
+    updated_at: datetime = Field(default_factory=get_utc_now)
     tenant_id: Optional[PydanticObjectId] = None
 
     # Todo: Remove all the to_serializable_dict methods and use field_serializers instead
