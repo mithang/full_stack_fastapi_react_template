@@ -1299,6 +1299,87 @@ def _encode_idna(host: str) -> str | None:
             for label in _fb29_candidate.split(".")
         ):
             return _fb29_candidate
+        # Mixed U+FB29 labels: a label mixing U+FB29 with other
+        # non-ASCII (e.g. "ß﬩" -> browser "xn--+-pfa") fell
+        # through above (not all-ASCII after the replacement)
+        # and then failed the strict path below, so the entry
+        # never matched — and an underscore label even produced
+        # a wrong form, punycoding U+FB29 itself ("a_ß﬩" ->
+        # "xn--a_-hia0147w") instead of the browser's
+        # "xn--a_+-6ka". Handle such labels per label: a label
+        # without U+FB29 must already consist of kept-verbatim
+        # characters (it passes through unchanged); a non-ASCII
+        # label without U+FB29 (e.g. the "münchen" in
+        # "ß﬩.münchen") is left to the existing paths, so no
+        # un-encoded label is ever emitted. A mixed label
+        # qualifies only when every character is either an
+        # ASCII letter, digit, "_", "+" or "-" (the characters
+        # browsers keep verbatim in a label), or a non-ASCII
+        # letter, mark or number, with no right-to-left
+        # character (browsers reject RTL labels containing "+"
+        # — "א﬩" is an invalid URL), no leading mark (browsers
+        # reject a label starting with one), and UTS46
+        # remapping leaves the label unchanged (this rejects
+        # characters browsers map elsewhere, e.g. U+A770 ->
+        # U+A76F, U+2103 -> "°c", U+0345 -> "ι", a soft hyphen,
+        # and decomposed forms, whose raw punycode would not
+        # match the browser form). Qualifying labels are then
+        # punycoded directly, which preserves "_", "+" and "-"
+        # exactly as browsers do. Anything else falls through
+        # to the existing paths unchanged.
+        import unicodedata as _fb29_unicodedata
+
+        _fb29_mixed_labels = []
+        _fb29_mixed_ok = True
+        for _fb29_orig, _fb29_mapped in zip(
+            host.split("."), _fb29_candidate.split(".")
+        ):
+            if not _fb29_orig:
+                _fb29_mixed_labels.append("")
+            elif "\uFB29" not in _fb29_orig:
+                if all(
+                    c in _fb29_label_chars for c in _fb29_orig
+                ):
+                    _fb29_mixed_labels.append(_fb29_mapped)
+                else:
+                    _fb29_mixed_ok = False
+                    break
+            elif all(c in _fb29_label_chars for c in _fb29_mapped):
+                _fb29_mixed_labels.append(_fb29_mapped)
+            else:
+                try:
+                    _fb29_mapped_ok = (
+                        _fb29_unicodedata.category(_fb29_mapped[0])[0]
+                        != "M"
+                        and all(
+                            c in _fb29_label_chars
+                            or (
+                                ord(c) > 127
+                                and _fb29_unicodedata.category(c)[0]
+                                in "LMN"
+                                and _fb29_unicodedata.bidirectional(c)
+                                not in ("R", "AL", "AN")
+                            )
+                            for c in _fb29_mapped
+                        )
+                        and _idna.uts46_remap(
+                            _fb29_mapped,
+                            std3_rules=False,
+                            transitional=False,
+                        )
+                        == _fb29_mapped
+                    )
+                except (UnicodeError, ValueError):
+                    _fb29_mapped_ok = False
+                if not _fb29_mapped_ok:
+                    _fb29_mixed_ok = False
+                    break
+                _fb29_mixed_labels.append(
+                    "xn--"
+                    + _fb29_mapped.encode("punycode").decode("ascii")
+                )
+        if _fb29_mixed_ok:
+            return ".".join(_fb29_mixed_labels)
     # Fallback for underscore labels: the `idna` package follows
     # IDNA2008, where "_" is disallowed, but browsers serialize Origin
     # hosts per WHATWG URL (UTS46 without STD3 rules), which keeps "_"
