@@ -81,7 +81,16 @@ async def delete_tenant(
     except TenantNotFoundException as e:
         raise e
     except Exception as e:
-        raise ApiBaseException(f"Failed to delete tenant: {str(e)}")
+        # Keep the internal detail server-side only: str(e) can carry
+        # database/upstream internals, and the ApiBaseException handler
+        # returns its message verbatim to the client (and logs it).
+        # Every other controller that swallows an unexpected error
+        # (storage configure, Stripe webhook) logs the detail and
+        # returns a generic message instead; the frontend delete toast
+        # is a fixed "Failed to delete tenant" string, so no client
+        # copy depends on the detail.
+        logger.error(f"Failed to delete tenant {id}: {e}")
+        raise ApiBaseException("Failed to delete tenant.")
 
 
 @router.get("/search_by_name/{name}", response_model=TenantDto, status_code=status.HTTP_200_OK)
