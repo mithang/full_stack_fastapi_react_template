@@ -981,6 +981,17 @@ def _encode_idna(host: str) -> str | None:
     # they are the only strict-reject/UTS46-ok members of the
     # block after lower().
     _punycode_ethiopic = frozenset([0xAB5C, 0xAB5D, 0xAB5E, 0xAB5F, 0xAB69])
+    # HIRAGANA DIGRAPH YORI U+309F (ゟ) and KATAKANA DIGRAPH
+    # KOTO U+30FF (ヿ): the strict IDNA2008 path rejects them,
+    # while UTS46 punycodes them as-is (ゟ -> "xn--lbke", ヿ ->
+    # "xn--tckzb"), matching Node's WHATWG parser. A translate
+    # table cannot express this class (there is no plain-letter
+    # target), so they join the UTS46 retry here; the pipeline's
+    # lower() leaves them unchanged, so the forms above are what
+    # the retry sees in practice. A full scan of U+3000-U+30FF
+    # confirmed they are the only strict-reject/UTS46-ok members
+    # of the block after lower().
+    _punycode_japanese_digraphs = frozenset([0x309F, 0x30FF])
     if any(
         ord(c) in _punycode_modifiers or ord(c) in _punycode_letterlike
         or ord(c) in _punycode_digraphs or ord(c) in _punycode_cherokee
@@ -997,6 +1008,7 @@ def _encode_idna(host: str) -> str | None:
         or ord(c) in _punycode_cyrillic_modifiers
         or ord(c) in _punycode_cjk_repeat
         or ord(c) in _punycode_ethiopic
+        or ord(c) in _punycode_japanese_digraphs
         for c in host
     ):
         try:
