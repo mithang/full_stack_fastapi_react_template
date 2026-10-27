@@ -771,13 +771,36 @@ def _encode_idna(host: str) -> str | None:
     # U+2090-U+209C subscript letters map to plain letters and
     # are handled by the translate table above, not here.
     _punycode_subschwa = frozenset([0x2094])
+    # The same class covers the Greek symbols U+03D0/U+03D1/U+03D2/
+    # U+03D3/U+03D4/U+03D5/U+03D6/U+03F0/U+03F1/U+03F2/U+03F5
+    # (ϐ/ϑ/ϒ/ϓ/ϔ/ϕ/ϖ/ϰ/ϱ/ϲ/ϵ): the strict IDNA2008 path
+    # rejects them all, while UTS46 punycodes them as-is
+    # (ϐ -> "xn--nxa", ϑ -> "xn--txa", ϒ -> "xn--6xa",
+    # ϓ -> "xn--fya", ϔ -> "xn--dya", ϕ -> "xn--7xa",
+    # ϖ -> "xn--1xa", ϰ -> "xn--vxa", ϱ -> "xn--2xa",
+    # ϲ -> "xn--4xa", ϵ -> "xn--qxa"), matching Node's WHATWG
+    # parser. A translate table cannot express this class (there
+    # is no plain-letter target), so they join the UTS46 retry
+    # here; the pipeline's lower() leaves them unchanged, so the
+    # forms above are what the retry sees in practice. A full
+    # scan of U+03D0-U+03F5 confirmed exactly these eleven are
+    # strict-reject/UTS46-ok after lower(): the archaic and
+    # Coptic capitals fold to smalls that pass strict directly,
+    # GREEK CAPITAL THETA SYMBOL U+03F4 folds to θ, and GREEK
+    # KAI SYMBOL U+03D7 passes strict directly.
+    _punycode_greek = frozenset(
+        [
+            0x03D0, 0x03D1, 0x03D2, 0x03D3, 0x03D4, 0x03D5,
+            0x03D6, 0x03F0, 0x03F1, 0x03F2, 0x03F5,
+        ]
+    )
     if any(
         ord(c) in _punycode_modifiers or ord(c) in _punycode_letterlike
         or ord(c) in _punycode_digraphs or ord(c) in _punycode_cherokee
         or ord(c) in _punycode_devanagari or ord(c) in _punycode_bengali
         or ord(c) in _punycode_gurmukhi or ord(c) in _punycode_oriya
         or ord(c) in _punycode_tibetan or ord(c) in _punycode_mod02
-        or ord(c) in _punycode_subschwa
+        or ord(c) in _punycode_subschwa or ord(c) in _punycode_greek
         for c in host
     ):
         try:
