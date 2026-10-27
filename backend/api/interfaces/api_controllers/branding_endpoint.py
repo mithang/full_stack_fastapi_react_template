@@ -22,7 +22,9 @@ async def update_branding(
     branding_service: BrandingService = Depends(get_deps(BrandingService))
 ):
 
-    logger.debug(f"Update branding called with data: {data}")  
+    # Do not log the full DTO: it carries contact_info (PII) and the
+    # api logger runs at DEBUG in all environments (see iteration 432).
+    logger.debug(f"Update branding called for tenant: {current_user.tenant_id}")
     branding = await branding_service.get_branding()
     if branding is None:
         data.tenant_id = current_user.tenant_id
