@@ -156,6 +156,9 @@ class AuthService:
             user = await self.user_service.find_by_email(email=email)
             if user.sso_provider_id != provider_name:
                 user.sso_provider_id = provider_name
+                # Direct .save() bypasses BaseRepository.update()'s central
+                # updated_at stamp (iteration 411), so stamp it here.
+                user.updated_at = get_utc_now()
                 await user.save()
             return await self._get_token_set(user)
         except UserNotFoundException:
