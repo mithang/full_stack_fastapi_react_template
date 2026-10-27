@@ -4,8 +4,10 @@ from api.common.utils import get_logger
 from api.core.container import get_billing_record_service
 from api.domain.dtos.billing_dto import CreatePlanDto,  PlanDto, PlanListDto, UpdatePlanDto
 from api.domain.enum.feature import Feature
+from api.domain.enum.permission import Permission
 from api.domain.security.feature_access_management import check_feature_access
 from api.infrastructure.security.current_user import CurrentUser, CurrentUserOptional
+from api.interfaces.security.role_checker import check_permissions_for_current_role
 from api.usecases.billing_record_service import BillingRecordService
 
 logger = get_logger(__name__)
@@ -42,6 +44,15 @@ async def get_plan(
 async def delete_plan(
     plan_id: str,
     current_user: CurrentUser,
+    # Mutating plan endpoints require manage:billing, mirroring the
+    # /checkouts/all list and invoice endpoints: products/prices
+    # require manage:products_and_pricing at router level, but plans
+    # had no permission check at all, so any authenticated user could
+    # create, update or delete a Stripe plan. The read endpoints
+    # above stay open on purpose (the pricing page lists plans for
+    # visitors), and the frontend billing UI is already gated on
+    # manage:billing, so legitimate plan managers are unaffected.
+    _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.MANAGE_BILLING])),
     billing_service: BillingRecordService = Depends(get_billing_record_service)
 ):
     scope = "host"
@@ -55,6 +66,7 @@ async def delete_plan(
 async def create_plan(
     new_plan: CreatePlanDto,
     current_user: CurrentUser,
+    _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.MANAGE_BILLING])),
     billing_service: BillingRecordService = Depends(get_billing_record_service)
 ):
     scope = "host"
@@ -69,6 +81,7 @@ async def update_plan(
     plan_id: str,
     updated_plan: UpdatePlanDto,
     current_user: CurrentUser,
+    _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.MANAGE_BILLING])),
     billing_service: BillingRecordService = Depends(get_billing_record_service)
 ):
     scope = "host"
