@@ -285,7 +285,7 @@ class BillingRecordService:
             # or ProductException. No 404 distinction is needed for
             # a list: an empty invoice list is a valid empty result,
             # so a failure is never a not-found.
-            raise BillingRecordException(f"Failed to list invoices: {str(e)}") from e
+            raise BillingRecordException("Failed to list invoices.") from e
         return InvoiceListDto(
             invoices=[invoice for invoice in result.data], has_more=result.has_more
         )
@@ -333,8 +333,9 @@ class BillingRecordService:
             # error (406 via BillingRecordException), not a 404.
             if getattr(e, "http_status", None) == 404:
                 raise PricingNotFoundException(checkout_req.price_id) from e
+            logger.error(f"Error creating host checkout session: {e}")
             raise BillingRecordException(
-                f"Failed to create host checkout session: {str(e)}"
+                "Failed to create host checkout session."
             ) from e
         billing_record = BillingRecord(
             scope="host",
@@ -390,8 +391,9 @@ class BillingRecordService:
             # billing error (406 via BillingRecordException), not a 404.
             if getattr(e, "http_status", None) == 404:
                 raise PricingNotFoundException(checkout_req.price_id) from e
+            logger.error(f"Error creating tenant checkout session: {e}")
             raise BillingRecordException(
-                f"Failed to create tenant checkout session: {str(e)}"
+                "Failed to create tenant checkout session."
             ) from e
 
         billing_record = BillingRecord(
@@ -430,8 +432,9 @@ class BillingRecordService:
             # not-found; everything else is a billing error.
             if getattr(e, "http_status", None) == 404:
                 raise BillingRecordNotFoundException(session_id) from e
+            logger.error(f"Error retrieving checkout session {session_id}: {e}")
             raise BillingRecordException(
-                f"Failed to retrieve checkout session {session_id}: {str(e)}"
+                f"Failed to retrieve checkout session {session_id}."
             ) from e
         if session.payment_status != "paid":
             raise BillingRecordException(
@@ -514,8 +517,9 @@ class BillingRecordService:
             # not-found; everything else is a billing error.
             if getattr(e, "http_status", None) == 404:
                 raise BillingRecordNotFoundException(session_id) from e
+            logger.error(f"Error retrieving checkout session {session_id}: {e}")
             raise BillingRecordException(
-                f"Failed to retrieve checkout session {session_id}: {str(e)}"
+                f"Failed to retrieve checkout session {session_id}."
             ) from e
         if session.payment_status != "paid":
             raise BillingRecordException(
