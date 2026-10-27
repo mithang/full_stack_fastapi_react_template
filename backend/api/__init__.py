@@ -390,6 +390,24 @@ def _encode_idna(host: str) -> str | None:
         {cp: _roman[cp - 0x2160] for cp in range(0x2160, 0x2170)}
         | {cp: _roman[cp - 0x2170] for cp in range(0x2170, 0x2180)}
     )
+    # UTS46 likewise maps the superscript and subscript digits to
+    # their plain digits (² -> "2", ₀ -> "0"), which the strict
+    # IDNA2008 path likewise rejects, so they are mapped here too.
+    # Superscript digits are SUPERSCRIPT ONE U+00B9, SUPERSCRIPT TWO
+    # U+00B2, SUPERSCRIPT THREE U+00B3, and SUPERSCRIPT ZERO plus
+    # FOUR-NINE U+2070/U+2074-U+2079; subscript digits are
+    # U+2080-U+2089. SUPERSCRIPT LATIN SMALL LETTER I U+2071 maps
+    # under UTS46 to "i" and is left for the modifier-letter
+    # assessment, as are the superscript/subscript signs U+207A-U+207C
+    # and U+208A-U+208C, which UTS46 does not map to a valid domain
+    # form (they fail under both strict and UTS46 processing and are
+    # deliberately left alone).
+    host = host.translate(
+        {0x00B9: "1", 0x00B2: "2", 0x00B3: "3"}
+        | {0x2070: "0"}
+        | {cp: str(cp - 0x2070) for cp in range(0x2074, 0x207A)}
+        | {cp: str(cp - 0x2080) for cp in range(0x2080, 0x208A)}
+    )
     # UTS46 likewise maps the fullwidth ASCII forms U+FF01-U+FF5E to
     # their ASCII equivalents (ｅｘａｍｐｌｅ -> "example", including
     # the fullwidth full stop U+FF0E -> ".") before IDNA processing,
