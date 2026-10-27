@@ -329,6 +329,17 @@ def _encode_idna(host: str) -> str | None:
             0xFB15: "մի",
             0xFB16: "վն",
             0xFB17: "մխ",
+            # UTS46 likewise maps the letterlike symbols MICRO SIGN
+            # U+00B5 -> GREEK SMALL LETTER MU and LATIN SMALL LETTER
+            # LONG S U+017F -> "s", which the strict IDNA2008 path
+            # likewise rejects, so they are mapped here too. (KELVIN
+            # SIGN, ANGSTROM SIGN and OHM SIGN are the same class of
+            # UTS46 mapping, but the pipeline's lower() already folds
+            # them to "k"/"å"/"ω" before this helper runs, so they
+            # need no entry here; MICRO SIGN and LONG S survive
+            # lower() unchanged, which is why they are the gap.)
+            0x00B5: "μ",
+            0x017F: "s",
         }
     )
     # UTS46 likewise maps the fullwidth ASCII forms U+FF01-U+FF5E to
