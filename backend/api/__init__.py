@@ -1895,6 +1895,50 @@ def _encode_idna(host: str) -> str | None:
         0x2FCD: "鼎", 0x2FCE: "鼓", 0x2FCF: "鼠", 0x2FD0: "鼻", 0x2FD1: "齊",
         0x2FD2: "齒", 0x2FD3: "龍", 0x2FD4: "龜", 0x2FD5: "龠",
     }
+    # Parenthesized enclosed CJK forms the as-is branch must
+    # remap first: the parenthesized members of U+3200-U+32FF
+    # (the same ranges the enclosed branch below gates on)
+    # remap under UTS46 to a parenthesized letter (㈀ -> "(ᄀ)",
+    # ㈠ -> "(一)", ㈜ -> "(株)") or, for the circled Hangul
+    # jamo U+3260-U+326D, to the bare jamo (㉠ -> ᄀ), verified
+    # against the package's uts46_remap for all 81 differing
+    # members (U+3248-U+324F and U+327F map to themselves, so
+    # they need no entry; browser-rejected U+321F is excluded).
+    # The as-is branch below punycodes its label directly,
+    # because the package rejects the as-is member under both
+    # strict and UTS46 processing -- but browsers remap the
+    # parenthesized member first, so a label mixing one with
+    # an as-is member punycoded raw never matched ("©㈀" ->
+    # helper "xn--gba673w", browser "xn--()-sda748n", which
+    # decodes to the remapped "©(ᄀ)"). Translating through
+    # this table before punycoding reproduces the browser
+    # form; labels without a parenthesized member are
+    # unchanged, and the table's outputs need no further
+    # remap (ASCII parens and CJK/Hangul letters; translate
+    # does not recurse, matching UTS46's single mapping pass,
+    # and the table is applied last so no earlier remap can
+    # rewrite its outputs). The standalone as-is branch below
+    # applies it; mixes with other UTS46-remapped classes keep
+    # their existing behaviour for separate assessment.
+    _parenthesized_cjk_remap = {
+        0x3200: "(ᄀ)", 0x3201: "(ᄂ)", 0x3202: "(ᄃ)", 0x3203: "(ᄅ)", 0x3204: "(ᄆ)",
+        0x3205: "(ᄇ)", 0x3206: "(ᄉ)", 0x3207: "(ᄋ)", 0x3208: "(ᄌ)", 0x3209: "(ᄎ)",
+        0x320A: "(ᄏ)", 0x320B: "(ᄐ)", 0x320C: "(ᄑ)", 0x320D: "(ᄒ)", 0x320E: "(가)",
+        0x320F: "(나)", 0x3210: "(다)", 0x3211: "(라)", 0x3212: "(마)", 0x3213: "(바)",
+        0x3214: "(사)", 0x3215: "(아)", 0x3216: "(자)", 0x3217: "(차)", 0x3218: "(카)",
+        0x3219: "(타)", 0x321A: "(파)", 0x321B: "(하)", 0x321C: "(주)", 0x321D: "(오전)",
+        0x321E: "(오후)", 0x3220: "(一)", 0x3221: "(二)", 0x3222: "(三)", 0x3223: "(四)",
+        0x3224: "(五)", 0x3225: "(六)", 0x3226: "(七)", 0x3227: "(八)", 0x3228: "(九)",
+        0x3229: "(十)", 0x322A: "(月)", 0x322B: "(火)", 0x322C: "(水)", 0x322D: "(木)",
+        0x322E: "(金)", 0x322F: "(土)", 0x3230: "(日)", 0x3231: "(株)", 0x3232: "(有)",
+        0x3233: "(社)", 0x3234: "(名)", 0x3235: "(特)", 0x3236: "(財)", 0x3237: "(祝)",
+        0x3238: "(労)", 0x3239: "(代)", 0x323A: "(呼)", 0x323B: "(学)", 0x323C: "(監)",
+        0x323D: "(企)", 0x323E: "(資)", 0x323F: "(協)", 0x3240: "(祭)", 0x3241: "(休)",
+        0x3242: "(自)", 0x3243: "(至)", 0x3260: "ᄀ", 0x3261: "ᄂ", 0x3262: "ᄃ",
+        0x3263: "ᄅ", 0x3264: "ᄆ", 0x3265: "ᄇ", 0x3266: "ᄉ", 0x3267: "ᄋ",
+        0x3268: "ᄌ", 0x3269: "ᄎ", 0x326A: "ᄏ", 0x326B: "ᄐ", 0x326C: "ᄑ",
+        0x326D: "ᄒ",
+    }
     _punycode_asis = frozenset(
         [
             # Latin-1 symbols the browser punycodes as-is (© ->
@@ -2326,8 +2370,10 @@ def _encode_idna(host: str) -> str | None:
                 # above already handles fraction mixes itself.
                 # Enclosed CJK members are likewise expanded
                 # through _enclosed_cjk_remap (see there),
-                # and kangxi radicals through _kangxi_remap;
-                # labels without one are unchanged by them.
+                # kangxi radicals through _kangxi_remap, and
+                # parenthesized enclosed forms through
+                # _parenthesized_cjk_remap; labels without one
+                # are unchanged by them.
                 encoded_labels.append(
                     "xn--"
                     + label.translate(_asis_map)
@@ -2335,6 +2381,7 @@ def _encode_idna(host: str) -> str | None:
                     .translate(_greek_extended_remap)
                     .translate(_enclosed_cjk_remap)
                     .translate(_kangxi_remap)
+                    .translate(_parenthesized_cjk_remap)
                     .encode("punycode")
                     .decode("ascii")
                 )
