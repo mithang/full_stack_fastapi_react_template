@@ -1162,6 +1162,28 @@ def _encode_idna(host: str) -> str | None:
     # package — the valid mixed forms are RTL-context ones (e.g.
     # "اﺀ"), which the retry reproduces exactly.
     _punycode_arabic_presentation_b = frozenset(range(0xFE80, 0xFEFD))
+    # Arabic Presentation Forms-A (U+FB50-U+FDFF): UTS46 maps
+    # each to its Arabic letter / letter-sequence form before
+    # encoding, while strict IDNA2008 rejects them all, so the
+    # helper left a configured origin containing one alone and
+    # never matched under Starlette's exact allow_origins
+    # matching. The remaining members of the block (U+FBB2-U+FBD2,
+    # U+FC5E-U+FC63, U+FCF2-U+FCF4, U+FD3E-U+FD4F, U+FD90-U+FD91,
+    # U+FDC8-U+FDEF, U+FDFA-U+FDFF) fail under both strict and
+    # UTS46, and are left alone. Note the UTS46 bidi rule, as
+    # with Arabic Presentation Forms-B: an LTR label cannot mix
+    # in these RTL letters, so the valid forms are alone or
+    # RTL-context ones, which the retry reproduces exactly.
+    _punycode_arabic_presentation_a = (
+        frozenset(range(0xFB50, 0xFBB2))
+        | frozenset(range(0xFBD3, 0xFC5E))
+        | frozenset(range(0xFC64, 0xFCF2))
+        | frozenset(range(0xFCF5, 0xFD3E))
+        | frozenset(range(0xFD50, 0xFD90))
+        | frozenset(range(0xFD92, 0xFDC8))
+        | frozenset(range(0xFDF0, 0xFDFA))
+        | frozenset([0xFDFC])
+    )
     # CJK Compatibility Ideographs (U+F900-U+FAD9): UTS46 maps each
     # to its unified ideograph before encoding, while strict IDNA2008
     # rejects them all, so the helper left a configured origin
@@ -1225,6 +1247,7 @@ def _encode_idna(host: str) -> str | None:
         or ord(c) in _punycode_enclosed_cjk
         or ord(c) in _punycode_square_cjk
         or ord(c) in _punycode_arabic_presentation_b
+        or ord(c) in _punycode_arabic_presentation_a
         or ord(c) in _punycode_cjk_compat
         or ord(c) in _punycode_hebrew_presentation
         for c in host
