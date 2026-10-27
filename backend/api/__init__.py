@@ -153,6 +153,30 @@ def _canonical_ipv4(host: str) -> str | None:
     # A part is hex only with a "0x" prefix and hex digits; anything
     # else non-digit (e.g. "0xzz", a hostname label) is left alone.
     parts = host.split(".")
+    # A lone number is likewise an IPv4 address to WHATWG ("2130706433"
+    # and "0x7f000001" both mean 127.0.0.1), and browsers serialize
+    # the Origin host in dotted-decimal form, so a configured
+    # single-number host would otherwise never match either. Only
+    # decimal and 0x-hex single numbers are canonicalized: a
+    # leading-zero single number ("03007000001") is WHATWG-octal, and
+    # guessing decimal for it would conflict with the padded-decimal
+    # choice above, so it is left alone, as are out-of-range values.
+    if len(parts) == 1:
+        p = parts[0]
+        if p.lower().startswith("0x"):
+            digits = p[2:]
+            if not digits or not all(c in "0123456789abcdefABCDEF" for c in digits):
+                return None
+            value = int(digits, 16)
+        elif p.isdigit():
+            if len(p) > 1 and p.startswith("0"):
+                return None
+            value = int(p)
+        else:
+            return None
+        if value > 0xFFFFFFFF:
+            return None
+        return ".".join(str((value >> shift) & 0xFF) for shift in (24, 16, 8, 0))
     if len(parts) != 4:
         return None
     values = []
