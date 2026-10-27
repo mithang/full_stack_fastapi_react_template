@@ -378,7 +378,22 @@ class RedisCacheMiddleware(BaseHTTPMiddleware):
         # only the detail route. Same stale-viewer class as the
         # products-detail bypass, not an enforcement fix: plan
         # mutations read/write fresh.
-        if any(request.url.path.endswith(path) for path in not_allowed_cache_paths) or "/check_subdomain/" in request.url.path or "/search_by_subdomain/" in request.url.path or "/search_by_name/" in request.url.path or "/ai/sessions/" in request.url.path or "/api/v1/products/" in request.url.path or "/api/v1/billing/plans/" in request.url.path or token is None:
+        # Live user detail: /api/v1/users/{user_id} reads the user
+        # fresh from the database on every call (get_user_by_id), and
+        # the list bypass above keeps only the list live; the detail
+        # route cannot go in not_allowed_cache_paths for the same
+        # trailing-variable reason, so it is bypassed here. A user
+        # edited, deactivated, or role-changed by another admin would
+        # otherwise stay stale in the viewing admin's detail/edit
+        # view for the rest of the TTL, since a mutation clears only
+        # the acting admin's cache keys. No other GET lives under
+        # /api/v1/users/ except the profile-image route, whose
+        # presigned URL is freshly minted on every call, so the
+        # substring also re-matches the already-bypassed list and
+        # the profile route harmlessly. Same stale-viewer class as
+        # the products/plan detail bypasses, not an enforcement fix:
+        # user mutations read/write fresh.
+        if any(request.url.path.endswith(path) for path in not_allowed_cache_paths) or "/check_subdomain/" in request.url.path or "/search_by_subdomain/" in request.url.path or "/search_by_name/" in request.url.path or "/ai/sessions/" in request.url.path or "/api/v1/products/" in request.url.path or "/api/v1/billing/plans/" in request.url.path or "/api/v1/users/" in request.url.path or token is None:
             logger.debug(f"Bypassing cache for path: {request.url.path}")
             return await call_next(request)
             
