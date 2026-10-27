@@ -22,7 +22,10 @@ class BrandingRepository(BaseRepository[Branding]):
         return await super().update(id, data.model_dump(exclude_unset=True, exclude_none=True))
 
     async def create_branding(self, data: Branding) -> Branding:
-        logger.debug(f"Creating branding with data: {data}")
+        # Do not log the full payload: Branding carries contact_info (PII)
+        # and the api logger runs at DEBUG in all environments, so log
+        # only the tenant it belongs to, as with the other log trims.
+        logger.debug(f"Creating branding for tenant: {data.tenant_id}")
         try:
             return await super().create(data.model_dump())
         except Exception as e:
