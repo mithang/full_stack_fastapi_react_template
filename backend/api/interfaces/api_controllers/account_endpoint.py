@@ -387,7 +387,15 @@ async def email_magic_link_validate(
         raise ForbiddenException("Invalid or expired magic link.")
     
     token_set: TokenSetDto = await auth_service.login_with_magic_link(user_id=user_id)
-    
+
+    # This is a GET that returns live tokens and sets the refresh
+    # cookie, so it must never be served from a browser or proxy
+    # cache: a cached 200 would replay a consumed link's token set
+    # without re-validating it (and without the handler's Set-Cookie
+    # on a replay that bypasses the handler). POST token endpoints
+    # are not cached by default, so this GET is the exposed one.
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
     response.set_cookie(
         key="refresh_token",
         value=token_set.refresh_token,
