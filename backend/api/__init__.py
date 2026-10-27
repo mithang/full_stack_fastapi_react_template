@@ -968,6 +968,19 @@ def _encode_idna(host: str) -> str | None:
     # scan of U+3000-U+303F confirmed they are the only
     # strict-reject/UTS46-ok members of the block after lower().
     _punycode_cjk_repeat = frozenset([0x3038, 0x3039, 0x303A])
+    # U+AB5C (ꭜ), U+AB5D (ꭝ), U+AB5E (ꭞ), U+AB5F (ꭟ) and
+    # U+AB69 (ꭩ), modifier letters from Ethiopic Extended-A: the
+    # strict IDNA2008 path rejects them, while UTS46 punycodes
+    # them as-is (ꭜ -> "xn--728a", ꭝ -> "xn--xx9a", ꭞ ->
+    # "xn--boa", ꭟ -> "xn--py9a", ꭩ -> "xn--9oa"), matching
+    # Node's WHATWG parser. A translate table cannot express
+    # this class (there is no plain-letter target), so they
+    # join the UTS46 retry here; the pipeline's lower() leaves
+    # them unchanged, so the forms above are what the retry
+    # sees in practice. A full scan of U+AB00-U+AB6F confirmed
+    # they are the only strict-reject/UTS46-ok members of the
+    # block after lower().
+    _punycode_ethiopic = frozenset([0xAB5C, 0xAB5D, 0xAB5E, 0xAB5F, 0xAB69])
     if any(
         ord(c) in _punycode_modifiers or ord(c) in _punycode_letterlike
         or ord(c) in _punycode_digraphs or ord(c) in _punycode_cherokee
@@ -983,6 +996,7 @@ def _encode_idna(host: str) -> str | None:
         or ord(c) in _punycode_tifinagh
         or ord(c) in _punycode_cyrillic_modifiers
         or ord(c) in _punycode_cjk_repeat
+        or ord(c) in _punycode_ethiopic
         for c in host
     ):
         try:
