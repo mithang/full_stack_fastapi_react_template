@@ -144,7 +144,14 @@ if _cors_origins:
         CORSMiddleware,
         allow_origins=_cors_origins,
         allow_credentials=True,
-        allow_methods=["*"],
+        # Only the methods the API actually exposes and the generated
+        # client actually uses (GET/POST/PUT/PATCH/DELETE, verified
+        # against both the router decorators and the client services):
+        # with allow_credentials=True, "*" would preflight-approve any
+        # method (e.g. TRACE) from a configured origin. OPTIONS
+        # preflights are handled by CORSMiddleware itself and need no
+        # entry here.
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
         allow_headers=["Authorization", "Content-Type", "X-Tenant-ID"],
     )
     logger.info(f"CORS enabled for origins: {_cors_origins}")
