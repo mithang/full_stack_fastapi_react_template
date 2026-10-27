@@ -161,6 +161,14 @@ def _normalize_cors_origin(origin: str) -> str:
         path_start = o.find("/", scheme_end + 3)
         if path_start != -1:
             o = o[:path_start]
+        # Browsers send Origin as scheme://host[:port] only, never with a
+        # query or fragment, so strip those too (before the default-port
+        # strip below, so "https://app.example.com:443?ref=docs" still
+        # normalizes to "https://app.example.com").
+        for sep in ("?", "#"):
+            sep_pos = o.find(sep, scheme_end + 3)
+            if sep_pos != -1:
+                o = o[:sep_pos]
     if o.startswith("https://") and o.endswith(":443"):
         return o[:-4]
     if o.startswith("http://") and o.endswith(":80"):
