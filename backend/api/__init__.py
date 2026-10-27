@@ -1279,6 +1279,16 @@ def _encode_idna(host: str) -> str | None:
         0x33A7: "m∕s", 0x33A8: "m∕s2", 0x33AE: "rad∕s",
         0x33AF: "rad∕s2", 0x33C6: "c∕kg", 0x33DE: "v∕m",
         0x33DF: "a∕m",
+        # General Punctuation expansions (same pattern): UTS46
+        # maps these to repeated/single base forms before IDNA
+        # processing (‑ -> "‐", ″ -> "′′", ‴ -> "′′′",
+        # ‶ -> "‵‵", ‷ -> "‵‵‵", ⁗ -> "′′′′"), which the
+        # browser then punycodes — but the package rejects both
+        # the originals and the expansions under strict and UTS46
+        # processing, so they need this branch with the mapping
+        # below, not bare as-is entries.
+        0x2011: "‐", 0x2033: "′′", 0x2034: "′′′",
+        0x2036: "‵‵", 0x2037: "‵‵‵", 0x2057: "′′′′",
     }
     # U+FB29 (HEBREW LETTER ALTERNATE PLUS SIGN): UTS46 maps it
     # to "+" before IDNA processing, but the `idna` package
@@ -1561,6 +1571,33 @@ def _encode_idna(host: str) -> str | None:
             # (same pattern as ℃ -> "°c"), not bare as-is entries.
             0x33A7, 0x33A8, 0x33AE, 0x33AF,
             0x33C6, 0x33DE, 0x33DF,
+            # General Punctuation symbols the browser punycodes
+            # as-is (‐ -> "xn--4ug", – -> "xn--7ug",
+            # ’ -> "xn--evg", † -> "xn--lvg", ‰ -> "xn--1vg")
+            # while the package's UTS46 processing rejects them,
+            # so neither the strict path nor the retry above
+            # reproduces them — same class as the Latin-1 symbols
+            # above. The six UTS46 expansion forms (‑, ″, ‴,
+            # ‶, ‷, ⁗) are included here with their expansions in
+            # _asis_map above. Deliberately excluded: the
+            # browser-stripped forms (U+200B, U+2060-U+2064,
+            # U+206A-U+206F — browsers drop them rather than
+            # punycode them, like the soft hyphen U+00AD),
+            # the UTS46-mapped U+203C (‼ -> "!!", which becomes
+            # pure ASCII and needs an up-front translate instead
+            # of this branch), and the browser-rejected forms
+            # (U+2017, U+200C/U+200D, spaces, U+2024, U+2028/29).
+            0x2010, 0x2011, 0x2012, 0x2013, 0x2014, 0x2015,
+            0x2016, 0x2018, 0x2019, 0x201A, 0x201B, 0x201C,
+            0x201D, 0x201E, 0x201F, 0x2020, 0x2021, 0x2022,
+            0x2023, 0x2027, 0x2030, 0x2031, 0x2032, 0x2033,
+            0x2034, 0x2035, 0x2036, 0x2037, 0x2038, 0x2039,
+            0x203A, 0x203B, 0x203D, 0x203F, 0x2040, 0x2041,
+            0x2042, 0x2043, 0x2044, 0x2045, 0x2046, 0x204A,
+            0x204B, 0x204C, 0x204D, 0x204E, 0x204F, 0x2050,
+            0x2051, 0x2052, 0x2053, 0x2054, 0x2055, 0x2056,
+            0x2057, 0x2058, 0x2059, 0x205A, 0x205B, 0x205C,
+            0x205D, 0x205E,
         ]
     )
     # UTS46 maps the vulgar fractions VULGAR FRACTION ONE
