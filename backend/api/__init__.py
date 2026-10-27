@@ -1064,6 +1064,20 @@ def _encode_idna(host: str) -> str | None:
     # so they are a separate case and are left alone here).
     _punycode_kanbun = frozenset(range(0x3192, 0x31A0))
     _punycode_halfwidth_katakana = frozenset(range(0xFF66, 0xFF9E))
+    # Halfwidth voiced/semi-voiced marks (U+FF9E/U+FF9F): they
+    # combine with a preceding kana rather than standing alone, so
+    # they are a separate case from the halfwidth katakana above.
+    # When the preceding base is itself halfwidth katakana the
+    # kana's guard entry already triggers the UTS46 retry, so that
+    # combination already normalizes (ｶﾞ -> "xn--mck"). The gap is
+    # a fullwidth kana, hiragana, ASCII or digit base, which passes
+    # the strict path alone, so no retry fires and the mark makes
+    # the whole host fail: カﾞ, かﾞ and aﾞ all return None today
+    # while UTS46 (and Node's WHATWG parser) produce "xn--mck",
+    # "xn--v8j" and "xn--a-wdu". Alone at a label start both UTS46
+    # and browsers reject the mark, so the retry failing there
+    # leaves behaviour unchanged. They join the retry here.
+    _punycode_halfwidth_marks = frozenset([0xFF9E, 0xFF9F])
     # Greek Extended (U+1F00-U+1FFF): a full scan of the block
     # against the actual helper isolated 46 strict-reject/UTS46-ok
     # members after lower() — the rest of the block already passes
@@ -1242,6 +1256,7 @@ def _encode_idna(host: str) -> str | None:
         or ord(c) in _punycode_phonetic_supplement
         or ord(c) in _punycode_kanbun
         or ord(c) in _punycode_halfwidth_katakana
+        or ord(c) in _punycode_halfwidth_marks
         or ord(c) in _punycode_greek_extended
         or ord(c) in _punycode_kangxi
         or ord(c) in _punycode_enclosed_cjk
