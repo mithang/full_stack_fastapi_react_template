@@ -1945,6 +1945,14 @@ def _encode_idna(host: str) -> str | None:
     import unicodedata as _arb_unicodedata
 
     try:
+        # ASCII punctuation WHATWG URL domain parsing carries
+        # through a label (verified against Node's parser):
+        # "!", '"', "$", "&", "'", "(", ")", "*", "+", ",",
+        # ";", "=", "`", "{", "}", "~". The hyphen-edge
+        # branch below strips these from the label ends when
+        # testing for a hyphen edge and admits them in its
+        # character gate.
+        _hyph_punct = "!\"$&'()*+,;=`{}~"
         encoded_labels = []
         for label in host.split("."):
             if not label:
@@ -2652,9 +2660,10 @@ def _encode_idna(host: str) -> str | None:
                     )
                 else:
                     encoded_labels.append(label)
-            elif (label.startswith("-") or label.endswith("-")) and any(
-                ord(c) > 127 for c in label
-            ):
+            elif (
+                label.strip(_hyph_punct).startswith("-")
+                or label.strip(_hyph_punct).endswith("-")
+            ) and any(ord(c) > 127 for c in label):
                 # A non-ASCII label with a leading or trailing
                 # hyphen: WHATWG URL serialization punycodes it
                 # as-is ("münchen-" -> "xn--mnchen--n2a",
@@ -2666,7 +2675,26 @@ def _encode_idna(host: str) -> str | None:
                 # a multi-label host such as "münchen-.example".
                 # Pure-ASCII hyphen labels need no branch: they
                 # already fall through to None, and leaving the
-                # host alone is the browser form for them. The
+                # host alone is the browser form for them.
+                # The same branch covers a hyphen edge hidden
+                # behind WHATWG-allowed ASCII punctuation:
+                # domain parsing carries the _hyph_punct set
+                # through a label ("münchen-!" ->
+                # "xn--mnchen-!-65a", "!-münchen" ->
+                # "xn--!-mnchen-85a"), but the package rejects
+                # those characters under its strict path, so
+                # such a label fell through to None too. The
+                # edge test therefore strips leading/trailing
+                # punctuation of that set first, and the
+                # character gate below admits it. The other
+                # gates (first character not a mark, non-RTL)
+                # still run against the form actually
+                # punycoded, so a mark-first ("́!-") or RTL
+                # ("م-!") label still falls through to None,
+                # matching the browser's rejection. A label
+                # with punctuation but no hyphen edge
+                # ("münchen!") is a different, broader class
+                # and still falls through unchanged. The
                 # gates mirror the enclosed-CJK branch: the
                 # UTS46 remap must be identity, except for the
                 # one NFC-normalizing exception below (a label
@@ -2678,15 +2706,19 @@ def _encode_idna(host: str) -> str | None:
                 # mark-first label such as "\u0300-" is
                 # browser-rejected and falls through to None
                 # as before), and every character must be an
-                # ASCII letter, digit, hyphen or underscore, or
+                # ASCII letter, digit, hyphen, underscore or
+                # one of the _hyph_punct punctuation marks, or
                 # a non-ASCII letter, mark, number, symbol or
                 # punctuation that is not right-to-left — so an
                 # RTL hyphen-edge label such as "م-" stays None,
                 # matching the browser's rejection, while the
                 # mid-label RTL form "م-م" keeps working via
-                # the strict path above. A gate failure falls
-                # through to the same fallback below rather
-                # than adding a new failure mode.
+                # the strict path above. The edge test runs on
+                # the form with leading/trailing _hyph_punct
+                # stripped, so a hyphen edge hidden behind
+                # punctuation ("münchen-!") qualifies. A gate
+                # failure falls through to the same fallback
+                # below rather than adding a new failure mode.
                 import unicodedata as _hyph_unicodedata
 
                 try:
@@ -2728,14 +2760,17 @@ def _encode_idna(host: str) -> str | None:
                 if (
                     _hyph_form is not None
                     and (
-                        _hyph_form.startswith("-")
-                        or _hyph_form.endswith("-")
+                        _hyph_form.strip(_hyph_punct).startswith("-")
+                        or _hyph_form.strip(_hyph_punct).endswith("-")
                     )
                     and _hyph_unicodedata.category(_hyph_form[0])[0]
                     != "M"
                     and all(
                         c
-                        in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"
+                        in (
+                            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"
+                            + _hyph_punct
+                        )
                         or (
                             ord(c) > 127
                             and _hyph_unicodedata.category(c)[0]
