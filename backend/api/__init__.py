@@ -794,6 +794,19 @@ def _encode_idna(host: str) -> str | None:
             0x03D6, 0x03F0, 0x03F1, 0x03F2, 0x03F5,
         ]
     )
+    # The same class covers ARMENIAN SMALL LIGATURE ECH YIWN
+    # U+0587 (և): the strict IDNA2008 path rejects it, while
+    # UTS46 punycodes it as-is (և -> "xn--29a2d"), matching
+    # Node's WHATWG parser. A translate table cannot express
+    # this class (there is no plain-letter target; it is not
+    # expanded to եւ under UTS46, unlike the U+FB13-U+FB17
+    # Armenian ligatures mapped in the first table above), so
+    # it joins the UTS46 retry here; the pipeline's lower()
+    # leaves it unchanged, so the form above is what the retry
+    # sees in practice. The Arabic, Lao, Georgian and Latin
+    # forms flagged alongside it are the same class but
+    # separate ranges, assessed separately.
+    _punycode_armenian = frozenset([0x0587])
     if any(
         ord(c) in _punycode_modifiers or ord(c) in _punycode_letterlike
         or ord(c) in _punycode_digraphs or ord(c) in _punycode_cherokee
@@ -801,6 +814,7 @@ def _encode_idna(host: str) -> str | None:
         or ord(c) in _punycode_gurmukhi or ord(c) in _punycode_oriya
         or ord(c) in _punycode_tibetan or ord(c) in _punycode_mod02
         or ord(c) in _punycode_subschwa or ord(c) in _punycode_greek
+        or ord(c) in _punycode_armenian
         for c in host
     ):
         try:
