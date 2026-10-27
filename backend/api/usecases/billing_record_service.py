@@ -176,7 +176,10 @@ class BillingRecordService:
             # BillingRecordException. No 404 distinction is needed for
             # a list: an empty catalogue is a valid empty result, so a
             # failure is never a not-found.
-            raise BillingRecordException(f"Failed to list plans: {str(e)}") from e
+            # Detail stays in the logger.error above: str(e) can carry
+            # Stripe/resolver internals (bad key, outage detail) that the
+            # ApiBaseException handler returns verbatim to the client.
+            raise BillingRecordException("Failed to list plans.") from e
         if len(result.data) == 0:
             return PlanListDto(plans=[], has_more=False)
         return PlanListDto(
@@ -206,7 +209,9 @@ class BillingRecordService:
             # BillingRecordException), not a 404.
             if getattr(e, "http_status", None) == 404:
                 raise ProductNotFoundException(new_plan.product_id) from e
-            raise BillingRecordException(str(e))
+            # Detail stays in the logger.error above: str(e) can carry
+            # Stripe/resolver internals that the handler returns verbatim.
+            raise BillingRecordException("Failed to create plan.") from e
 
     async def update_plan(
         self, plan_id: str, update_plan: UpdatePlanDto, scope: ScopeType
@@ -231,7 +236,7 @@ class BillingRecordService:
             # BillingRecordException), not a 404.
             if getattr(e, "http_status", None) == 404:
                 raise BillingRecordNotFoundException(plan_id) from e
-            raise BillingRecordException(f"Failed to update plan {plan_id}: {str(e)}") from e
+            raise BillingRecordException(f"Failed to update plan {plan_id}.") from e
 
     async def get_plan(self, plan_id: str, scope: ScopeType) -> PlanDto:
         try:
@@ -246,7 +251,7 @@ class BillingRecordService:
             # claiming the plan does not exist.
             if getattr(e, "http_status", None) == 404:
                 raise BillingRecordNotFoundException(plan_id) from e
-            raise BillingRecordException(f"Failed to retrieve plan {plan_id}: {str(e)}") from e
+            raise BillingRecordException(f"Failed to retrieve plan {plan_id}.") from e
 
     async def delete_plan(self, plan_id: str, scope: ScopeType) -> None:
         try:
@@ -263,7 +268,7 @@ class BillingRecordService:
             # billing error (406 via BillingRecordException).
             if getattr(e, "http_status", None) == 404:
                 raise BillingRecordNotFoundException(plan_id) from e
-            raise BillingRecordException(f"Failed to delete plan {plan_id}: {str(e)}") from e
+            raise BillingRecordException(f"Failed to delete plan {plan_id}.") from e
         if result.deleted is False:
             raise BillingRecordException(f"Unable to delete the plan {plan_id}.")
 
