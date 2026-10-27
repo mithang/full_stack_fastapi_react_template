@@ -152,9 +152,11 @@ not_allowed_cache_paths = [
     # newly enabled provider missing from it. Same stale-admin-UI
     # class as the feature-toggle bypass above, not an enforcement
     # fix: the SSO login/callback handlers read settings fresh.
-    # Endswith matching keeps the detail route (/ssos/{sso_id})
-    # and the static available-providers list cached, since neither
-    # path ends in "/api/v1/ssos/".
+    # The detail route (/ssos/{sso_id}) is bypassed via the
+    # substring check in dispatch below, since endswith cannot
+    # match its trailing variable id; that substring also
+    # re-matches this list and the static available-providers
+    # list harmlessly.
     "/api/v1/ssos/",
     # Append-only billing list: list_checkout_records reads the tenant's
     # billing records fresh on every call, and the billing overview page
@@ -407,7 +409,23 @@ class RedisCacheMiddleware(BaseHTTPMiddleware):
         # cached) is bypassed harmlessly too. Same stale-viewer
         # class as the users-detail bypass, not an enforcement fix:
         # role mutations read/write fresh.
-        if any(request.url.path.endswith(path) for path in not_allowed_cache_paths) or "/check_subdomain/" in request.url.path or "/search_by_subdomain/" in request.url.path or "/search_by_name/" in request.url.path or "/ai/sessions/" in request.url.path or "/api/v1/products/" in request.url.path or "/api/v1/billing/plans/" in request.url.path or "/api/v1/users/" in request.url.path or "/api/v1/roles/" in request.url.path or token is None:
+        # Live SSO detail: /api/v1/ssos/{sso_id} reads the setting
+        # fresh from the database on every call
+        # (get_sso_settings_by_id), and the list bypass above keeps
+        # only the list live; the detail route cannot go in
+        # not_allowed_cache_paths for the same trailing-variable
+        # reason, so it is bypassed here. An SSO setting updated or
+        # deleted by another FULL_ACCESS admin would otherwise stay
+        # stale in the viewing admin's detail/edit view for the rest
+        # of the TTL, since a mutation clears only the acting
+        # admin's cache keys. The substring also re-matches the
+        # already-bypassed list harmlessly, and the static
+        # available-providers list (previously cached) is bypassed
+        # harmlessly too. Same stale-viewer class as the
+        # roles-detail bypass, not an enforcement fix: SSO mutations
+        # read/write fresh, and the login/callback handlers read
+        # settings fresh.
+        if any(request.url.path.endswith(path) for path in not_allowed_cache_paths) or "/check_subdomain/" in request.url.path or "/search_by_subdomain/" in request.url.path or "/search_by_name/" in request.url.path or "/ai/sessions/" in request.url.path or "/api/v1/products/" in request.url.path or "/api/v1/billing/plans/" in request.url.path or "/api/v1/users/" in request.url.path or "/api/v1/roles/" in request.url.path or "/api/v1/ssos/" in request.url.path or token is None:
             logger.debug(f"Bypassing cache for path: {request.url.path}")
             return await call_next(request)
             
