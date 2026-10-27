@@ -65,6 +65,21 @@ not_allowed_cache_paths = [
     # would hand the same session_id to every new chat within the
     # TTL, merging distinct conversations into one history.
     "/api/v1/ai/new_session",
+    # Live external list: get_models queries the Ollama host's
+    # /api/tags on every call (OllamaModels.list_models), so it is
+    # not a static enum like /features/ or /permissions/. A cached
+    # 200 would hide a just-pulled model from the chat model picker
+    # (or keep offering a just-deleted one) for the rest of the TTL.
+    # Worse, list_models swallows any Ollama failure and returns an
+    # empty list with a 200, so a transient Ollama outage would be
+    # cached as "no models installed" and the chat UI would keep
+    # showing its install-a-model notice after Ollama recovers.
+    # Iteration 450 deliberately left this route cached; that left
+    # the failure-caching case above in place, so it is bypassed
+    # now. Same stale-viewer class as the history bypass below,
+    # not an enforcement fix: the route is still gated by the
+    # router's check_feature_access dependency.
+    "/api/v1/ai/models",
     # Append-only chat history: get_history reads the user's sessions
     # fresh on every call, and the frontend refetches it when a stream
     # ends (ai-chat.tsx, new_session case). But the exchange itself is
