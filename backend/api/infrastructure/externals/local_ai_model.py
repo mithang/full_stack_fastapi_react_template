@@ -80,9 +80,11 @@ class OllamaChat:
             return
 
         logger.info(f"Using existing session: {self.current_session} for user: {self.username}")
-        logger.debug(f"Current history before fetching from DB: {self.history}")
+        # Do not log history contents: they are user/AI chat content, and
+        # the api logger runs at DEBUG in all environments.
+        logger.debug(f"Current history before fetching from DB: {len(self.history)} messages")
         stored_history = await history_service.get_histories_by_session_id(self.user_id, self.current_session)
-        logger.debug(f"Stored history fetched from DB: {stored_history}")
+        logger.debug(f"Stored history fetched from DB: {len(stored_history)} sessions")
         # get_histories_by_session_id returns a list with one
         # AIHistoriesDto (or [] for an unknown session), not a dict, and
         # its histories are AIHistoryDto objects, not dicts: indexing the
@@ -100,7 +102,8 @@ class OllamaChat:
         await self.feed_previous_conversations(self.local_ai_service)
 
         self.history.append(HumanMessage(content=question))
-        logger.debug(f"Generating response for question: {question}")
+        # Log only the question length, not its content (see above).
+        logger.debug(f"Generating response for question of {len(question)} characters")
         async def event_stream():
             output = ""
             recent_history = self.history[-self.MAX_HISTORY:]
