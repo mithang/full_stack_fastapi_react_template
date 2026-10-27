@@ -102,7 +102,13 @@ def create_temp_file(file_name: str) -> Path:
 
     temp_dir = Path(tempfile.gettempdir())
 
-    path = temp_dir / file_name
+    # Only the basename is used: a separator in file_name (e.g. a
+    # tenant id interpolated into the audit-log filename) must not
+    # escape the temp dir or create subdirectories — the read side
+    # already escapes tenant ids in its glob for the same reason
+    # (iteration 386). Plain names, the only current inputs, are
+    # unchanged.
+    path = temp_dir / Path(file_name).name
 
     # Ensure directory exists (temp directories always exist, but safe to include)
     path.parent.mkdir(parents=True, exist_ok=True)
