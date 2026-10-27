@@ -1,6 +1,6 @@
 from beanie import PydanticObjectId
 from api.common.seeder_utils import get_seed_roles
-from api.common.utils import get_logger
+from api.common.utils import get_logger, get_utc_now
 from api.core.exceptions import EmailAlreadyExistsException, RoleNotFoundException, UserNotFoundException
 from api.domain.entities.role import Role
 from api.domain.dtos.user_dto import CreateUserDto
@@ -48,6 +48,8 @@ class PostTenantCreationTaskService(IBackgroundTask):
             role = await self.role_service.find_by_name(name=RoleType.ADMIN)
             logger.info(f"Assigning 'Admin' role to user {user.email}")
             user.role_id = role.id
+            # Direct .save() bypasses BaseRepository.update()'s central updated_at stamp (iteration 411).
+            user.updated_at = get_utc_now()
             await user.save()
             logger.info(f"Assigned 'Admin' role to user {user.email} successfully.")
         except EmailAlreadyExistsException as eae:
