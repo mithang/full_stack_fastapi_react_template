@@ -1,4 +1,5 @@
 import json
+from urllib.parse import parse_qsl, urlencode
 from redis.asyncio import Redis, from_url
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
@@ -10,6 +11,27 @@ from api.core.container import get_jwt_token_service, get_role_service, get_user
 from api.infrastructure.security.current_user import  current_user_optional
 
 logger = get_logger(__name__)
+
+# Query keys whose values must never reach the logs: single-use auth
+# tokens travel in the query string (e.g. POST
+# /api/v1/account/password_reset_confirmation?token=...), and the api
+# logger runs at DEBUG in all environments. Only the log strings are
+# redacted — the real cache key below is untouched, so cache
+# lookups, writes and clears behave exactly as before.
+_REDACTED_QUERY_KEYS = {"token"}
+
+
+def _redacted_query(query: str) -> str:
+    if not query:
+        return query
+    pairs = parse_qsl(query, keep_blank_values=True)
+    return urlencode(
+        [
+            (key, "[redacted]" if key.lower() in _REDACTED_QUERY_KEYS else value)
+            for key, value in pairs
+        ],
+        doseq=True,
+    )
 
 redis_cache_expiry = 300  # Cache expiry time in seconds (5 minutes)
 redis: Redis =  from_url(url=settings.redis_uri, decode_responses=True)
@@ -347,13 +369,17 @@ class RedisCacheMiddleware(BaseHTTPMiddleware):
         request_tenant_id = getattr(request.state, "tenant_id", None)
         tenant_id = str(request_tenant_id) if request_tenant_id is not None else getattr(current_user, "tenant_id", "default")
         cache_base = f"cu{user_id}:ct{tenant_id}:{request.url.path}?{request.url.query}"
-        logger.debug(f"Cache base string: {cache_base}")
+        # Log only the redacted form: the raw query can carry a
+        # single-use token (see _REDACTED_QUERY_KEYS).
+        log_cache_base = f"cu{user_id}:ct{tenant_id}:{request.url.path}?{_redacted_query(request.url.query)}"
+        log_cache_key = f"cache:{log_cache_base}"
+        logger.debug(f"Cache base string: {log_cache_base}")
         cache_key = f"cache:{cache_base}"
 
-        logger.debug(request.method + " " + request.url.path + "?" + request.url.query)
+        logger.debug(request.method + " " + request.url.path + "?" + _redacted_query(request.url.query))
         # Only cache GET requests
         if request.method != "GET":
-            logger.debug(f"Clearing cache for key: {cache_key}")
+            logger.debug(f"Clearing cache for key: {log_cache_key}")
             await self._clear_cache(user_id, tenant_id)
             logger.debug("Cache cleared for non-GET request.")
             return await call_next(request)
@@ -367,7 +393,7 @@ class RedisCacheMiddleware(BaseHTTPMiddleware):
         except Exception as e:
             logger.warning(f"Cache read failed, treating as miss: {e}")
         if cached_value:
-            logger.debug(f"Cache hit for key: {cache_key}")
+            logger.debug(f"Cache hit for key: {log_cache_key}")
             try:
                 cached = json.loads(cached_value)
                 return Response(
@@ -418,7 +444,7 @@ class RedisCacheMiddleware(BaseHTTPMiddleware):
             except Exception as e:
                 logger.warning(f"Cache set failed, returning response anyway: {e}")
             else:
-                logger.debug(f"Cache set for key: {cache_key}")
+                logger.debug(f"Cache set for key: {log_cache_key}")
 
         if response.status_code == 401 and "application/json" in content_type and request.url.path not in not_allowed_cache_paths:
             logger.debug(f"Response status {response.status_code} not cached.")
