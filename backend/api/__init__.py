@@ -447,6 +447,21 @@ def _encode_idna(host: str) -> str | None:
             0x2099: "n", 0x209A: "p", 0x209B: "s", 0x209C: "t",
         }
     )
+    # UTS46 likewise maps the modifier letters MODIFIER LETTER SMALL
+    # L U+02E1, MODIFIER LETTER SMALL S U+02E2 and MODIFIER LETTER
+    # SMALL X U+02E3 to their plain letters (ˡ -> "l", ˢ -> "s",
+    # ˣ -> "x"), which the strict IDNA2008 path likewise rejects,
+    # so they are mapped here too, as the counterpart of the
+    # subscript letters above. They survive the pipeline's lower()
+    # unchanged, which is why they are the gap. The neighbouring
+    # members of the range, MODIFIER LETTER SMALL GAMMA U+02E0 and
+    # MODIFIER LETTER REVERSED GLOTTAL STOP U+02E4, are a different
+    # fix class: UTS46 punycodes them as-is (ˠ -> "xn--2na",
+    # ˤ -> "xn--ipa"), so they are left alone here for the UTS46
+    # retry, as with the punycode-valid modifier letters.
+    host = host.translate(
+        {0x02E1: "l", 0x02E2: "s", 0x02E3: "x"}
+    )
     # UTS46 likewise maps the plain-letter modifier letters in
     # U+1D2C-U+1D6A to their base letters (ᴬ -> "a", ᵃ -> "a",
     # ᵢ -> "i"), which the strict IDNA2008 path likewise rejects,
