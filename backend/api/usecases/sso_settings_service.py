@@ -63,7 +63,10 @@ class SSOSettingsService:
     async def list(self) -> SSOSettingsListDto:
         ssos: List[SSOSettings] = await self.sso_settings_provider_repository.list_sso_settings()
         logger.info(f"Retrieved {len(ssos)} SSO settings from repository")
-        logger.debug(f"SSO Settings: {ssos}")
+        # Do not log the full SSOSettings list: it carries client_secret
+        # (the API response deliberately excludes it, see below), so log
+        # provider names only.
+        logger.debug(f"SSO Settings providers: {[s.provider for s in ssos]}")
         items = [ReadSSOSettingsDto(**sso.model_dump(exclude={"client_secret": True})) for sso in ssos]
         return SSOSettingsListDto(items=items)
     
