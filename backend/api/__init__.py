@@ -1172,6 +1172,33 @@ def _encode_idna(host: str) -> str | None:
     _punycode_cjk_compat = frozenset(range(0xF900, 0xFA6E)) | frozenset(
         range(0xFA70, 0xFADA)
     )
+    # Hebrew Alphabetic Presentation Forms (U+FB1D-U+FB4F): UTS46
+    # maps each to its Hebrew letter / letter-plus-point form before
+    # encoding, while strict IDNA2008 rejects them all, so the helper
+    # left a configured origin containing one alone and never
+    # matched under Starlette's exact allow_origins matching.
+    # U+FB00-U+FB06 and U+FB13-U+FB17 are already mapped up front
+    # (Latin/Armenian ligatures); U+FB1E is a combining mark that
+    # the strict path already handles in context, and U+FB07-U+FB12,
+    # U+FB18-U+FB1C, U+FB37, U+FB3D, U+FB3F, U+FB42 and U+FB45 are
+    # unassigned, fail under both strict and UTS46, and are left
+    # alone. Note the UTS46 bidi rule, as with Arabic Presentation
+    # Forms-B: an LTR label cannot mix in these RTL letters, so
+    # "aיִb" is invalid in both the browser and the package — the
+    # valid forms are alone or RTL-context ones (e.g. "איִ"), which
+    # the retry reproduces exactly. U+FB29 is excluded: UTS46 maps
+    # it to "+" (a different fix class, since the package rejects
+    # "+" itself), and is assessed separately.
+    _punycode_hebrew_presentation = (
+        frozenset([0xFB1D])
+        | frozenset(range(0xFB1F, 0xFB29))
+        | frozenset(range(0xFB2A, 0xFB37))
+        | frozenset(range(0xFB38, 0xFB3D))
+        | frozenset([0xFB3E])
+        | frozenset(range(0xFB40, 0xFB42))
+        | frozenset(range(0xFB43, 0xFB45))
+        | frozenset(range(0xFB46, 0xFB50))
+    )
     if any(
         ord(c) in _punycode_modifiers or ord(c) in _punycode_letterlike
         or ord(c) in _punycode_digraphs or ord(c) in _punycode_cherokee
@@ -1199,6 +1226,7 @@ def _encode_idna(host: str) -> str | None:
         or ord(c) in _punycode_square_cjk
         or ord(c) in _punycode_arabic_presentation_b
         or ord(c) in _punycode_cjk_compat
+        or ord(c) in _punycode_hebrew_presentation
         for c in host
     ):
         try:
