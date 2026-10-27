@@ -61,9 +61,26 @@ async def upload_logo(
     branding_service: BrandingService = Depends(get_deps(BrandingService)),
     file_service: FileService = Depends(get_deps(FileService))
 ):
-    file_content = await file.read()
-    logger.debug(f"Received logo file: {file.filename}, size: {len(file_content)} bytes")
-    if not file_content:
+    # The frontend caps logos at 5 MB, but a direct API call bypasses
+    # it, so enforce the same cap server-side before the file reaches
+    # storage (mirroring the profile-picture upload). Chunks are
+    # counted, not retained, and the stream is rewound afterwards:
+    # the endpoint previously read the whole file into memory and
+    # left the stream at EOF, so the storage backends below (S3 via
+    # file.file, Azure via file.read()) uploaded from the end of the
+    # stream instead of the full logo.
+    max_size = 5 * 1024 * 1024
+    size = 0
+    while True:
+        chunk = await file.read(1024 * 1024)
+        if not chunk:
+            break
+        size += len(chunk)
+        if size > max_size:
+            raise BrandingException("File size must be less than 5MB.")
+    await file.seek(0)
+    logger.debug(f"Received logo file: {file.filename}, size: {size} bytes")
+    if size == 0:
         raise BrandingException("Uploaded file is empty.")
     if file.content_type not in ["image/png", "image/jpeg", "image/svg+xml"]:
         raise BrandingException("Unsupported file type. Please upload a PNG, JPEG, or SVG image.")
