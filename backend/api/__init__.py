@@ -1382,9 +1382,16 @@ def _encode_idna(host: str) -> str | None:
                 # outputs (°, ∑, ∕) alongside letters, marks
                 # and numbers — but only outputs actually
                 # introduced by a mapped symbol in this label.
-                # A literal ° ("°﬩") or © ("©﬩") introduces
-                # no mapped output, so it still fails, as
-                # before.
+                # A literal symbol ("°﬩", "©﬩") introduces
+                # no mapped output, so it qualifies through
+                # the symbol/punctuation categories below
+                # instead: browsers punycode such symbols
+                # as-is when UTS46 leaves them unchanged
+                # ("©﬩" -> "xn--+-mca"), while symbols
+                # browsers reject or remap (e.g. "¨", "¯",
+                # "¸" decompose, "…" is disallowed) still
+                # fail the remap gate, and RTL symbols
+                # still fail the bidirectional gate.
                 _fb29_mapped_t = _fb29_mapped.translate(_asis_map)
                 _fb29_asis_outputs = frozenset(
                     c
@@ -1403,7 +1410,7 @@ def _encode_idna(host: str) -> str | None:
                                 ord(c) > 127
                                 and (
                                     _fb29_unicodedata.category(c)[0]
-                                    in "LMN"
+                                    in "LMNSP"
                                     or c in _fb29_asis_outputs
                                 )
                                 and _fb29_unicodedata.bidirectional(c)
