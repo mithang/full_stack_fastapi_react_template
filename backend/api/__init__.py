@@ -457,8 +457,9 @@ def _encode_idna(host: str) -> str | None:
     # members of the range, MODIFIER LETTER SMALL GAMMA U+02E0 and
     # MODIFIER LETTER REVERSED GLOTTAL STOP U+02E4, are a different
     # fix class: UTS46 punycodes them as-is (ˠ -> "xn--2na",
-    # ˤ -> "xn--ipa"), so they are left alone here for the UTS46
-    # retry, as with the punycode-valid modifier letters.
+    # ˤ -> "xn--ipa"), so they are handled by the UTS46 retry
+    # below, not here, as with the punycode-valid modifier
+    # letters.
     host = host.translate(
         {0x02E1: "l", 0x02E2: "s", 0x02E3: "x"}
     )
@@ -729,12 +730,26 @@ def _encode_idna(host: str) -> str | None:
     _punycode_tibetan = frozenset(
         [0x0F0C, 0x0F43, 0x0F4D, 0x0F52, 0x0F57, 0x0F5C, 0x0F69]
     )
+    # The same class covers the modifier letters MODIFIER LETTER
+    # SMALL GAMMA U+02E0 and MODIFIER LETTER REVERSED GLOTTAL
+    # STOP U+02E4 (ˠ/ˤ): the strict IDNA2008 path rejects them
+    # both, while UTS46 punycodes them as-is (ˠ -> "xn--2na",
+    # ˤ -> "xn--ipa"), matching Node's WHATWG parser. A
+    # translate table cannot express this class (there is no
+    # plain-letter target), so they join the UTS46 retry here;
+    # the pipeline's lower() leaves them unchanged, so the forms
+    # above are what the retry sees in practice. The neighbouring
+    # U+02E1-U+02E3 members map to plain letters and are handled
+    # by the translate table above, not here. SUBSCRIPT SCHWA
+    # U+2094 is the same class but a separate range, handled
+    # separately.
+    _punycode_mod02 = frozenset([0x02E0, 0x02E4])
     if any(
         ord(c) in _punycode_modifiers or ord(c) in _punycode_letterlike
         or ord(c) in _punycode_digraphs or ord(c) in _punycode_cherokee
         or ord(c) in _punycode_devanagari or ord(c) in _punycode_bengali
         or ord(c) in _punycode_gurmukhi or ord(c) in _punycode_oriya
-        or ord(c) in _punycode_tibetan
+        or ord(c) in _punycode_tibetan or ord(c) in _punycode_mod02
         for c in host
     ):
         try:
