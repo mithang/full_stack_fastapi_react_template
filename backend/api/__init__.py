@@ -399,11 +399,12 @@ def _encode_idna(host: str) -> str | None:
     # U+2080-U+2089. SUPERSCRIPT LATIN SMALL LETTER I U+2071 likewise
     # maps under UTS46 to "i", which the strict IDNA2008 path likewise
     # rejects, so it is mapped here too. It survives the pipeline's
-    # lower() unchanged, which is why it is the gap. The remaining
-    # modifier letters (e.g. U+1D2C-U+1D6A, U+02B0-U+02BF) are left
-    # for a separate assessment: some map to plain letters under UTS46
-    # while others are valid as-is (punycoded, not mapped), so they
-    # are not all the same fix class. The superscript/subscript signs
+    # lower() unchanged, which is why it is the gap. The plain-letter
+    # modifier letters in U+1D2C-U+1D6A are mapped in the next table
+    # below; the remaining modifier letters (the punycode-valid
+    # members of that range, and U+02B0-U+02BF) are left for a
+    # separate assessment, since they are not the same fix class.
+    # The superscript/subscript signs
     # U+207A-U+207C and U+208A-U+208C, which UTS46 does not map to a
     # valid domain form (they fail under both strict and UTS46
     # processing), are deliberately left alone.
@@ -413,6 +414,29 @@ def _encode_idna(host: str) -> str | None:
         | {0x2071: "i"}
         | {cp: str(cp - 0x2070) for cp in range(0x2074, 0x207A)}
         | {cp: str(cp - 0x2080) for cp in range(0x2080, 0x208A)}
+    )
+    # UTS46 likewise maps the plain-letter modifier letters in
+    # U+1D2C-U+1D6A to their base letters (ᴬ -> "a", ᵃ -> "a",
+    # ᵢ -> "i"), which the strict IDNA2008 path likewise rejects,
+    # so they are mapped here too. Unlike the circled capitals,
+    # the pipeline's lower() does NOT fold these capitals, so both
+    # the capital and small forms are listed. The other members of
+    # the range (e.g. ᴭ, ᵄ) are valid as-is under UTS46 and
+    # serialize as punycode, not as plain letters, so they are a
+    # separate fix class and are left alone here, as are the
+    # U+02B0-U+02BF modifier letters.
+    host = host.translate(
+        {
+            0x1D2C: "a", 0x1D2E: "b", 0x1D30: "d", 0x1D31: "e",
+            0x1D33: "g", 0x1D34: "h", 0x1D35: "i", 0x1D36: "j",
+            0x1D37: "k", 0x1D38: "l", 0x1D39: "m", 0x1D3A: "n",
+            0x1D3C: "o", 0x1D3E: "p", 0x1D3F: "r", 0x1D40: "t",
+            0x1D41: "u", 0x1D42: "w", 0x1D43: "a", 0x1D47: "b",
+            0x1D48: "d", 0x1D49: "e", 0x1D4D: "g", 0x1D4F: "k",
+            0x1D50: "m", 0x1D52: "o", 0x1D56: "p", 0x1D57: "t",
+            0x1D58: "u", 0x1D5B: "v", 0x1D62: "i", 0x1D63: "r",
+            0x1D64: "u", 0x1D65: "v",
+        }
     )
     # UTS46 likewise maps the fullwidth ASCII forms U+FF01-U+FF5E to
     # their ASCII equivalents (ｅｘａｍｐｌｅ -> "example", including
