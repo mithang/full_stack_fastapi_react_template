@@ -54,7 +54,10 @@ class AuthService:
         self.audit_log_service: AuditLogsService = audit_log_service
         self.sso_settings_service: SSOSettingsService = sso_settings_service
         logger.info("Initialized.")
-        print(self.email_service, "email service in auth service")
+        # Note: no print() here by design — AuthService is a singleton, but a
+        # stray stdout print of the email service object is debug noise that
+        # bypasses the logger (and would leak config if the service ever
+        # gained a __repr__); the logger line above is the record.
 
     async def _get_token_set(self, user: User) -> TokenSetDto:
         """
