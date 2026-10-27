@@ -12,6 +12,7 @@ from api.core.exceptions import InvalidSubdomainException, TenantNotFoundExcepti
 from api.infrastructure.persistence.mongodb import Database
 from api.interfaces.middlewares.audit_logs_read_middleware import AuditLogsReadMiddleware
 from api.interfaces.middlewares.redis_cache_middleware import RedisCacheMiddleware
+from api.interfaces.middlewares.security_headers_middleware import SecurityHeadersMiddleware
 from api.interfaces.middlewares.tenant_middleware import TenantMiddleware
 from api.interfaces.api_controllers.account_endpoint import router as account_router
 from api.interfaces.api_controllers.user_endpoint import router as user_router
@@ -147,6 +148,12 @@ if _cors_origins:
         allow_headers=["Authorization", "Content-Type", "X-Tenant-ID"],
     )
     logger.info(f"CORS enabled for origins: {_cors_origins}")
+
+# Security headers are added last so they run outermost (Starlette runs
+# last-added first) and cover every response: API, error, cached, and
+# SPA-shell alike, including when CORS is disabled. The middleware is
+# pure ASGI, so it does not buffer streaming responses (ai-chat SSE).
+app.add_middleware(SecurityHeadersMiddleware)
 
 
 # Mount static files only if they exist (for production Docker deployment)
