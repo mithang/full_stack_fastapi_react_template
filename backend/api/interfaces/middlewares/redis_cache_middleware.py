@@ -40,6 +40,17 @@ not_allowed_cache_paths = [
     "/api/v1/account/login",
     "/api/v1/account/logout",
     "/api/v1/account/register",
+    # Identity endpoint: read_users_me returns the user, role and
+    # subscription read fresh from the database on every call
+    # (get_current_user), and the frontend's auth provider uses it
+    # as its source for the displayed profile, role and plan. A
+    # cached 200 would hide a role change, profile edit, deactivation
+    # or subscription change made by another admin (or a billing
+    # event) for the rest of the TTL, because a mutation clears only
+    # the acting user's cache keys. Same stale-viewer class as the
+    # users/roles/plans list bypasses below, not an enforcement fix:
+    # permission checks read the user fresh on each request.
+    "/api/v1/account/me",
     # Single-use token flow that returns a TokenSetDto (and sets the
     # refresh cookie): a cached 200 would let a consumed magic link
     # be replayed within the TTL without re-validating it, and would
