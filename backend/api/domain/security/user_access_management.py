@@ -107,8 +107,14 @@ class UserAccessManagement:
                 logger.info(f"Access granted - User has {permission_type} required permissions")
                 return True
 
-            logger.error("Access denied - Insufficient permissions")
-            raise ForbiddenException(f"Insufficient permissions. Required: {[p.value if hasattr(p, 'value') else str(p) for p in self.required_permissions]}")
+            # The required-permission list stays server-side only: the
+            # ApiBaseException handler returns ex.message verbatim to
+            # the client, so listing it here told a denied user exactly
+            # which permissions an endpoint requires, aiding RBAC
+            # mapping for privilege escalation. The client gets a
+            # generic denial; the detail remains in the server log.
+            logger.error(f"Access denied - Insufficient permissions. Required: {[p.value if hasattr(p, 'value') else str(p) for p in self.required_permissions]}")
+            raise ForbiddenException("Insufficient permissions.")
         
         return check_permission
    
