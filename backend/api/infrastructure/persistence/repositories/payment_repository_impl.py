@@ -1,7 +1,7 @@
 
 from api.common.audit_logs_repository import AuditLogRepository
 from api.common.base_repository import BaseRepository
-from api.common.utils import get_logger
+from api.common.utils import get_logger, get_utc_now
 from api.core.exceptions import StripeSettingsNotFoundException
 from api.domain.dtos.audit_logs_dto import AuditLogDto
 from api.domain.dtos.stripe_setting_dto import CreateStripeSettingDto
@@ -29,6 +29,10 @@ class StripeSettingsRepository(BaseRepository[StripeSettings], AuditLogRepositor
             settings.stripe_webhook_secret = stripe_config.stripe_webhook_secret
             settings.mode = stripe_config.mode
             settings.trial_period_days = stripe_config.trial_period_days
+            # Direct .save() bypasses BaseRepository.update()'s central
+            # updated_at stamp (iteration 411), so stamp it here or the
+            # setting's updated_at stays at creation time forever.
+            settings.updated_at = get_utc_now()
             await settings.save()
             logger.info(f"Updated Stripe settings for tenant {settings.tenant_id}")
             await self.add_audit_log(AuditLogDto(
