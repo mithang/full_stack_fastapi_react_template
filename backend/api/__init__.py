@@ -139,6 +139,24 @@ if is_tenancy_enabled():
 # requests, so it is added last (Starlette runs last-added first).
 # Only enabled when CORS_ALLOW_ORIGINS is explicitly configured, and
 # only for those exact origins, so cookie auth is not opened up.
+def _canonical_ipv4(host: str) -> str | None:
+    # A zero-padded IPv4 octet ("192.168.001.010") never matches the
+    # canonical Origin browsers send ("192.168.1.10"), and ipaddress
+    # rejects leading zeros outright, so without this a padded private
+    # host would also miss the scheme-less http assumption below.
+    # Normalize digit octets through int() and re-validate; hostnames,
+    # hex forms, and out-of-range octets are left alone (None).
+    parts = host.split(".")
+    if len(parts) != 4 or not all(p.isdigit() for p in parts):
+        return None
+    try:
+        canonical = ".".join(str(int(p)) for p in parts)
+        ipaddress.IPv4Address(canonical)
+    except ValueError:
+        return None
+    return canonical
+
+
 # Browser Origin headers never carry a path or trailing slash, and
 # Starlette matches allow_origins exactly, so a configured origin like
 # "https://app.example.com/" would silently never match and the
@@ -220,6 +238,15 @@ def _normalize_cors_origin(origin: str) -> str:
         # stripped from the rebuilt origin by the scheme branch below.
         if host.endswith("."):
             host = host.rstrip(".") or host
+        # A zero-padded IPv4 host must be classified by its canonical
+        # form: ipaddress rejects leading zeros, so without this a
+        # scheme-less "192.168.001.010:3000" would miss the private
+        # check below and assume https. (The rebuilt origin itself is
+        # canonicalized by the scheme branch below; this only fixes
+        # the classification, which reads host, not bare.)
+        canonical_v4 = _canonical_ipv4(host)
+        if canonical_v4 is not None:
+            host = canonical_v4
         # The same http assumption applies to private and link-local
         # IPv4 hosts (RFC 1918, CGNAT, link-local, unspecified): a
         # scheme-less "192.168.1.10:3000" — a dev frontend reached
@@ -412,6 +439,26 @@ def _normalize_cors_origin(origin: str) -> str:
             stripped = rest.rstrip(".")
             if stripped:
                 o = o[: scheme_end + 3] + stripped
+        # A zero-padded IPv4 host ("https://192.168.001.010", or a
+        # scheme-less entry rebuilt above) never matches the canonical
+        # Origin browsers send, just as a zero-padded port did before
+        # iteration 502. Canonicalize the host here, after the port
+        # and dot branches above (which rebuild o without updating
+        # rest), so padded hosts with ports, trailing dots, or a
+        # default port all normalize; the default-port strip below
+        # then still applies to e.g. "https://192.168.001.010:0443".
+        # Bracketed IPv6 hosts and hostnames are left alone.
+        rest_now = o[scheme_end + 3 :]
+        if not rest_now.startswith("[") and rest_now:
+            if ":" in rest_now:
+                host_now, port_now = rest_now.rsplit(":", 1)
+            else:
+                host_now, port_now = rest_now, None
+            canonical_now = _canonical_ipv4(host_now)
+            if canonical_now is not None and canonical_now != host_now:
+                o = o[: scheme_end + 3] + canonical_now
+                if port_now is not None:
+                    o += ":" + port_now
     if o.startswith("https://") and o.endswith(":443"):
         return o[:-4]
     if o.startswith("http://") and o.endswith(":80"):
