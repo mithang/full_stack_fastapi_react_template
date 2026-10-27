@@ -40,7 +40,7 @@ class CoolifyApp:
             # method's callers and the Celery task, which catches only
             # CoolifyIntegrationException. Report it as one instead.
             logger.error(f"Failed to fetch Coolify app details: {e}")
-            raise CoolifyIntegrationException(str(e)) from e
+            raise CoolifyIntegrationException("Failed to fetch Coolify app details.") from e
         if response.status_code != 200:
             logger.error(f"Failed to fetch Coolify app details: {response.text}")
             raise CoolifyIntegrationException(f"{response.text}")
@@ -93,7 +93,7 @@ class CoolifyApp:
             # sat outside any httpx guard, so a network failure escaped the
             # Celery task's CoolifyIntegrationException-only catch.
             logger.error(f"Error updating Coolify app domains: {e}")
-            raise CoolifyIntegrationException(str(e)) from e
+            raise CoolifyIntegrationException("Failed to update Coolify app domains.") from e
 
     async def restart_app(self) -> bool:
         """
@@ -113,7 +113,7 @@ class CoolifyApp:
             # failure escaped the Celery task's CoolifyIntegrationException-
             # only catch instead of being reported as one.
             logger.error(f"Failed to restart Coolify app: {e}")
-            raise CoolifyIntegrationException(str(e)) from e
+            raise CoolifyIntegrationException("Failed to restart Coolify app.") from e
         if response.status_code == 200:
             return True
 
