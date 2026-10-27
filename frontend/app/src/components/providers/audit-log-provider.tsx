@@ -66,8 +66,12 @@ export function AuditLogProvider({ children }: AuditLogsProviderProps) {
         // while the table itself displayed the page with the default limit.
         const parsedSkip = skip ? parseInt(skip) : 0;
         const parsedLimit = limit ? parseInt(limit) : 10;
-        const safeSkip = Number.isFinite(parsedSkip) && parsedSkip >= 0 ? parsedSkip : 0;
-        const safeLimit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : 10;
+        // Clamp to the backend's Query bounds (limit le=100, skip le=10000,
+        // iteration 395): a hand-edited ?limit=500 / ?skip=999999 previously
+        // passed the guards above but still failed with 422, even though
+        // the table itself would have displayed the page with a valid limit.
+        const safeSkip = Number.isFinite(parsedSkip) && parsedSkip >= 0 ? Math.min(parsedSkip, 10000) : 0;
+        const safeLimit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 100) : 10;
         try {
             const apiClient = getApiClient(accessToken);
             const response = await apiClient.auditLogs.listAuditLogsApiV1AuditLogsGet({
