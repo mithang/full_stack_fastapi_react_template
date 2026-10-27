@@ -566,6 +566,20 @@ def _encode_idna(host: str) -> str | None:
             0x2122: "tm", 0x213B: "fax",
         }
     )
+    # UTS46 likewise maps the Latin modifier letters LATIN
+    # SUBSCRIPT SMALL LETTER J U+2C7C and MODIFIER LETTER CAPITAL
+    # V U+2C7D to their plain letters (ⱼ -> "j", ⱽ -> "v"),
+    # which the strict IDNA2008 path likewise rejects, so they
+    # are mapped here too, as the counterpart of the modifier
+    # letters above. They survive the pipeline's lower()
+    # unchanged, which is why they are the gap. The neighbouring
+    # modifier letters are a different fix class and are left
+    # alone here: U+2C7B passes the strict path directly, while
+    # U+2C7E-U+2C7F are punycode-as-is under UTS46 and belong to
+    # the UTS46 retry, not to a translate table.
+    host = host.translate(
+        {0x2C7C: "j", 0x2C7D: "v"}
+    )
     # UTS46 likewise maps the fullwidth ASCII forms U+FF01-U+FF5E to
     # their ASCII equivalents (ｅｘａｍｐｌｅ -> "example", including
     # the fullwidth full stop U+FF0E -> ".") before IDNA processing,
