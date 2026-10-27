@@ -15,10 +15,17 @@ logger = get_logger(__name__)
 # Query keys whose values must never reach the logs: single-use auth
 # tokens travel in the query string (e.g. POST
 # /api/v1/account/password_reset_confirmation?token=...), and the api
-# logger runs at DEBUG in all environments. Only the log strings are
-# redacted — the real cache key below is untouched, so cache
-# lookups, writes and clears behave exactly as before.
-_REDACTED_QUERY_KEYS = {"token"}
+# logger runs at DEBUG in all environments. The SSO callback does the
+# same for its single-use provider authorization code and CSRF state
+# (GET /api/v1/account/sso/{provider}/callback?code=...&state=...,
+# consumed by fastapi_sso's verify_and_process): the browser flow
+# bypasses this middleware as a no-token request, but a non-browser
+# client attaching a bearer token to all API calls reaches the log
+# lines below, so code/state must be redacted exactly like token.
+# Only the log strings are redacted — the real cache key below is
+# untouched, so cache lookups, writes and clears behave exactly as
+# before.
+_REDACTED_QUERY_KEYS = {"token", "code", "state"}
 
 
 def _redacted_query(query: str) -> str:
