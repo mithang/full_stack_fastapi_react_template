@@ -245,8 +245,16 @@ def _normalize_cors_origin(origin: str) -> str:
         if not rest.startswith("[") and ":" in rest:
             host, port = rest.rsplit(":", 1)
             stripped = host.rstrip(".")
-            if stripped:
-                o = o[: scheme_end + 3] + stripped + ":" + port
+            # A trailing dot can also sit after the port (e.g.
+            # "app.example.com:443.", copied with sentence
+            # punctuation): the host strip above leaves it, and the
+            # default-port strip below then misses ":443." entirely,
+            # so the origin still never matches. Strip dots from the
+            # port too (a port never legitimately contains one); a
+            # port of only dots is left alone rather than emptied.
+            stripped_port = port.rstrip(".")
+            if stripped and stripped_port:
+                o = o[: scheme_end + 3] + stripped + ":" + stripped_port
         elif rest.endswith("."):
             stripped = rest.rstrip(".")
             if stripped:
