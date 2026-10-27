@@ -22,7 +22,28 @@ export function getTenant(): TenantDto | null {
   const tenant = localStorage.getItem("_tenant");
   if (!tenant) return null;
   try {
-    return JSON.parse(tenant);
+    const parsed: unknown = JSON.parse(tenant);
+    // A syntactically valid but wrong-shape entry (stale schema, partial
+    // write that still parses — a bare string, an array, or an object
+    // without a string id) previously passed through: getApiClient then
+    // sent "X-Tenant-ID": undefined on every call, the worker seeded an
+    // undefined tenant, and tenant-selection auto-selected a bogus
+    // tenant. The backend guard falls back to host scope for a bad id,
+    // but the client should never send one. Treat a wrong-shape entry
+    // exactly like a corrupt one: drop it and behave as if no tenant is
+    // selected, so the user can re-select one. A real stored tenant
+    // always carries a string id (backend ObjectId, serialized).
+    if (
+      typeof parsed !== "object" ||
+      parsed === null ||
+      Array.isArray(parsed) ||
+      typeof (parsed as { id?: unknown }).id !== "string" ||
+      (parsed as { id: string }).id === ""
+    ) {
+      localStorage.removeItem("_tenant");
+      return null;
+    }
+    return parsed as TenantDto;
   } catch {
     // A corrupted _tenant entry (partial write, stale schema) must not
     // crash every API call that reads it via getApiClient: drop it and
