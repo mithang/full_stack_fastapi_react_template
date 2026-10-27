@@ -1777,6 +1777,60 @@ def _encode_idna(host: str) -> str | None:
         0x1FD3: "ΐ", 0x1FE3: "ΰ",
         0x1FF2: "ὼι", 0x1FF3: "ωι", 0x1FF4: "ώι", 0x1FF7: "ῶι",
     }
+    # Enclosed CJK members the as-is branch must remap first:
+    # every member of _punycode_enclosed_cjk above remaps under
+    # UTS46 (a single CJK/Hangul letter, e.g. ㉄ -> 問, or
+    # an ASCII/CJK expansion, e.g. ㉐ -> "pte", ㋿ -> "令和"),
+    # verified against the package's uts46_remap for all 165.
+    # The as-is branch below punycodes its label directly, because
+    # the package rejects the as-is member under both strict and
+    # UTS46 processing -- but browsers remap the enclosed member
+    # first, so a label mixing one with an as-is member punycoded
+    # raw never matched ("©㉄" -> helper "xn--gba215w",
+    # browser "xn--gba4544b", which decodes to the remapped "©問").
+    # Translating through this table before punycoding reproduces
+    # the browser form; labels without an enclosed member are
+    # unchanged, and the table's outputs need no further remap
+    # (ASCII digits/letters and CJK/Hangul letters; translate does
+    # not recurse, matching UTS46's single mapping pass). The
+    # standalone as-is branch below applies it; mixes with other
+    # UTS46-remapped classes keep their existing behaviour for
+    # separate assessment.
+    _enclosed_cjk_remap = {
+        0x3244: "問", 0x3245: "幼", 0x3246: "文", 0x3247: "箏", 0x3250: "pte",
+        0x3251: "21", 0x3252: "22", 0x3253: "23", 0x3254: "24", 0x3255: "25",
+        0x3256: "26", 0x3257: "27", 0x3258: "28", 0x3259: "29", 0x325A: "30",
+        0x325B: "31", 0x325C: "32", 0x325D: "33", 0x325E: "34", 0x325F: "35",
+        0x326E: "가", 0x326F: "나", 0x3270: "다", 0x3271: "라", 0x3272: "마",
+        0x3273: "바", 0x3274: "사", 0x3275: "아", 0x3276: "자", 0x3277: "차",
+        0x3278: "카", 0x3279: "타", 0x327A: "파", 0x327B: "하", 0x327C: "참고",
+        0x327D: "주의", 0x327E: "우", 0x3280: "一", 0x3281: "二", 0x3282: "三",
+        0x3283: "四", 0x3284: "五", 0x3285: "六", 0x3286: "七", 0x3287: "八",
+        0x3288: "九", 0x3289: "十", 0x328A: "月", 0x328B: "火", 0x328C: "水",
+        0x328D: "木", 0x328E: "金", 0x328F: "土", 0x3290: "日", 0x3291: "株",
+        0x3292: "有", 0x3293: "社", 0x3294: "名", 0x3295: "特", 0x3296: "財",
+        0x3297: "祝", 0x3298: "労", 0x3299: "秘", 0x329A: "男", 0x329B: "女",
+        0x329C: "適", 0x329D: "優", 0x329E: "印", 0x329F: "注", 0x32A0: "項",
+        0x32A1: "休", 0x32A2: "写", 0x32A3: "正", 0x32A4: "上", 0x32A5: "中",
+        0x32A6: "下", 0x32A7: "左", 0x32A8: "右", 0x32A9: "医", 0x32AA: "宗",
+        0x32AB: "学", 0x32AC: "監", 0x32AD: "企", 0x32AE: "資", 0x32AF: "協",
+        0x32B0: "夜", 0x32B1: "36", 0x32B2: "37", 0x32B3: "38", 0x32B4: "39",
+        0x32B5: "40", 0x32B6: "41", 0x32B7: "42", 0x32B8: "43", 0x32B9: "44",
+        0x32BA: "45", 0x32BB: "46", 0x32BC: "47", 0x32BD: "48", 0x32BE: "49",
+        0x32BF: "50", 0x32C0: "1月", 0x32C1: "2月", 0x32C2: "3月", 0x32C3: "4月",
+        0x32C4: "5月", 0x32C5: "6月", 0x32C6: "7月", 0x32C7: "8月", 0x32C8: "9月",
+        0x32C9: "10月", 0x32CA: "11月", 0x32CB: "12月", 0x32CC: "hg", 0x32CD: "erg",
+        0x32CE: "ev", 0x32CF: "ltd", 0x32D0: "ア", 0x32D1: "イ", 0x32D2: "ウ",
+        0x32D3: "エ", 0x32D4: "オ", 0x32D5: "カ", 0x32D6: "キ", 0x32D7: "ク",
+        0x32D8: "ケ", 0x32D9: "コ", 0x32DA: "サ", 0x32DB: "シ", 0x32DC: "ス",
+        0x32DD: "セ", 0x32DE: "ソ", 0x32DF: "タ", 0x32E0: "チ", 0x32E1: "ツ",
+        0x32E2: "テ", 0x32E3: "ト", 0x32E4: "ナ", 0x32E5: "ニ", 0x32E6: "ヌ",
+        0x32E7: "ネ", 0x32E8: "ノ", 0x32E9: "ハ", 0x32EA: "ヒ", 0x32EB: "フ",
+        0x32EC: "ヘ", 0x32ED: "ホ", 0x32EE: "マ", 0x32EF: "ミ", 0x32F0: "ム",
+        0x32F1: "メ", 0x32F2: "モ", 0x32F3: "ヤ", 0x32F4: "ユ", 0x32F5: "ヨ",
+        0x32F6: "ラ", 0x32F7: "リ", 0x32F8: "ル", 0x32F9: "レ", 0x32FA: "ロ",
+        0x32FB: "ワ", 0x32FC: "ヰ", 0x32FD: "ヱ", 0x32FE: "ヲ", 0x32FF: "令和",
+    }
     _punycode_asis = frozenset(
         [
             # Latin-1 symbols the browser punycodes as-is (© ->
@@ -2206,11 +2260,15 @@ def _encode_idna(host: str) -> str | None:
                 # U+203C are unchanged, since the translate is
                 # identity for them, and the fraction branch
                 # above already handles fraction mixes itself.
+                # Enclosed CJK members are likewise expanded
+                # through _enclosed_cjk_remap (see there);
+                # labels without one are unchanged by it.
                 encoded_labels.append(
                     "xn--"
                     + label.translate(_asis_map)
                     .translate(_double_excl_map)
                     .translate(_greek_extended_remap)
+                    .translate(_enclosed_cjk_remap)
                     .encode("punycode")
                     .decode("ascii")
                 )
