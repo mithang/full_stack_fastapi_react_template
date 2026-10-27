@@ -1872,6 +1872,40 @@ def _encode_idna(host: str) -> str | None:
     # None (or, with an as-is mark, to the raw-fraction
     # punycode) instead of the browser's form.
     _fraction_excl_map = _fraction_map | _double_excl_map
+    # Arabic Presentation Forms-A members the browser punycodes
+    # as-is (\"a\\ufbc2b\" -> \"xn--ab-ms1n\", \"a\\ufd3eb\" ->
+    # \"xn--ab-6p2n\") while the `idna` package rejects
+    # them under both strict and UTS46 processing, so a
+    # configured origin containing one was left alone and never
+    # matched under Starlette's exact allow_origins matching.
+    # These are the remainder of the block the
+    # _punycode_arabic_presentation_a comment above leaves alone
+    # (\"fail under both strict and UTS46\"): that is true of the
+    # package, but Node's WHATWG parser serializes exactly these
+    # 48 as-is, so they are the gap, not the package's verdict.
+    # Deliberately excluded: U+FBB2-U+FBC1, U+FCD0-U+FDEF and
+    # U+FDFA-U+FDFB, which browsers reject (matching the helper's
+    # None), and U+FDFC, which the retry above already reproduces.
+    # Verified as-is against Node's WHATWG parser for every member
+    # in the mid-label shape, plus the standalone, label-initial,
+    # underscore, mixed-letter, mixed-mark, Greek, CJK, symbol and
+    # emoji shapes; all decode back to the raw label, so no remap
+    # is needed — unlike the UTS46-mapped members in
+    # _punycode_arabic_presentation_a, which the retry handles.
+    # Browsers reject mixes of these forms with a strong-RTL
+    # character (Arabic/Hebrew letter, Arabic digit, or another
+    # presentation form), and a label starting with a combining
+    # mark, so the branch below gates those out rather than
+    # emitting a form no browser origin could carry.
+    _punycode_arabic_presentation_as_is = (
+        frozenset(range(0xFBC2, 0xFBD3))
+        | frozenset(range(0xFD3E, 0xFD50))
+        | frozenset([0xFD90, 0xFD91])
+        | frozenset(range(0xFDC8, 0xFDD0))
+        | frozenset(range(0xFDFD, 0xFE00))
+    )
+    import unicodedata as _arb_unicodedata
+
     try:
         encoded_labels = []
         for label in host.split("."):
@@ -2346,6 +2380,51 @@ def _encode_idna(host: str) -> str | None:
                     )
                 else:
                     encoded_labels.append(label)
+            elif (
+                any(
+                    ord(c) in _punycode_arabic_presentation_as_is
+                    for c in label
+                )
+                and not any(ord(c) == 0xFB29 for c in label)
+                and _arb_unicodedata.category(label[0])[0] != "M"
+                and all(
+                    ord(c) in _punycode_arabic_presentation_as_is
+                    or c
+                    in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"
+                    or (
+                        ord(c) > 127
+                        and _arb_unicodedata.category(c)[0] in "LMNSP"
+                        and _arb_unicodedata.bidirectional(c)
+                        not in ("R", "AL", "AN")
+                    )
+                    for c in label
+                )
+            ):
+                # Placed after the fraction/as-is/double-exclamation/
+                # symbol-marks/1DFA/1ABE branches, so labels mixing
+                # one of those with an Arabic presentation form keep
+                # their existing behaviour (fraction and
+                # double-exclamation mixes already produce the
+                # browser form through their own branches, as do
+                # as-is-symbol mixes through the as-is branch), and
+                # a label reaching here has none of them, so the
+                # raw punycode is the browser form. The gates mirror
+                # the symbol-marks branch: a strong-RTL character
+                # outside the set, a space or joiner, or a leading
+                # combining mark falls through to None as before,
+                # matching the browser's rejection of those labels,
+                # instead of emitting a form no browser origin could
+                # carry. The U+FB29 gate likewise keeps
+                # pre-pass-declined FB29 mixes at None as before:
+                # the browser maps U+FB29 to \"+\", so a raw
+                # punycode containing it could never match.
+                # Underscore labels already punycoded correctly
+                # via the fallback below; this branch produces the
+                # identical form for them, so their behaviour is
+                # unchanged.
+                encoded_labels.append(
+                    "xn--" + label.encode("punycode").decode("ascii")
+                )
             elif "_" not in label:
                 encoded_labels.append(_idna.encode(label).decode("ascii"))
             elif any(ord(c) > 127 for c in label):
