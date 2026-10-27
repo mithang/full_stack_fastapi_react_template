@@ -3530,6 +3530,21 @@ def _encode_idna(host: str) -> str | None:
                     for c in _us_remapped
                 ):
                     raise ValueError("rtl underscore edge")
+                # A browser-rejected codepoint in an underscore
+                # label: U+321F is unassigned (general category
+                # Cn) and the WHATWG parser rejects any host
+                # containing it, yet this fallback punycoded it
+                # raw ("a_㈟" -> "xn--a_-5d5a"), a form no browser
+                # origin could carry, so it never matched. Raise,
+                # so the outer handler returns None for the whole
+                # host, as for other rejected labels. U+321F is
+                # excluded from the parenthesized remap above, so
+                # it survives into the remapped form unchanged;
+                # labels without it keep their existing forms, and
+                # labels claimed by an earlier branch keep their
+                # own handling.
+                if "\u321f" in _us_remapped:
+                    raise ValueError("unassigned underscore")
                 if any(ord(c) > 127 for c in _us_remapped):
                     encoded_labels.append(
                         "xn--"
