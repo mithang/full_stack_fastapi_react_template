@@ -41,7 +41,11 @@ async def configure_storage(
     setting_service: StorageSettingsService = Depends(get_storage_settings_service)
 ):
 
-    logger.debug(f"Received storage configuration: {configuration}")
+    # Log only the provider, not the configuration itself: StorageSettingsDto
+    # carries aws_secret_key / aws_access_key / azure_connection_string,
+    # and the api logger runs at DEBUG in all environments, so logging the
+    # whole DTO would leak live storage credentials into server logs.
+    logger.debug(f"Received storage configuration for provider: {configuration.provider} (enabled: {configuration.is_enabled})")
     try:
         # We don't expect storage settings to be configured with host context as they are global settings. Only tenants with proper permissions can configure them.
         if current_user.tenant_id is None or current_user.tenant_id.strip() == "":
