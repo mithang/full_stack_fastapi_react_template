@@ -1,6 +1,6 @@
 
 from typing import Literal, Optional
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from datetime import datetime
 
 from pymongo import ASCENDING, IndexModel
@@ -30,7 +30,14 @@ class Challenges(ApiBaseModel):
     email: EmailStr
     type: Literal["registration", "authentication"] = "registration"
     challenge: str
-    expires_at: datetime = get_utc_now()
+    # default_factory, not a plain default: get_utc_now() as a plain default
+    # is evaluated once at class definition, so every challenge constructed
+    # without expires_at (the only construction site, save_challenge in the
+    # passkey repository) shared the server-start time. The TTL index expires
+    # documents 300s after expires_at, so once the server had been up more
+    # than 5 minutes, every new challenge was immediately TTL-eligible and
+    # could vanish before it was used, surfacing as "challenge expired".
+    expires_at: datetime = Field(default_factory=get_utc_now)
 
     class Settings:
         name = "user_passkey_challenges"
