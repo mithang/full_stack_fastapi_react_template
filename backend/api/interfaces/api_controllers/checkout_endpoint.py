@@ -126,6 +126,16 @@ async def tenant_checkout_success(
     current_user: CurrentUser,
     billing_service: BillingRecordService = Depends(get_billing_record_service)
 ):
+    # A tenant payment success finalises the caller's tenant-scope
+    # record, so a caller without a tenant — a host user, whose
+    # tenant_id is None — previously proceeded to a Stripe retrieve
+    # that could only end in a tenant-mismatch error, since the
+    # service's tenant guard fails closed on None. Fail fast with the
+    # same InvalidOperationException the checkout-session endpoints
+    # use, mirroring the iteration-377/378 guards; tenant callers are
+    # unchanged, and no Stripe call is made for the rejected caller.
+    if current_user.tenant_id is None:
+        raise InvalidOperationException("A tenant is required to confirm a tenant checkout session.")
     await billing_service.handle_tenant_checkout_success(session_id=session_id, user_id=current_user.id, tenant_id=current_user.tenant_id)
     return status.HTTP_202_ACCEPTED
 
@@ -135,6 +145,15 @@ async def tenant_checkout_canceled(
     current_user: CurrentUser,
     billing_service: BillingRecordService = Depends(get_billing_record_service)
 ):
+    # A tenant payment cancel marks the caller's tenant-scope records
+    # canceled, so a caller without a tenant — a host user, whose
+    # tenant_id is None — previously returned 202 having canceled
+    # nothing, since the service's tenant guard fails closed on None:
+    # a silent success, the same class as the iteration-364/365 fixes.
+    # Fail fast with the same InvalidOperationException the tenant
+    # success guard above uses; tenant callers are unchanged.
+    if current_user.tenant_id is None:
+        raise InvalidOperationException("A tenant is required to cancel a tenant checkout session.")
     await billing_service.handle_tenant_checkout_canceled(user_id=current_user.id, tenant_id=current_user.tenant_id)
     return status.HTTP_202_ACCEPTED
 
