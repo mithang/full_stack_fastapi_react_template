@@ -1604,7 +1604,106 @@ def _encode_idna(host: str) -> str | None:
                         if _fb29_mapped_ok:
                             _fb29_mapped_t = _fb29_remapped
                     except (UnicodeError, ValueError):
+                        # A mapped symbol mixed with U+FB29 and a
+                        # _fb29_punycode_asis_marks member (e.g.
+                        # "¼᫏﬩"): the remap above raises on the
+                        # mark itself even though browsers leave
+                        # it as-is, so the label fell through and
+                        # was punycoded raw ("xn--zba464k6y2n"
+                        # instead of the browser's
+                        # "xn--14+-18v308a"). Recover by remapping
+                        # per character, keeping the marks verbatim:
+                        # UTS46 mapping is per codepoint (the
+                        # package applies no context rule here — a
+                        # sigma before a mark or a fraction stays
+                        # a sigma, as in browsers), so the
+                        # per-character form is the mapped form.
+                        # It is accepted only if it differs, still
+                        # contains "+", passes the same gates
+                        # (marks allowed, as in the gate above),
+                        # and agrees with the package's whole-label
+                        # remap on the placeholder form in both
+                        # directions — a remapped/disallowed
+                        # character fails the agreement (or its
+                        # per-character remap raises, e.g. "…") and
+                        # falls through instead.
                         _fb29_mapped_ok = False
+                        if any(
+                            ord(c) in _fb29_punycode_asis_marks
+                            for c in _fb29_mapped_t
+                        ):
+                            try:
+                                _fb29_recovered = []
+                                for _c in _fb29_mapped_t:
+                                    if (
+                                        ord(_c)
+                                        in _fb29_punycode_asis_marks
+                                        or _c in _fb29_label_chars
+                                    ):
+                                        _fb29_recovered.append(_c)
+                                    else:
+                                        _fb29_recovered.append(
+                                            _idna.uts46_remap(
+                                                _c,
+                                                std3_rules=False,
+                                                transitional=False,
+                                            )
+                                        )
+                                _fb29_recovered = "".join(_fb29_recovered)
+                                _fb29_rec_placeholder = "".join(
+                                    "a"
+                                    if ord(c)
+                                    in _fb29_punycode_asis_marks
+                                    else c
+                                    for c in _fb29_recovered
+                                )
+                                _fb29_orig_placeholder = "".join(
+                                    "a"
+                                    if ord(c)
+                                    in _fb29_punycode_asis_marks
+                                    else c
+                                    for c in _fb29_mapped_t
+                                )
+                                _fb29_mapped_ok = (
+                                    _fb29_recovered != _fb29_mapped_t
+                                    and "+" in _fb29_recovered
+                                    and _fb29_unicodedata.category(
+                                        _fb29_recovered[0]
+                                    )[0]
+                                    != "M"
+                                    and all(
+                                        c in _fb29_label_chars
+                                        or (
+                                            ord(c) > 127
+                                            and (
+                                                _fb29_unicodedata.category(c)[0]
+                                                in "LMNSP"
+                                                or c in _fb29_asis_outputs
+                                                or ord(c)
+                                                in _fb29_punycode_asis_marks
+                                            )
+                                            and _fb29_unicodedata.bidirectional(c)
+                                            not in ("R", "AL", "AN")
+                                        )
+                                        for c in _fb29_recovered
+                                    )
+                                    and _idna.uts46_remap(
+                                        _fb29_orig_placeholder,
+                                        std3_rules=False,
+                                        transitional=False,
+                                    )
+                                    == _fb29_rec_placeholder
+                                    and _idna.uts46_remap(
+                                        _fb29_rec_placeholder,
+                                        std3_rules=False,
+                                        transitional=False,
+                                    )
+                                    == _fb29_rec_placeholder
+                                )
+                                if _fb29_mapped_ok:
+                                    _fb29_mapped_t = _fb29_recovered
+                            except (UnicodeError, ValueError):
+                                _fb29_mapped_ok = False
                 if not _fb29_mapped_ok:
                     _fb29_mixed_ok = False
                     break
