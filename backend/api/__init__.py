@@ -150,8 +150,17 @@ if is_tenancy_enabled():
 # configured "https://app.example.com:443" (or http :80) would
 # likewise silently never match under exact matching; strip those
 # default ports. Non-default ports (e.g. :3000, :8443) are kept.
+# Finally, an Origin header never carries a path, so a configured
+# "https://app.example.com/spa" would likewise never match; strip any
+# path after scheme://host[:port] (the default-port strip below then
+# still applies to e.g. "https://app.example.com:443/spa").
 def _normalize_cors_origin(origin: str) -> str:
     o = origin.strip().rstrip("/").lower()
+    scheme_end = o.find("://")
+    if scheme_end != -1:
+        path_start = o.find("/", scheme_end + 3)
+        if path_start != -1:
+            o = o[:path_start]
     if o.startswith("https://") and o.endswith(":443"):
         return o[:-4]
     if o.startswith("http://") and o.endswith(":80"):
