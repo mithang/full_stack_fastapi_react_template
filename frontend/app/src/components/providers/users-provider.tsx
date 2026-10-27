@@ -80,7 +80,10 @@ export function UsersProvider({ children }: UsersProviderProps) {
         const parsedSkip = skip ? parseInt(skip) : 0;
         const parsedLimit = limit ? parseInt(limit) : 10;
         const safeSkip = Number.isFinite(parsedSkip) && parsedSkip >= 0 ? parsedSkip : 0;
-        const safeLimit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : 10;
+        // Clamp to the backend's Query bound (limit le=100), mirroring the
+        // audit-log provider (iteration 398): a hand-edited ?limit=500
+        // previously passed the guards above but still failed with 422.
+        const safeLimit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 100) : 10;
         try {
             const res = await user.listUsersApiV1UsersGet({ skip: safeSkip, limit: safeLimit });
             setUserResponse({
