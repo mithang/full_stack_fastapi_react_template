@@ -1,7 +1,7 @@
 import dns.resolver
 
+from api.common.exceptions import InvalidOperationException
 from api.common.utils import get_logger
-from api.core.exceptions import InvalidCustomDomainException
 from api.domain.dtos.user_dto import UserDto
 from api.domain.interfaces.email_service import IEmailService
 from api.interfaces.email_templates.dns_notification_html import dns_notification_email
@@ -27,9 +27,15 @@ class DnsResolver:
                 resolved_to = [rdata.address for rdata in answers]
                 record_type = "A"
             except Exception as e:
-                raise InvalidCustomDomainException(f"DNS resolution failed for {hostname}: {e}")
+                # Log the resolver detail server-side only; the exception
+                # message must not carry it (the Celery task logs the
+                # exception, and InvalidCustomDomainException's message
+                # would otherwise embed resolver internals verbatim).
+                logger.error(f"DNS resolution failed for {hostname}: {e}")
+                raise InvalidOperationException(f"DNS resolution failed for {hostname}.")
         except Exception as e:
-            raise InvalidCustomDomainException(f"DNS resolution failed for {hostname}: {e}")
+            logger.error(f"DNS resolution failed for {hostname}: {e}")
+            raise InvalidOperationException(f"DNS resolution failed for {hostname}.")
 
         # if expected_target:
         #     if not any(expected_target in target for target in resolved_to):
