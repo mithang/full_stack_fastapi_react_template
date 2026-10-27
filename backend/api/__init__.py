@@ -374,6 +374,22 @@ def _encode_idna(host: str) -> str | None:
         | {cp: str(cp - 0x2460 + 1) for cp in range(0x2460, 0x2474)}
         | {0x24EA: "0"}
     )
+    # UTS46 likewise maps the Roman numerals U+2160-U+216F (capitals)
+    # and U+2170-U+217F (small letters) to their letter expansions
+    # (Ⅷ -> "viii", Ⅻ -> "xii"), which the strict IDNA2008 path
+    # likewise rejects, so they are mapped here too. Both ranges map
+    # to lowercase plain letters, matching the browser-serialized
+    # form; the pipeline's lower() already folds capitals to smalls
+    # before this helper runs, so mapping both ranges also keeps the
+    # helper correct if called directly.
+    _roman = [
+        "i", "ii", "iii", "iv", "v", "vi", "vii", "viii",
+        "ix", "x", "xi", "xii", "l", "c", "d", "m",
+    ]
+    host = host.translate(
+        {cp: _roman[cp - 0x2160] for cp in range(0x2160, 0x2170)}
+        | {cp: _roman[cp - 0x2170] for cp in range(0x2170, 0x2180)}
+    )
     # UTS46 likewise maps the fullwidth ASCII forms U+FF01-U+FF5E to
     # their ASCII equivalents (ｅｘａｍｐｌｅ -> "example", including
     # the fullwidth full stop U+FF0E -> ".") before IDNA processing,
