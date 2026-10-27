@@ -195,6 +195,26 @@ def _normalize_cors_origin(origin: str) -> str:
         if bare.startswith("::1"):
             bare = "[::1]" + bare[3:]
             host = "[::1]"
+        # A portless unbracketed expanded IPv6 host ("0:0:0:0:0:0:0:1")
+        # is unambiguous — a port would add a ninth group, so such a
+        # string cannot parse as an address — but without brackets it
+        # never matches the bracketed Origin browsers send, and the
+        # compression step below only handles bracketed hosts.
+        # Re-bracket it here so the loopback check below and the
+        # compression step both apply (expanded loopback becomes
+        # http://[::1], any other expanded host becomes its
+        # compressed bracketed form). Forms with a port, or
+        # compressed forms like "::1" (handled above), are left alone
+        # because they cannot be told apart from host:port safely.
+        host_only = bare.split("/", 1)[0].split("?", 1)[0].split("#", 1)[0]
+        if host_only.count(":") == 7:
+            try:
+                ipaddress.IPv6Address(host_only)
+            except ValueError:
+                pass
+            else:
+                bare = "[" + host_only + "]" + bare[len(host_only) :]
+                host = "[" + host_only + "]"
         # A trailing dot must not hide a loopback host from the http
         # assumption above (e.g. "localhost.:3000"); the dot itself is
         # stripped from the rebuilt origin by the scheme branch below.
