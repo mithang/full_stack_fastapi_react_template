@@ -168,13 +168,21 @@ def _normalize_cors_origin(origin: str) -> str:
         return "*"
     # A browser Origin always carries a scheme, so a scheme-less entry
     # like "app.example.com" (or protocol-relative "//app.example.com")
-    # would likewise never match; assume https, the production default.
-    # An http origin (e.g. dev http://localhost:3000) must still be
-    # written explicitly, since https is assumed here, not http.
+    # would likewise never match; assume https, the production default,
+    # except for loopback hosts, which in development are served over
+    # plain http — a scheme-less "localhost:3000" previously became
+    # https://localhost:3000 and never matched the dev Origin.
     if o.startswith("//"):
-        o = "https:" + o
+        bare = o[2:]
     elif "://" not in o:
-        o = "https://" + o
+        bare = o
+    else:
+        bare = None
+    if bare is not None:
+        host = bare.split("/", 1)[0].split("?", 1)[0].split("#", 1)[0]
+        host = host.rsplit("@", 1)[-1].rsplit(":", 1)[0]
+        scheme = "http" if host in ("localhost", "127.0.0.1") else "https"
+        o = scheme + "://" + bare if not o.startswith("//") else scheme + ":" + o
     scheme_end = o.find("://")
     if scheme_end != -1:
         path_start = o.find("/", scheme_end + 3)
