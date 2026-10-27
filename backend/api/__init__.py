@@ -2459,7 +2459,22 @@ def _encode_idna(host: str) -> str | None:
                         )
                     else:
                         encoded_labels.append(_frac_remapped)
-                elif any(ord(c) in _punycode_asis for c in label):
+                elif any(ord(c) in _punycode_asis for c in label) and not any(
+                    ord(c) in _punycode_arabic_presentation_b
+                    or ord(c) in _punycode_arabic_presentation_a
+                    for c in label
+                ):
+                    # An as-is label mixed with an Arabic
+                    # Presentation Form is excluded here: the
+                    # browser either rejects the mix under the
+                    # UTS46 bidi rule or carries the form's
+                    # UTS46-remapped Arabic letter, so the raw
+                    # punycode below never matched; falling
+                    # through reaches the strict path, which
+                    # rejects the presentation form and returns
+                    # None for the rejected shapes (the
+                    # remapped RTL-context shapes stay a
+                    # separate candidate).
                     encoded_labels.append(
                         "xn--"
                         + label.translate(_asis_map)
@@ -2474,7 +2489,22 @@ def _encode_idna(host: str) -> str | None:
                     )
                 else:
                     encoded_labels.append(label)
-            elif any(ord(c) in _punycode_asis for c in label):
+            elif any(ord(c) in _punycode_asis for c in label) and not any(
+                ord(c) in _punycode_arabic_presentation_b
+                or ord(c) in _punycode_arabic_presentation_a
+                for c in label
+            ):
+                # As in the fraction-branch as-is fallback above,
+                # a label mixing an as-is form with an Arabic
+                # Presentation Form is excluded: the browser
+                # either rejects the mix under the UTS46 bidi
+                # rule or carries the form's UTS46-remapped
+                # Arabic letter, so the raw punycode below never
+                # matched; falling through reaches the strict
+                # path, which rejects the presentation form and
+                # returns None for the rejected shapes (the
+                # remapped RTL-context shapes stay a separate
+                # candidate).
                 # A label combining an as-is form with DOUBLE
                 # EXCLAMATION MARK U+203C ("©‼" -> browser
                 # "xn--!!-sda") previously punycoded the raw
