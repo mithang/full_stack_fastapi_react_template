@@ -374,6 +374,16 @@ def _normalize_cors_origin(origin: str) -> str:
     # by the URL parser (it fails host parsing instead), so spaces
     # are deliberately left alone.
     o = o.replace("\t", "").replace("\n", "").replace("\r", "")
+    # The WHATWG URL parser also removes leading and trailing C0
+    # controls (U+0000-U+001F) and spaces before parsing, so a browser
+    # serializes an Origin from "\x01https://app.example.com" or
+    # "https://app.example.com\x00" as "https://app.example.com".
+    # Python's strip() above only removes whitespace, leaving controls
+    # like \x00-\x08 and \x0e-\x1f in place, so such an entry would
+    # never match. Strip them (and spaces) at the ends here; an
+    # interior space is deliberately still left alone, since the URL
+    # parser fails host parsing on it instead of removing it.
+    o = o.strip("".join(chr(c) for c in range(0x20)) + " ")
     if not o:
         return ""
     # Leave "*" untouched: the wildcard filter below drops it with a
