@@ -1,8 +1,12 @@
 
+import logging
+
 import boto3
 from fastapi import UploadFile
 
 from api.core.exceptions import S3StorageException
+
+logger = logging.getLogger(__name__)
 
 
 class S3Storage:
@@ -21,7 +25,11 @@ class S3Storage:
             return destination
             # return f"https://{self.bucket_name}.s3.{self.s3_client.meta.region_name}.amazonaws.com/{destination}"
         except Exception as e:
-            raise S3StorageException(str(e))
+            # boto3 error strings carry infra internals (bucket, endpoint,
+            # request id) and, via the ApiBaseException handler, reach the
+            # client verbatim; keep them server-side only.
+            logger.error(f"Failed to upload file to S3: {e}")
+            raise S3StorageException("Failed to upload file.")
 
 
     async def generate_read_url(self, key: str, expires_in: int = 3600) -> str:
@@ -32,4 +40,6 @@ class S3Storage:
                 ExpiresIn=expires_in
             )
         except Exception as e:
-            raise S3StorageException(str(e))
+            # Same verbatim-disclosure class as the upload path above.
+            logger.error(f"Failed to generate S3 read URL: {e}")
+            raise S3StorageException("Failed to generate file URL.")
