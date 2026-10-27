@@ -1090,6 +1090,17 @@ def _encode_idna(host: str) -> str | None:
             0x1FF2, 0x1FF3, 0x1FF4, 0x1FF7,
         ]
     )
+    # Kangxi radicals (U+2F00-U+2FD5): a full scan of the block
+    # against the actual helper isolated exactly these 214 as
+    # strict-reject/UTS46-ok after lower() (they have no case, so
+    # lower() is identity; nothing else in the block fails strict
+    # while passing UTS46). UTS46 maps each radical to its unified
+    # ideograph before encoding (⼀ -> 一 -> "xn--4gq",
+    # ⼁ -> 丨 -> "xn--9hq"), matching Node's WHATWG parser on all
+    # 214 alone and mid-word. That mapping happens inside the
+    # package's UTS46 processing, so they join the UTS46 retry
+    # here rather than needing a translate table.
+    _punycode_kangxi = frozenset(range(0x2F00, 0x2FD6))
     if any(
         ord(c) in _punycode_modifiers or ord(c) in _punycode_letterlike
         or ord(c) in _punycode_digraphs or ord(c) in _punycode_cherokee
@@ -1112,6 +1123,7 @@ def _encode_idna(host: str) -> str | None:
         or ord(c) in _punycode_kanbun
         or ord(c) in _punycode_halfwidth_katakana
         or ord(c) in _punycode_greek_extended
+        or ord(c) in _punycode_kangxi
         for c in host
     ):
         try:
