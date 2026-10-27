@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Query, status
 
 from api.common.dtos.worker_dto import WorkerPayloadDto
 from api.common.exceptions import ApiBaseException, InvalidOperationException
-from api.common.utils import get_host_main_domain_name, get_logger
+from api.common.utils import get_host_main_domain_name, get_logger, get_utc_now
 from api.core.container import    get_billing_record_service, get_subscription_plan_service, get_tenant_service
 from api.core.exceptions import InvalidSubdomainException, TenantNotFoundException
 from api.domain.dtos.subcription_plan_dto import SubscriptionPlanDto
@@ -161,6 +161,8 @@ async def update_tenant_dns_record(
     tenant.custom_domain = data.custom_domain
     tenant.is_active = data.is_active if data.is_active is not None else tenant.is_active
     tenant.custom_domain_status = "activation-progress" if data.custom_domain else None
+    # Direct .save() bypasses BaseRepository.update()'s central updated_at stamp (iteration 411).
+    tenant.updated_at = get_utc_now()
     await tenant.save()
     handle_tenant_dns_update.delay(
         payload=payload.model_dump_json()
