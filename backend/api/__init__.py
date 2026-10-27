@@ -242,7 +242,29 @@ def _normalize_cors_origin(origin: str) -> str:
         # and are left alone; a host of only dots is left alone
         # rather than being emptied.
         rest = o[scheme_end + 3 :]
-        if not rest.startswith("[") and ":" in rest:
+        if (
+            rest.startswith("[")
+            and "]" in rest
+            and rest[rest.find("]") + 1 :].startswith(":")
+        ):
+            # Bracketed IPv6 hosts skip the port branch below, so a
+            # zero-padded port (e.g. "https://[::1]:0443") or an empty
+            # port ("https://[::1]:") likewise never matched: browsers
+            # send the canonical port (or none). Apply the same port
+            # normalization as the non-bracketed branch — strip port
+            # dots, drop leading zeros from digit ports, drop an empty
+            # port; a port of only dots is left alone, as there.
+            close = rest.find("]")
+            host = rest[: close + 1]
+            port = rest[close + 1 :][1:]
+            stripped_port = port.rstrip(".")
+            if stripped_port.isdigit():
+                stripped_port = stripped_port.lstrip("0") or "0"
+            if stripped_port:
+                o = o[: scheme_end + 3] + host + ":" + stripped_port
+            elif port == "":
+                o = o[: scheme_end + 3] + host
+        elif not rest.startswith("[") and ":" in rest:
             host, port = rest.rsplit(":", 1)
             stripped = host.rstrip(".")
             # A trailing dot can also sit after the port (e.g.
