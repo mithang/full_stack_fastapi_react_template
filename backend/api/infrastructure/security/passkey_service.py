@@ -266,6 +266,8 @@ class PasskeyService():
         if len(user_passkey.credentials) == original_count:
             raise PassKeyException("Credential ID not found.")
 
+        # Direct .save() bypasses BaseRepository.update()'s central updated_at stamp (iteration 411).
+        user_passkey.updated_at = get_utc_now()
         await user_passkey.save()
         logger.info(f"Deleted passkey with credential ID {credential_id} for user {email}.")
 
