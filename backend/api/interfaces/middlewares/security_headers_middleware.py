@@ -3,7 +3,13 @@
 # Until now no response carried clickjacking / MIME-sniffing / referrer
 # headers, so a browser embedding the app in an iframe (clickjacking) or
 # sniffing a JSON error body as executable content was left to browser
-# defaults, and full referrer URLs leaked to cross-origin links.
+# defaults, and full referrer URLs leaked to cross-origin links. There was
+# also no Strict-Transport-Security, so a first visit over plain HTTP in
+# production could be downgraded (SSL stripping) before any server-side
+# HTTPS redirect was ever seen. HSTS is sent unconditionally here:
+# browsers ignore it when received over plain HTTP, so development over
+# http://localhost is unaffected, and in production every response is
+# already HTTPS.
 #
 # This is a pure ASGI middleware, not a BaseHTTPMiddleware subclass, so
 # it only rewrites the response-start headers and never buffers the
@@ -17,6 +23,7 @@ _SECURITY_HEADERS = {
     b"x-content-type-options": b"nosniff",
     b"x-frame-options": b"DENY",
     b"referrer-policy": b"strict-origin-when-cross-origin",
+    b"strict-transport-security": b"max-age=31536000; includeSubDomains",
 }
 
 
