@@ -744,12 +744,23 @@ def _encode_idna(host: str) -> str | None:
     # U+2094 is the same class but a separate range, handled
     # separately.
     _punycode_mod02 = frozenset([0x02E0, 0x02E4])
+    # The same class covers SUBSCRIPT SCHWA U+2094 (ₔ): the
+    # strict IDNA2008 path rejects it, while UTS46 punycodes it
+    # as-is (ₔ -> "xn--sna"), matching Node's WHATWG parser. A
+    # translate table cannot express this class (there is no
+    # plain-letter target), so it joins the UTS46 retry here;
+    # the pipeline's lower() leaves it unchanged, so the form
+    # above is what the retry sees in practice. The neighbouring
+    # U+2090-U+209C subscript letters map to plain letters and
+    # are handled by the translate table above, not here.
+    _punycode_subschwa = frozenset([0x2094])
     if any(
         ord(c) in _punycode_modifiers or ord(c) in _punycode_letterlike
         or ord(c) in _punycode_digraphs or ord(c) in _punycode_cherokee
         or ord(c) in _punycode_devanagari or ord(c) in _punycode_bengali
         or ord(c) in _punycode_gurmukhi or ord(c) in _punycode_oriya
         or ord(c) in _punycode_tibetan or ord(c) in _punycode_mod02
+        or ord(c) in _punycode_subschwa
         for c in host
     ):
         try:
