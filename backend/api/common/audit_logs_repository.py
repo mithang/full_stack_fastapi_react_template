@@ -88,7 +88,13 @@ class AuditLogRepository:
                             continue
                         total += 1
                         ring.append(dto)  # older ones drop automatically when full
-            except FileNotFoundError:
+            except OSError:
+                # FileNotFoundError is the glob-to-open race (file removed
+                # between listing and opening), but an unreadable file
+                # (PermissionError) or a directory matching the pattern
+                # (IsADirectoryError) must not abort the whole listing
+                # either — skip that file like a missing one and keep
+                # the entries from the readable files.
                 continue
 
         # Now ring holds the last (skip+limit) lines globally (latest lines overall)
@@ -137,7 +143,10 @@ class AuditLogRepository:
                             # one invalid entry must not abort the report.
                             logger.warning(f"Skipping audit log line failing validation in {file_path}")
                             continue
-            except FileNotFoundError:
+            except OSError:
+                # Same reasoning as list_audit_logs: a missing, unreadable,
+                # or directory-matching file must not abort the report;
+                # skip it and keep the entries from the readable files.
                 continue
     
         if len(results) == 0:
