@@ -391,6 +391,30 @@ def _normalize_cors_origin(origin: str) -> str:
     # "https://*" entry that escapes that filter.
     if o == "*":
         return "*"
+    # The WHATWG URL parser treats "/" and "\" alike as separators
+    # after a special scheme and tolerates any number of them, so a
+    # browser serializes an Origin from "https:/app.example.com",
+    # "https:\\app.example.com" (a slash dropped, or a Windows-style
+    # separator pasted in) or even "https:///app.example.com" as
+    # "https://app.example.com" — but the scheme-less branch below saw
+    # no "://" and rebuilt the first two as a dead "https://https"
+    # (and path-stripped the third to a dead "https://"), so none of
+    # them ever matched. Collapse the run of "/" and "\" after a
+    # leading http: or https: to "://" before that branch; an
+    # already-correct "://" is unchanged by this (its two separators
+    # are simply rewritten as themselves), scheme-less hosts have no
+    # such prefix and are untouched, and a bare "https:host" with no
+    # separator at all is left alone — it is ambiguous with a
+    # host:port pair in the scheme-less branch.
+    for _scheme in ("https:", "http:"):
+        if o.startswith(_scheme):
+            _after = o[len(_scheme) :]
+            _seps = 0
+            while _seps < len(_after) and _after[_seps] in "/\\":
+                _seps += 1
+            if _seps:
+                o = _scheme + "//" + _after[_seps:]
+            break
     # A browser Origin always carries a scheme, so a scheme-less entry
     # like "app.example.com" (or protocol-relative "//app.example.com")
     # would likewise never match; assume https, the production default,
