@@ -981,6 +981,22 @@ def _encode_idna(host: str) -> str | None:
     # the only strict-reject/UTS46-ok member of the block
     # after lower().
     _punycode_combining = frozenset([0x0345])
+    # The same class covers the combining diacritical marks
+    # U+0300-U+036F in context, after a base letter: the strict
+    # IDNA2008 path rejects them ("Label must be in Normalization
+    # Form C", since "a" + U+0300 is not NFC), while UTS46
+    # NFC-normalizes first and punycodes the result (a + U+0300
+    # -> "à" -> "xn--0ca", a + U+0301 -> "xn--1ca"), matching
+    # Node's WHATWG parser. The U+0345 entry above came from a
+    # standalone-label scan, where a mark alone fails under both
+    # paths; after a base letter the whole range is UTS46-ok, so
+    # it joins the UTS46 retry here. A mark alone at a label
+    # start still fails under UTS46 ("illegal combining
+    # character") and falls through, matching the browser's
+    # rejection; U+034F is stripped up front and needs no entry.
+    # The pipeline's lower() leaves these marks unchanged, so
+    # the forms above are what the retry sees in practice.
+    _punycode_combining_marks = frozenset(range(0x0300, 0x0370))
     # The same class covers GREEK NUMERAL SIGN U+0374 (ʹ):
     # the strict IDNA2008 path rejects it, while UTS46
     # punycodes it as-is (ʹ -> "xn--jqa"), matching
@@ -1291,6 +1307,7 @@ def _encode_idna(host: str) -> str | None:
         or ord(c) in _punycode_lao or ord(c) in _punycode_georgian
         or ord(c) in _punycode_latin or ord(c) in _punycode_cyrillic
         or ord(c) in _punycode_combining
+        or ord(c) in _punycode_combining_marks
         or ord(c) in _punycode_greek_numeral
         or ord(c) in _punycode_tifinagh
         or ord(c) in _punycode_cyrillic_modifiers
