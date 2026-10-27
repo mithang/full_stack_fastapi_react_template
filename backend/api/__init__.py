@@ -3499,6 +3499,37 @@ def _encode_idna(host: str) -> str | None:
                     .translate(_parenthesized_cjk_remap)
                     .translate(_cjk_compat_remap)
                 )
+                # An underscore label at a right-to-left edge:
+                # UTS46's RTL-label rules require the first
+                # character to be strong RTL (R/AL) and the
+                # last character to be strong RTL or a digit,
+                # so a label that starts or ends with "_"
+                # (bidi class ON, a neutral) while containing
+                # a strong-RTL or Arabic-Indic character is
+                # browser-rejected ("ا_" / "_ا" / "م_" /
+                # "م_م_" / "٣_" all fail in the WHATWG
+                # parser), yet this fallback punycoded it raw
+                # ("ا_" -> "xn--_-ymc"), a form no browser
+                # origin could carry, so it never matched.
+                # Raise, so the outer handler returns None
+                # for the whole host, as for other rejected
+                # labels. Mid-label underscores are untouched
+                # ("م_م" stays valid), as are labels with no
+                # R/AL/AN character ("a_" / "mün_chen" keep
+                # their existing forms), and labels claimed
+                # by an earlier branch (fraction, as-is, FB29
+                # and the like) keep their own handling.
+                import unicodedata as _us_rtl_unicodedata
+
+                if (
+                    _us_remapped.startswith("_")
+                    or _us_remapped.endswith("_")
+                ) and any(
+                    _us_rtl_unicodedata.bidirectional(c)
+                    in ("R", "AL", "AN")
+                    for c in _us_remapped
+                ):
+                    raise ValueError("rtl underscore edge")
                 if any(ord(c) > 127 for c in _us_remapped):
                     encoded_labels.append(
                         "xn--"
