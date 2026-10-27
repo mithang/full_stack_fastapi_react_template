@@ -340,6 +340,16 @@ def _encode_idna(host: str) -> str | None:
             # lower() unchanged, which is why they are the gap.)
             0x00B5: "μ",
             0x017F: "s",
+            # UTS46 likewise maps the ordinal indicators MASCULINE
+            # ORDINAL INDICATOR U+00BA -> "o" and FEMININE ORDINAL
+            # INDICATOR U+00AA -> "a", which the strict IDNA2008 path
+            # likewise rejects, so they are mapped here too. Both
+            # survive the pipeline's lower() unchanged, which is why
+            # they are the gap. (Parenthesized letters U+249C-U+24B5
+            # map under UTS46 to "(a)"-style forms that IDNA rejects
+            # outright, so they are deliberately left alone.)
+            0x00AA: "a",
+            0x00BA: "o",
         }
     )
     # UTS46 likewise maps the circled letters U+24B6-U+24CF (capitals)
