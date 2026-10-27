@@ -1213,10 +1213,24 @@ def _encode_idna(host: str) -> str | None:
             0x2129, 0x212E, 0x2132, 0x213A, 0x2140, 0x2141,
             0x2142, 0x2143, 0x2144, 0x214A, 0x214B, 0x214C,
             0x214D, 0x214F,
+            # CJK Compatibility square forms (see the square-CJK
+            # comment above): UTS46 maps these seven to
+            # division-slash expansions (㎧ -> "m∕s", ㎨ -> "m∕s2",
+            # ㎮ -> "rad∕s", ㎯ -> "rad∕s2", ㏆ -> "c∕kg",
+            # ㏞ -> "v∕m", ㏟ -> "a∕m"), which the browser then
+            # punycodes — but the package rejects both the square
+            # forms and U+2215 under strict and UTS46 processing,
+            # so they need this branch with the mapping below
+            # (same pattern as ℃ -> "°c"), not bare as-is entries.
+            0x33A7, 0x33A8, 0x33AE, 0x33AF,
+            0x33C6, 0x33DE, 0x33DF,
         ]
     )
     _asis_map = {
         0x2103: "°c", 0x2109: "°f", 0x2132: "ⅎ", 0x2140: "∑",
+        0x33A7: "m∕s", 0x33A8: "m∕s2", 0x33AE: "rad∕s",
+        0x33AF: "rad∕s2", 0x33C6: "c∕kg", 0x33DE: "v∕m",
+        0x33DF: "a∕m",
     }
     try:
         encoded_labels = []
