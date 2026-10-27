@@ -30,7 +30,14 @@ class BaseRepository(Generic[T]):
             # one shape alone would leave the other escaping as a 500.
             return None
         result = await self.model.find_one({"_id": object_id})
-        logger.debug(f"Get result for id {id}: {result}")
+        # Do not log the full document: this repository is generic over
+        # every collection, including User (hashed password), passkey,
+        # magic-link and password-reset documents, and the api logger
+        # runs at DEBUG in all environments — so the old line leaked
+        # credential material into server logs on every get (and, via
+        # update()/delete(), on every update/delete). Found/not-found
+        # is all a debug line here needs.
+        logger.debug(f"Get result for id {id}: {'found' if result is not None else 'not found'}")
         return result
 
     async def list(self) -> List[T]:
