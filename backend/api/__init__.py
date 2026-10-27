@@ -1887,6 +1887,50 @@ def _encode_idna(host: str) -> str | None:
                     )
                 except (UnicodeError, ValueError):
                     _frac_remapped = None
+                    # Recovery for a label that also contains a
+                    # _punycode_asis mark (e.g. U+1ACF-U+1AEB):
+                    # the whole-label remap above raises on the
+                    # unassigned mark, so such a label fell
+                    # through to the as-is branch and punycoded
+                    # the raw fraction ("¼᫏" -> "xn--zba464k"
+                    # instead of the browser's "xn--14-mrq114a").
+                    # UTS46 mapping is per codepoint, so remap
+                    # each character on its own, keeping the
+                    # as-is marks verbatim, and accept the result
+                    # only under the same gate as the normal path
+                    # (it must equal the label with exactly the
+                    # fractions expanded): any other remapped
+                    # character (e.g. MICRO SIGN -> mu, or a
+                    # remap that raises, e.g. an ellipsis or a
+                    # browser-rejected U+1ADE/U+1ADF mark) fails
+                    # the gate or the remap and falls through
+                    # unchanged. ZERO WIDTH JOINER / NON-JOINER
+                    # are passed through unchanged by the
+                    # single-character remap yet rejected by
+                    # browsers, so they abort the recovery too.
+                    if any(ord(c) in _punycode_asis for c in label):
+                        try:
+                            _frac_parts = []
+                            for _c in label:
+                                if ord(_c) in _punycode_asis:
+                                    _frac_parts.append(_c)
+                                elif ord(_c) in (0x200C, 0x200D):
+                                    raise ValueError("joiner")
+                                else:
+                                    _frac_parts.append(
+                                        _idna.uts46_remap(
+                                            _c,
+                                            std3_rules=False,
+                                            transitional=False,
+                                        )
+                                    )
+                            _frac_recovered = "".join(_frac_parts)
+                        except (UnicodeError, ValueError):
+                            _frac_recovered = None
+                        if _frac_recovered == label.translate(
+                            _fraction_map
+                        ):
+                            _frac_remapped = _frac_recovered
                 if (
                     _frac_remapped is not None
                     and _frac_remapped == label.translate(_fraction_map)
