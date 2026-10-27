@@ -501,6 +501,23 @@ def _encode_idna(host: str) -> str | None:
     host = host.translate(
         {0x02B0: "h", 0x02B2: "j", 0x02B3: "r", 0x02B7: "w", 0x02B8: "y"}
     )
+    # UTS46 likewise maps the Cyrillic small letters U+1C80-U+1C88
+    # to their ordinary Cyrillic counterparts (ROUNDED VE -> VE,
+    # LONG-LEGGED DE -> DE, NARROW O -> O, WIDE ES -> ES, TALL TE
+    # and THREE-LEGGED TE -> TE, TALL HARD SIGN -> HARD SIGN, TALL
+    # YAT -> YAT, UNBLENDED UK -> UK), which the strict IDNA2008
+    # path likewise rejects, so they are mapped here too. They
+    # survive the pipeline's lower() unchanged, which is why they
+    # are the gap. The remaining members of the block, U+1C89-U+1C8F,
+    # are unassigned in the Unicode data the `idna` package uses
+    # here and are deliberately left alone.
+    host = host.translate(
+        {
+            0x1C80: "\u0432", 0x1C81: "\u0434", 0x1C82: "\u043e",
+            0x1C83: "\u0441", 0x1C84: "\u0442", 0x1C85: "\u0442",
+            0x1C86: "\u044a", 0x1C87: "\u0463", 0x1C88: "\ua64b",
+        }
+    )
     # UTS46 likewise maps the letterlike symbols in U+2100-U+214F
     # that denote a single plain letter (ℂ -> "c", ℊ -> "g",
     # ℋ/ℌ/ℍ/ℎ -> "h", ℐ/ℑ/ℹ/ⅈ -> "i", ℒ/ℓ -> "l", ℕ -> "n",
