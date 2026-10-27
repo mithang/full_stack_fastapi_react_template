@@ -179,9 +179,22 @@ def _normalize_cors_origin(origin: str) -> str:
     else:
         bare = None
     if bare is not None:
-        host = bare.split("/", 1)[0].split("?", 1)[0].split("#", 1)[0]
-        host = host.rsplit("@", 1)[-1].rsplit(":", 1)[0]
-        scheme = "http" if host in ("localhost", "127.0.0.1") else "https"
+        host_part = bare.split("/", 1)[0].split("?", 1)[0].split("#", 1)[0]
+        host_part = host_part.rsplit("@", 1)[-1]
+        # Bracketed IPv6 loopback: a naive rsplit(":", 1) mangles "[::1]"
+        # (no port) into "[:" and never matches, so extract up to "]".
+        # An unbracketed "::1" is likewise loopback, but browsers send it
+        # bracketed, so it is re-bracketed below when it leads the entry.
+        if host_part.startswith("["):
+            host = host_part.split("]", 1)[0] + "]" if "]" in host_part else host_part
+        elif host_part == "::1":
+            host = "::1"
+        else:
+            host = host_part.rsplit(":", 1)[0]
+        if bare.startswith("::1"):
+            bare = "[::1]" + bare[3:]
+            host = "[::1]"
+        scheme = "http" if host in ("localhost", "127.0.0.1", "[::1]") else "https"
         o = scheme + "://" + bare if not o.startswith("//") else scheme + ":" + o
     scheme_end = o.find("://")
     if scheme_end != -1:
