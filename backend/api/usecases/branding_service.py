@@ -18,7 +18,10 @@ class BrandingService:
 
     async def get_branding(self) -> BrandingDto | None:
         res = await self.branding_repository.get_branding()
-        logger.debug(f"Fetched branding: {res}")
+        # Log presence only: the api logger runs at DEBUG in all
+        # environments (iteration 432), and the full document carries
+        # contact_info PII.
+        logger.debug(f"Fetched branding: {'found' if res is not None else 'not found'}")
         if res is None:
             return None
         branding =  BrandingDto(**res.model_dump())
@@ -28,7 +31,8 @@ class BrandingService:
     
     async def update_branding(self, id: str, data: UpdateBrandingDto) -> None:
         try:
-            logger.debug(f"Updating branding with ID {id} using data: {data}")
+            # Log the id only: the full DTO carries contact_info PII.
+            logger.debug(f"Updating branding with ID {id}")
             updated = await self.branding_repository.update_branding(id, Branding(**data.model_dump(exclude_unset=True, exclude_none=True), app_name=data.identity.app_name))
         except Exception as e:
             raise BrandingException(str(e))
@@ -51,5 +55,6 @@ class BrandingService:
         branding_data = Branding(**data.model_dump(), app_name=data.identity.app_name)
         
         created_branding = await self.branding_repository.create_branding(data=branding_data)
-        logger.debug(f"Created default branding: {created_branding}")
+        # Log the tenant id only: the full document carries contact_info PII.
+        logger.debug(f"Created default branding for tenant {created_branding.tenant_id}")
         return BrandingDto(**created_branding.model_dump())
