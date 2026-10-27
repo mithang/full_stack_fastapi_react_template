@@ -301,6 +301,27 @@ def _encode_idna(host: str) -> str | None:
     # httpx/requests) which follows IDNA2008; fall back to the stdlib
     # codec if it is unavailable, and to None (leave the host alone)
     # if encoding fails. IDNAError subclasses UnicodeError.
+    # UTS46 maps the Latin ligatures U+FB00-U+FB06 to their letter
+    # expansions (ﬀ -> "ff", ﬁ -> "fi", ﬂ -> "fl", ﬃ -> "ffi",
+    # ﬄ -> "ffl", ﬅ/ﬆ -> "st") before IDNA processing, so browsers
+    # serialize an Origin from "https://ﬀ.de" as "https://ff.de" —
+    # but the `idna` package follows strict IDNA2008, where those
+    # codepoints are disallowed, so encoding failed and the entry was
+    # left alone and never matched. Map them up front (the stdlib
+    # codec did this too, which is why it got ligatures right while
+    # getting ß wrong); every other character keeps the IDNA2008 path
+    # below, so ß/ς behaviour is unchanged.
+    host = host.translate(
+        {
+            0xFB00: "ff",
+            0xFB01: "fi",
+            0xFB02: "fl",
+            0xFB03: "ffi",
+            0xFB04: "ffl",
+            0xFB05: "st",
+            0xFB06: "st",
+        }
+    )
     try:
         import idna as _idna
     except ImportError:
