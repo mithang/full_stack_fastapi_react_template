@@ -518,6 +518,23 @@ def _encode_idna(host: str) -> str | None:
             0x1C86: "\u044a", 0x1C87: "\u0463", 0x1C88: "\ua64b",
         }
     )
+    # UTS46 likewise maps two CJK radicals in U+2E80-U+2EFF to
+    # their unified ideographs (CJK RADICAL MOTHER U+2E9F -> U+6BCD,
+    # CJK RADICAL C-SIMPLIFIED TURTLE U+2EF3 -> U+9F9F), which
+    # the strict IDNA2008 path likewise rejects, so they are
+    # mapped here too, as the counterpart of the Cyrillic small
+    # letters above. They survive the pipeline's lower()
+    # unchanged, which is why they are the gap, and the mapped
+    # forms pass the strict path, so this is a translate-table
+    # fix, not a UTS46 retry. A full scan of U+2E80-U+2EFF
+    # confirmed exactly these two are strict-reject/UTS46-ok
+    # after lower(): the other radicals of the block fail under
+    # the package's UTS46 processing too and are deliberately
+    # left alone (the package cannot reproduce the browser
+    # form for them, as with U+1C89/U+1C8A above).
+    host = host.translate(
+        {0x2E9F: "\u6bcd", 0x2EF3: "\u9f9f"}
+    )
     # UTS46 likewise maps the letterlike symbols in U+2100-U+214F
     # that denote a single plain letter (ℂ -> "c", ℊ -> "g",
     # ℋ/ℌ/ℍ/ℎ -> "h", ℐ/ℑ/ℹ/ⅈ -> "i", ℒ/ℓ -> "l", ℕ -> "n",
