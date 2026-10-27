@@ -40,7 +40,11 @@ def is_development_environment() -> bool:
     return get_app_environment() == "development"
 
 
-PASSWORD_REGEX = re.compile(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]")
+# The {8,} and $ anchor matter: without them the pattern matched any
+# string whose first character was in the allowed set, so a 4-character
+# password like "Aa1!" — and one with trailing disallowed characters —
+# passed even though the error message promises "at least 8 characters".
+PASSWORD_REGEX = re.compile(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$")
 def validate_password(password: str) -> str:
     """Validate password strength. Raises InvalidOperationException if invalid."""
     if not PASSWORD_REGEX.match(password):
