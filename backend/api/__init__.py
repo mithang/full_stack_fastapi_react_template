@@ -1563,11 +1563,74 @@ def _encode_idna(host: str) -> str | None:
             0x33C6, 0x33DE, 0x33DF,
         ]
     )
+    # UTS46 maps the vulgar fractions VULGAR FRACTION ONE
+    # QUARTER U+00BC, ONE HALF U+00BD and THREE QUARTERS
+    # U+00BE to their digit-plus-fraction-slash expansions
+    # (¼ -> "1⁄4", ½ -> "1⁄2", ¾ -> "3⁄4") before IDNA
+    # processing, while the `idna` package rejects them under
+    # both strict and UTS46 processing — so a configured origin
+    # containing one was left alone and never matched under
+    # Starlette's exact allow_origins matching (and an
+    # underscore label even produced a wrong form, punycoding
+    # the raw fraction: "a_¼" -> "xn--a_-hfa" instead of the
+    # browser's "xn--a_14-2g7a"). The superscript and ordinal
+    # forms (²/³/¹/º/ª) need no entry here: the package's UTS46
+    # processing already maps them to plain forms, as the
+    # probe in this iteration confirmed.
+    _fraction_map = {0x00BC: "1⁄4", 0x00BD: "1⁄2", 0x00BE: "3⁄4"}
     try:
         encoded_labels = []
         for label in host.split("."):
             if not label:
                 encoded_labels.append(label)
+            elif any(ord(c) in _fraction_map for c in label):
+                # Remap the label and punycode the remapped form
+                # directly, as the FB29 branch does for its
+                # remapped labels: the fraction slash itself is
+                # not IDNA-valid, so the strict path cannot
+                # encode the remapped form. The gate requires
+                # the remap to change exactly the fractions (any
+                # other remapped character, e.g. a literal MICRO
+                # SIGN in a direct call, falls through to the
+                # existing branches unchanged); in the pipeline
+                # the up-front translate table has already folded
+                # such characters, so the gate passes there. A
+                # remap failure likewise falls through, so no
+                # label gains a new failure mode.
+                try:
+                    _frac_remapped = _idna.uts46_remap(
+                        label, std3_rules=False, transitional=False
+                    )
+                except (UnicodeError, ValueError):
+                    _frac_remapped = None
+                if (
+                    _frac_remapped is not None
+                    and _frac_remapped == label.translate(_fraction_map)
+                ):
+                    if any(ord(c) > 127 for c in _frac_remapped):
+                        encoded_labels.append(
+                            "xn--"
+                            + _frac_remapped.encode("punycode").decode(
+                                "ascii"
+                            )
+                        )
+                    else:
+                        encoded_labels.append(_frac_remapped)
+                elif any(ord(c) in _punycode_asis for c in label):
+                    encoded_labels.append(
+                        "xn--"
+                        + label.translate(_asis_map)
+                        .encode("punycode")
+                        .decode("ascii")
+                    )
+                elif "_" not in label:
+                    encoded_labels.append(_idna.encode(label).decode("ascii"))
+                elif any(ord(c) > 127 for c in label):
+                    encoded_labels.append(
+                        "xn--" + label.encode("punycode").decode("ascii")
+                    )
+                else:
+                    encoded_labels.append(label)
             elif any(ord(c) in _punycode_asis for c in label):
                 encoded_labels.append(
                     "xn--"
