@@ -316,7 +316,13 @@ def _encode_idna(host: str) -> str | None:
     # U+FEFF (verified against Node's WHATWG parser: "a\u034fb"
     # -> "ab", "a\u180bb" -> "ab", "a\ufeffb" -> "ab", and a
     # label of only such a form becomes empty, ".example", as
-    # with the forms above); the package likewise rejects them
+    # with the forms above); the same ignored class covers the
+    # variation selectors U+FE00-U+FE0F and the variation
+    # selectors supplement U+E0100-U+E01EF (verified against
+    # Node's WHATWG parser: "a\ufe00b" -> "ab", "a\ufe0fb" ->
+    # "ab", "a\U000e0100b" -> "ab", "a\U000e01efb" -> "ab", and
+    # a label of only such a form becomes empty, ".example");
+    # the package likewise rejects them
     # under its strict path, and its UTS46 retry is never reached
     # for them because no retry-guard set below contains them, so
     # they are stripped here too. Delete them up front, before
@@ -337,6 +343,8 @@ def _encode_idna(host: str) -> str | None:
         | {cp: None for cp in range(0x206A, 0x2070)}
         | {0x034F: None, 0xFEFF: None}
         | {cp: None for cp in range(0x180B, 0x180E)}
+        | {cp: None for cp in range(0xFE00, 0xFE10)}
+        | {cp: None for cp in range(0xE0100, 0xE01F0)}
     )
     # UTS46 maps the Latin ligatures U+FB00-U+FB06 to their letter
     # expansions (ﬀ -> "ff", ﬁ -> "fi", ﬂ -> "fl", ﬃ -> "ffi",
