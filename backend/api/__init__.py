@@ -322,6 +322,19 @@ def _encode_idna(host: str) -> str | None:
             0xFB06: "st",
         }
     )
+    # UTS46 likewise maps the fullwidth ASCII forms U+FF01-U+FF5E to
+    # their ASCII equivalents (ｅｘａｍｐｌｅ -> "example", including
+    # the fullwidth full stop U+FF0E -> ".") before IDNA processing,
+    # so browsers serialize an Origin from "https://ｅｘａｍｐｌｅ.com"
+    # as "https://example.com" — but the `idna` package follows strict
+    # IDNA2008, where those codepoints are disallowed, so encoding
+    # failed and the entry was left alone and never matched. Map them
+    # up front (each is exactly 0xFEE0 above its ASCII equivalent);
+    # U+FF5F/U+FF60 are not ASCII forms and are left to the IDNA2008
+    # path below, as are halfwidth forms.
+    host = host.translate(
+        {cp: chr(cp - 0xFEE0) for cp in range(0xFF01, 0xFF5F)}
+    )
     try:
         import idna as _idna
     except ImportError:
