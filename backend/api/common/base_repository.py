@@ -2,7 +2,7 @@ from typing import Any, Dict, List, Optional, TypeVar, Generic
 from beanie import Document, PydanticObjectId
 from beanie.operators import Set
 from beanie.odm.interfaces.aggregate import DocumentProjectionType, AggregationQuery
-from api.common.utils import get_logger
+from api.common.utils import get_logger, get_utc_now
 
 logger = get_logger(__name__)
 
@@ -51,6 +51,16 @@ class BaseRepository(Generic[T]):
         doc = await self.get(id)
         if not doc:
             return None
+        # updated_at is a creation-time default_factory (iteration 410),
+        # so without this every update left it at the creation time:
+        # branding was the only caller bumping it manually. Stamp it
+        # centrally instead, on a copy so the caller's dict is untouched;
+        # models without an updated_at field are left alone. This flows
+        # through the role/user overrides and the tenant, billing,
+        # subscription-plan and SSO callers, all of which go through
+        # this method.
+        if "updated_at" in self.model.model_fields:
+            data = {**data, "updated_at": get_utc_now()}
         await doc.update(Set(data))
         return doc
 
