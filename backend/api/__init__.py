@@ -3469,9 +3469,45 @@ def _encode_idna(host: str) -> str | None:
             elif "_" not in label:
                 encoded_labels.append(_idna.encode(label).decode("ascii"))
             elif any(ord(c) > 127 for c in label):
-                encoded_labels.append(
-                    "xn--" + label.encode("punycode").decode("ascii")
+                # An underscore label with a UTS46-remapped
+                # character: the whole-host UTS46 retry above
+                # rejects every underscore host, and no earlier
+                # per-label branch claims these members (the
+                # parenthesized branch claims its own range,
+                # and fraction/as-is/double-exclamation labels
+                # keep their own handling), so such a label
+                # reached this fallback and was punycoded raw
+                # — but browsers remap first ("a_ά" ->
+                # "a_ά" -> "xn--a_-x8b", "a_㊣" -> "a_正",
+                # "a_豈" -> "a_豈", "a_⼀" -> "a_一"), so the
+                # raw form never matched. Translate through
+                # the same five remap tables the as-is branch
+                # uses (Greek Extended, enclosed CJK, kangxi,
+                # parenthesized CJK, CJK compat) before
+                # punycoding; labels without one are unchanged,
+                # since every translate is identity for them.
+                # A remap that leaves the label pure ASCII
+                # (e.g. "a_㉐" -> "a_pte") passes through
+                # unchanged, as browsers leave ASCII labels
+                # alone, instead of gaining a bogus "xn--"
+                # prefix; a remap that still has non-ASCII
+                # punycodes directly, as before.
+                _us_remapped = (
+                    label.translate(_greek_extended_remap)
+                    .translate(_enclosed_cjk_remap)
+                    .translate(_kangxi_remap)
+                    .translate(_parenthesized_cjk_remap)
+                    .translate(_cjk_compat_remap)
                 )
+                if any(ord(c) > 127 for c in _us_remapped):
+                    encoded_labels.append(
+                        "xn--"
+                        + _us_remapped.encode("punycode").decode(
+                            "ascii"
+                        )
+                    )
+                else:
+                    encoded_labels.append(_us_remapped)
             else:
                 encoded_labels.append(label)
         return ".".join(encoded_labels)
