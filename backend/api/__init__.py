@@ -301,6 +301,32 @@ def _encode_idna(host: str) -> str | None:
     # httpx/requests) which follows IDNA2008; fall back to the stdlib
     # codec if it is unavailable, and to None (leave the host alone)
     # if encoding fails. IDNAError subclasses UnicodeError.
+    # Browsers strip the invisible codepoints SOFT HYPHEN U+00AD,
+    # ZERO WIDTH SPACE U+200B, WORD JOINER U+2060, FUNCTION
+    # APPLICATION U+2061, INVISIBLE TIMES U+2062, INVISIBLE
+    # SEPARATOR U+2063, INVISIBLE PLUS U+2064, and the deprecated
+    # format characters U+206A-U+206F from a host before IDNA
+    # processing (WHATWG URL serialization drops them: "a\u200bb"
+    # -> "ab", "mün\u200bchen" -> "xn--mnchen-3ya"), while the
+    # `idna` package rejects every one of them under strict and
+    # UTS46 processing, so a configured origin containing one was
+    # left alone and never matched. Delete them up front, before
+    # every other mapping and branch below, so mixed labels also
+    # serialize as the browser does ("a©\u200b" -> "xn--a-nca",
+    # "a\u203c\u200b" -> "a!!", "a\u00bc\u200b" ->
+    # "xn--a14-pt0a"). A label consisting only of stripped forms
+    # becomes empty, which the label loop below already preserves
+    # as an empty label (".example"), matching the browser's
+    # hostname for that input. Plain labels containing one were
+    # previously left alone (the strict path rejected them), while
+    # mixed as-is / double-exclamation labels punycoded the
+    # invisible raw into a wrong, never-matching form; stripping
+    # corrects both, and no correctly-matching host changes.
+    host = host.translate(
+        {0x00AD: None, 0x200B: None}
+        | {cp: None for cp in range(0x2060, 0x2065)}
+        | {cp: None for cp in range(0x206A, 0x2070)}
+    )
     # UTS46 maps the Latin ligatures U+FB00-U+FB06 to their letter
     # expansions (ﬀ -> "ff", ﬁ -> "fi", ﬂ -> "fl", ﬃ -> "ffi",
     # ﬄ -> "ffl", ﬅ/ﬆ -> "st") before IDNA processing, so browsers
