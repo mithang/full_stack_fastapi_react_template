@@ -2,7 +2,7 @@ from typing import Any
 from beanie import PydanticObjectId
 from pydantic import EmailStr
 from api.common.exceptions import InvalidOperationException
-from api.common.utils import get_logger
+from api.common.utils import get_logger, get_utc_now
 from api.core.exceptions import EmailAlreadyExistsException, RoleNotFoundException, UserNotFoundException
 from api.domain.dtos.dashboard_dto import TimeSeriesDto
 from api.domain.entities.user import User
@@ -116,6 +116,10 @@ class UserService:
             raise UserNotFoundException(user_id)
         hashed_password = hash_it(new_password)
         existing.password = hashed_password
+        # Direct .save() bypasses BaseRepository.update()'s central
+        # updated_at stamp (iteration 411), so stamp it here or a password
+        # change leaves updated_at at creation time forever.
+        existing.updated_at = get_utc_now()
         await existing.save()
         return existing
 
