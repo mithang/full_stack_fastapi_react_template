@@ -669,6 +669,17 @@ def _normalize_cors_origin(origin: str) -> str:
 
             _decoded_seg = re.sub(r"%([0-9a-f]{2})", _decode_safe_hex, _host_seg)
             _decoded_seg = re.sub(r"(?:%[0-9a-f]{2})+", _decode_utf8_run, _decoded_seg)
+            # The lower() at the top of this helper ran before
+            # decoding, so a decoded character can reintroduce
+            # uppercase that browsers never send: "%41" decodes to
+            # "A" (not "a") and "%c3%84" to "Ä" (not "ä"), and the
+            # `idna` package rejects uppercase outright, so the IDN
+            # step below returned None and such an entry never
+            # matched. Browsers serialize hosts lowercased, so
+            # lowercase the decoded segment here; the port segment
+            # is untouched, and a segment with no decoding is
+            # already lowercase from the top.
+            _decoded_seg = _decoded_seg.lower()
             if _decoded_seg != _host_seg:
                 o = o[: scheme_end + 3] + _decoded_seg
                 if _sep:
