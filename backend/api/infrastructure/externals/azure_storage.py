@@ -1,9 +1,12 @@
 
+import logging
 from datetime import datetime, timedelta, timezone
 from azure.storage.blob import BlobServiceClient, generate_blob_sas, BlobSasPermissions
 from fastapi import UploadFile
 
 from api.core.exceptions import AzureBlobStorageException
+
+logger = logging.getLogger(__name__)
 
 
 class AzureBlobStorage:
@@ -19,8 +22,12 @@ class AzureBlobStorage:
             blob_client.upload_blob(data, overwrite=True)
             return blob_client.url
         except Exception as e:
-            raise AzureBlobStorageException(str(e))
-    
+            # Azure SDK error strings carry infra internals (account,
+            # container, request id) and, via the ApiBaseException handler,
+            # reach the client verbatim; keep them server-side only.
+            logger.error(f"Failed to upload file to Azure Blob Storage: {e}")
+            raise AzureBlobStorageException("Failed to upload file.")
+
     async def generate_read_url(self, blob_name: str, expires_in: int = 3600) -> str:
         try:
             sas_token = generate_blob_sas(
@@ -37,4 +44,6 @@ class AzureBlobStorage:
             blob_client = self.container_client.get_blob_client(blob_name)
             return f"{blob_client.url}?{sas_token}"
         except Exception as e:
-            raise AzureBlobStorageException(str(e))
+            # Same verbatim-disclosure class as the upload path above.
+            logger.error(f"Failed to generate Azure Blob Storage read URL: {e}")
+            raise AzureBlobStorageException("Failed to generate file URL.")
