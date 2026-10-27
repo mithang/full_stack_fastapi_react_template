@@ -1,5 +1,6 @@
 import ipaddress
 import os
+import re
 from fastapi import FastAPI, APIRouter, Request, status
 from contextlib import asynccontextmanager
 
@@ -577,20 +578,31 @@ def _normalize_cors_origin(origin: str) -> str:
         # a browser serializes an Origin from
         # "https://app.example%2ecom" as "https://app.example.com" —
         # but the configured entry kept "%2e" and never matched under
-        # exact matching. Decode "%2e" in the host here, before the
-        # trailing-dot / port / IDN steps below (which then apply to
-        # the decoded form, e.g. a decoded trailing dot is stripped).
+        # exact matching. The same holds for any other percent-encoded
+        # host-safe ASCII character (e.g. "%61" -> "a", "%31" -> "1",
+        # "%2d" -> "-", "%5f" -> "_", all confirmed against Node's
+        # WHATWG URL serializer), so decode every "%XX" whose byte is
+        # a letter, digit, hyphen, underscore or dot in the host
+        # here, before the trailing-dot / port / IDN steps below
+        # (which then apply to the decoded form, e.g. a decoded
+        # trailing dot is stripped and a decoded IPv4 canonicalizes).
         # o was lowercased at the top, so "%2E" already reads "%2e".
         # Only the host is decoded, and only when it holds at most one
         # colon (a port separator): unbracketed IPv6 hosts and
         # bracketed hosts (where "%" marks a zone id) are left alone,
         # and other percent-encodings are deliberately untouched —
-        # "%2f" in a host is an invalid URL for browsers, not a host
-        # that ever needs to match.
+        # "%2f", "%3a" and "%25" in a host are invalid URLs for
+        # browsers (Node rejects them), not hosts that ever need to
+        # match.
         _rest_pre = o[scheme_end + 3 :]
         if not _rest_pre.startswith("[") and _rest_pre.count(":") <= 1:
             _host_seg, _sep, _port_seg = _rest_pre.partition(":")
-            _decoded_seg = _host_seg.replace("%2e", ".")
+
+            def _decode_safe_hex(_m: re.Match[str]) -> str:
+                _ch = chr(int(_m.group(1), 16))
+                return _ch if _ch.isascii() and (_ch.isalnum() or _ch in "-_.") else _m.group(0)
+
+            _decoded_seg = re.sub(r"%([0-9a-f]{2})", _decode_safe_hex, _host_seg)
             if _decoded_seg != _host_seg:
                 o = o[: scheme_end + 3] + _decoded_seg
                 if _sep:
