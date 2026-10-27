@@ -124,7 +124,13 @@ async def capture_audit_log(
     
     file_path = create_temp_file(file_name)
 
-    with open(file_path, "a") as f:
+    # Explicit utf-8, mirroring the read side (iteration 392): the
+    # default encoding depends on locale (under LANG=C it is ascii),
+    # so a non-ASCII entry (e.g. a non-ASCII request path in the
+    # middleware's changes info) would raise UnicodeEncodeError here
+    # and the entry would be silently lost — the middleware catches
+    # the failure and continues without it.
+    with open(file_path, "a", encoding="utf-8") as f:
         f.write(log_data.model_dump_json() + "\n")
     
 
