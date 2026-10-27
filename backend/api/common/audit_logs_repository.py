@@ -48,7 +48,14 @@ class AuditLogRepository:
 
         for file_path in files:
             try:
-                with open(file_path, "r") as f:
+                # Explicit utf-8 with replacement: the default encoding
+                # depends on locale (under LANG=C it is ascii, so any
+                # non-ASCII audit entry would abort the listing), and a
+                # torn multi-byte character from a concurrent append
+                # would raise UnicodeDecodeError mid-iteration. With
+                # errors="replace" such a line just fails JSON parsing
+                # below and is skipped like any other torn line.
+                with open(file_path, "r", encoding="utf-8", errors="replace") as f:
                     for line in f:
                         try:
                             obj = json.loads(line)
@@ -108,7 +115,7 @@ class AuditLogRepository:
         results: List[AuditLogDto] = []
         for file_path in files:
             try:
-                with open(file_path, "r") as f:
+                with open(file_path, "r", encoding="utf-8", errors="replace") as f:
                     for line in f:
                         try:
                             obj = json.loads(line)
