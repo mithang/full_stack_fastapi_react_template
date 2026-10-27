@@ -1662,6 +1662,33 @@ def _encode_idna(host: str) -> str | None:
             0x2051, 0x2052, 0x2053, 0x2054, 0x2055, 0x2056,
             0x2057, 0x2058, 0x2059, 0x205A, 0x205B, 0x205C,
             0x205D, 0x205E,
+            # Combining marks U+1ACF-U+1AEB (same class as the
+            # Latin-1 symbols above, but marks rather than
+            # symbols): browsers serialize them as-is
+            # ("a᫏" -> "xn--a-58k", "᫏a" ->
+            # "xn--a-48k", "a᪾᫏" -> "xn--a-67kvc",
+            # "a_᫏" -> "xn--a_-lrq"), while the `idna`
+            # package rejects them under strict and UTS46
+            # processing — they are unassigned in this
+            # Python's Unicode data (15.0.0), so no
+            # category-gated branch below can qualify them
+            # and neither the strict path nor the retry
+            # reproduces them. Verified as-is against Node's
+            # WHATWG parser for every member across six
+            # shapes (after a base letter, label-initial,
+            # mid-label, underscore, and mixed with U+1ABE
+            # in both orders). Deliberately excluded:
+            # U+1ADE and U+1ADF, which browsers reject in
+            # every shape, matching the helper's None, and
+            # U+1AC0 and the rest of U+1AB0-U+1AC0, which
+            # are browser-rejected at a label start as
+            # noted in the U+1DFA branch below.
+            0x1ACF,
+            0x1AD0, 0x1AD1, 0x1AD2, 0x1AD3, 0x1AD4, 0x1AD5,
+            0x1AD6, 0x1AD7, 0x1AD8, 0x1AD9, 0x1ADA, 0x1ADB,
+            0x1ADC, 0x1ADD,
+            0x1AE0, 0x1AE1, 0x1AE2, 0x1AE3, 0x1AE4, 0x1AE5,
+            0x1AE6, 0x1AE7, 0x1AE8, 0x1AE9, 0x1AEA, 0x1AEB,
         ]
     )
     # UTS46 maps the vulgar fractions VULGAR FRACTION ONE
@@ -1902,11 +1929,12 @@ def _encode_idna(host: str) -> str | None:
                 # the same branch and the same remapped-first-
                 # character gate below. (U+1AC0 and the rest of
                 # U+1AB0-U+1AC0 are browser-rejected at a label
-                # start, matching the helper's None, and the
+                # start, matching the helper's None. The
                 # U+1ACF-U+1AEB forms are unassigned in this
                 # Python's Unicode data, so they are not part
-                # of this branch; a label starting with one of
-                # them still falls through, as before.)
+                # of this branch; they are handled by the
+                # _punycode_asis branch above instead, which
+                # is checked before this branch.)
                 # The label is punycoded in its UTS46-remapped
                 # form, not raw: the remap reorders combining
                 # marks canonically ("᷺̀" -> "᷺̀" ->
