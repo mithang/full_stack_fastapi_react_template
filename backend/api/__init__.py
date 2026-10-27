@@ -146,7 +146,18 @@ if is_tenancy_enabled():
 # Scheme and host are case-insensitive, and browsers send them
 # lowercased, so also lowercase each entry: an uppercase typo like
 # "HTTPS://App.Example.com" would otherwise silently never match.
-_cors_origins = [o for o in (o.strip().rstrip("/").lower() for o in settings.cors_allow_origins.split(",")) if o]
+# Browsers also omit the default port from the Origin header, so a
+# configured "https://app.example.com:443" (or http :80) would
+# likewise silently never match under exact matching; strip those
+# default ports. Non-default ports (e.g. :3000, :8443) are kept.
+def _normalize_cors_origin(origin: str) -> str:
+    o = origin.strip().rstrip("/").lower()
+    if o.startswith("https://") and o.endswith(":443"):
+        return o[:-4]
+    if o.startswith("http://") and o.endswith(":80"):
+        return o[:-3]
+    return o
+_cors_origins = [o for o in (_normalize_cors_origin(o) for o in settings.cors_allow_origins.split(",")) if o]
 # A "*" entry would defeat the exact-origins promise above: with
 # allow_credentials=True, a wildcard origin is reflected back to the
 # requester, so any site could make credentialed (cookie) calls; and
