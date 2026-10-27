@@ -1862,6 +1862,16 @@ def _encode_idna(host: str) -> str | None:
     # UTS46 maps DOUBLE EXCLAMATION MARK U+203C to "!!" (see the
     # dedicated branch in the label loop below).
     _double_excl_map = {0x203C: "!!"}
+    # A label combining a fraction with a DOUBLE EXCLAMATION MARK
+    # ("¼‼" -> "1⁄4!!" -> "xn--14!!-0g7a") needs both expansions
+    # in the fraction branch's gate below: the fraction branch
+    # claims such a label before the double-exclamation branch,
+    # and its gate previously required the remap to equal the
+    # label with exactly the fractions expanded, so the "!!"
+    # expansion failed the gate and the label fell through to
+    # None (or, with an as-is mark, to the raw-fraction
+    # punycode) instead of the browser's form.
+    _fraction_excl_map = _fraction_map | _double_excl_map
     try:
         encoded_labels = []
         for label in host.split("."):
@@ -1873,8 +1883,9 @@ def _encode_idna(host: str) -> str | None:
                 # remapped labels: the fraction slash itself is
                 # not IDNA-valid, so the strict path cannot
                 # encode the remapped form. The gate requires
-                # the remap to change exactly the fractions (any
-                # other remapped character, e.g. a literal MICRO
+                # the remap to change exactly the fractions and
+                # any DOUBLE EXCLAMATION MARKS (any other
+                # remapped character, e.g. a literal MICRO
                 # SIGN in a direct call, falls through to the
                 # existing branches unchanged); in the pipeline
                 # the up-front translate table has already folded
@@ -1899,7 +1910,8 @@ def _encode_idna(host: str) -> str | None:
                     # as-is marks verbatim, and accept the result
                     # only under the same gate as the normal path
                     # (it must equal the label with exactly the
-                    # fractions expanded): any other remapped
+                    # fractions and double exclamation marks
+                    # expanded): any other remapped
                     # character (e.g. MICRO SIGN -> mu, or a
                     # remap that raises, e.g. an ellipsis or a
                     # browser-rejected U+1ADE/U+1ADF mark) fails
@@ -1928,12 +1940,13 @@ def _encode_idna(host: str) -> str | None:
                         except (UnicodeError, ValueError):
                             _frac_recovered = None
                         if _frac_recovered == label.translate(
-                            _fraction_map
+                            _fraction_excl_map
                         ):
                             _frac_remapped = _frac_recovered
                 if (
                     _frac_remapped is not None
-                    and _frac_remapped == label.translate(_fraction_map)
+                    and _frac_remapped
+                    == label.translate(_fraction_excl_map)
                 ):
                     if any(ord(c) > 127 for c in _frac_remapped):
                         encoded_labels.append(
