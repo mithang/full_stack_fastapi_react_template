@@ -34,7 +34,18 @@ class SSOAuthProvider:
         allow_insecure_http = settings.fastapi_env != "production"
         redirect_uri = get_sso_redirect_uri(provider_name, domain)
 
-        self.redirect_uri_to_app = domain
+        # redirect_uri_to_app must be a complete URL, not a bare domain:
+        # the callback builds RedirectResponse(url=f"{...}/dashboard"),
+        # and a scheme-less Location value ("tenant.example.com/dashboard")
+        # is resolved by browsers as a relative path against the callback
+        # URL instead of as the app origin, stranding a successfully
+        # authenticated user on a bogus path. Mirror get_sso_redirect_uri's
+        # scheme/port logic: https on the bare domain in production,
+        # http + :3000 (the Vite dev server) otherwise.
+        if settings.fastapi_env == "production":
+            self.redirect_uri_to_app = f"https://{domain}"
+        else:
+            self.redirect_uri_to_app = f"http://{domain}:3000"
 
         sso: fastapi_sso.SSOBase = None
         match provider_name:
