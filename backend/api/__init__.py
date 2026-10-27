@@ -3572,6 +3572,45 @@ def _encode_idna(host: str) -> str | None:
                 # own handling.
                 if "\u321f" in _us_remapped:
                     raise ValueError("unassigned underscore")
+                # A UTS46 bidi violation in an underscore label:
+                # the `idna` package's strict path rejects these,
+                # but this fallback punycoded them raw, producing
+                # a form no browser origin could carry, so it
+                # never matched. UTS46's RTL-label rules require
+                # a label containing a strong-RTL character
+                # (R/AL) to start with one, to end with a
+                # strong-RTL character, a European or
+                # Arabic-Indic digit, or a nonspacing mark, to
+                # contain no Latin (L) character, and to not mix
+                # European and Arabic-Indic digits ("a_م" /
+                # "م_a" / "م_مa" / "1_م" / "٣_م" / "م_٣1" all
+                # fail in the WHATWG parser, while "م_م" /
+                # "م_٣" / "م_1" / "م_1م" / "م_م\u0301" pass).
+                # A label containing an Arabic-Indic digit but
+                # no strong-RTL character is likewise neither a
+                # valid RTL label (which needs R/AL) nor a valid
+                # LTR label (which may not contain AN), so
+                # "٣_٣" / "٣_1" / "a_٣" also fail in the WHATWG
+                # parser. Raise, so the outer handler returns
+                # None for the whole host, as for other rejected
+                # labels. Labels with no R/AL/AN character keep
+                # their existing forms, and labels claimed by an
+                # earlier branch keep their own handling.
+                _us_bidi = [
+                    _us_rtl_unicodedata.bidirectional(c)
+                    for c in _us_remapped
+                ]
+                if any(b in ("R", "AL") for b in _us_bidi):
+                    if (
+                        _us_bidi[0] not in ("R", "AL")
+                        or _us_bidi[-1]
+                        not in ("R", "AL", "EN", "AN", "NSM")
+                        or "L" in _us_bidi
+                        or ("EN" in _us_bidi and "AN" in _us_bidi)
+                    ):
+                        raise ValueError("rtl bidi underscore")
+                elif "AN" in _us_bidi:
+                    raise ValueError("an underscore without rtl")
                 if any(ord(c) > 127 for c in _us_remapped):
                     encoded_labels.append(
                         "xn--"
