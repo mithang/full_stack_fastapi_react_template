@@ -252,11 +252,28 @@ def _normalize_cors_origin(origin: str) -> str:
                 is_loopback_v6 = ipaddress.IPv6Address(host[1:-1]).is_loopback
             except ValueError:
                 is_loopback_v6 = False
+        # The same http assumption applies to non-globally-routable
+        # IPv6 hosts (ULA fc00::/7, link-local fe80::/10, and the
+        # loopback/unspecified forms already covered above): a
+        # scheme-less "[fd00::1]:3000" — a dev frontend reached over
+        # the LAN over IPv6, e.g. from a phone — previously became
+        # https://[fd00::1]:3000 and never matched the plain-http
+        # Origin the browser sends, just as scheme-less private IPv4
+        # did before iteration 509. Public IPv6 hosts still assume
+        # https; explicit schemes are untouched, and unparseable
+        # (e.g. zone-id) hosts fall back to https as before.
+        is_private_v6 = False
+        if host.startswith("[") and host.endswith("]"):
+            try:
+                is_private_v6 = not ipaddress.IPv6Address(host[1:-1]).is_global
+            except ValueError:
+                is_private_v6 = False
         scheme = (
             "http"
             if host in ("localhost", "[::1]")
             or is_loopback_v6
             or is_private_v4
+            or is_private_v6
             or host.startswith("127.")
             else "https"
         )
