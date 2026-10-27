@@ -66,11 +66,15 @@ def get_date_range(filter_type: str):
     """Return (start, end, group_format) based on filter type"""
     now = get_utc_now()
     if filter_type == "today":
-        start = datetime(now.year, now.month, now.day)
+        # tzinfo=timezone.utc, not a naive midnight: end (now) and the
+        # stored created_at values are UTC-aware, so a naive start mixed
+        # aware/naive datetimes in the same $gte/$lte match (iteration
+        # 406 fixed the same class in the branding fallback).
+        start = datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
         group_format = "%H:00"  # group by hour
     elif filter_type == "this_week":
         start = now - timedelta(days=now.weekday())  # Monday start
-        start = datetime(start.year, start.month, start.day)
+        start = datetime(start.year, start.month, start.day, tzinfo=timezone.utc)
         group_format = "%Y-%m-%d"  # group by day
     elif filter_type == "last_3_months":
         start = now - timedelta(days=90)
