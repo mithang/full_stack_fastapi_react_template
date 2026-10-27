@@ -2489,6 +2489,101 @@ def _encode_idna(host: str) -> str | None:
                     )
                 else:
                     encoded_labels.append(label)
+            elif any(ord(c) in _punycode_asis for c in label) and any(
+                ord(c) in _punycode_arabic_presentation_b
+                or ord(c) in _punycode_arabic_presentation_a
+                for c in label
+            ):
+                # An as-is label mixed with an Arabic
+                # Presentation Form in an RTL context: the
+                # browser carries the form's UTS46-remapped
+                # Arabic letter when the as-is symbol sits
+                # between strong-RTL characters ("ا©ﺀ" ->
+                # "ا©ء" -> "xn--gba41zqa"), while the
+                # iteration-633 gate leaves every such mix
+                # at None. The remap is per character, so a
+                # whole-label remap failure (e.g. an
+                # unassigned mark) cannot mask a good
+                # character, and the gates mirror the UTS46
+                # bidi rule for RTL labels, checked on the
+                # remapped form: the first character must be
+                # strong RTL (R/AL, which covers the
+                # presentation forms themselves), the last
+                # character strong RTL or a digit
+                # (R/AL/EN/AN), European and Arabic-Indic
+                # digits must not mix, and every character
+                # must be strong RTL, a digit, a neutral
+                # (ON/ET/CS) or an underscore. Checking the
+                # remapped form matters: an as-is expansion
+                # to Latin letters (℃ -> "°c", a square
+                # form -> "m∕s") fails the neutral gate,
+                # matching the browser's rejection, while
+                # neutral expansions (‑ -> "‐", ″ -> "′′")
+                # pass, matching the browser's carried
+                # form. A label failing any gate (an as-is
+                # symbol at an edge, an LTR context, an
+                # unassigned mark, a Greek/enclosed mix, a
+                # joiner, or a mixed-digit label) falls
+                # through to the same "_" / strict / plain
+                # handling below, so its behaviour is
+                # unchanged. Placed before the as-is branch,
+                # whose Arabic gate would otherwise skip the
+                # mix entirely.
+                import unicodedata as _rtl_unicodedata
+
+                try:
+                    _rtl_remapped_chars = [
+                        _idna.uts46_remap(
+                            c, std3_rules=False, transitional=False
+                        )
+                        for c in label
+                    ]
+                except (UnicodeError, ValueError):
+                    _rtl_remapped_chars = None
+                _rtl_remapped = (
+                    "".join(_rtl_remapped_chars)
+                    if _rtl_remapped_chars is not None
+                    else None
+                )
+                if (
+                    _rtl_remapped is not None
+                    and _rtl_unicodedata.bidirectional(_rtl_remapped[0])
+                    in ("R", "AL")
+                    and _rtl_unicodedata.bidirectional(_rtl_remapped[-1])
+                    in ("R", "AL", "EN", "AN")
+                    and not (
+                        any(
+                            _rtl_unicodedata.bidirectional(c) == "EN"
+                            for c in _rtl_remapped
+                        )
+                        and any(
+                            _rtl_unicodedata.bidirectional(c) == "AN"
+                            for c in _rtl_remapped
+                        )
+                    )
+                    and all(
+                        c == "_"
+                        or _rtl_unicodedata.bidirectional(c)
+                        in ("R", "AL", "EN", "AN", "ON", "ET", "CS")
+                        for c in _rtl_remapped
+                    )
+                ):
+                    encoded_labels.append(
+                        "xn--"
+                        + _rtl_remapped.translate(_asis_map)
+                        .encode("punycode")
+                        .decode("ascii")
+                    )
+                elif "_" not in label:
+                    encoded_labels.append(
+                        _idna.encode(label).decode("ascii")
+                    )
+                elif any(ord(c) > 127 for c in label):
+                    encoded_labels.append(
+                        "xn--" + label.encode("punycode").decode("ascii")
+                    )
+                else:
+                    encoded_labels.append(label)
             elif any(ord(c) in _punycode_asis for c in label) and not any(
                 ord(c) in _punycode_arabic_presentation_b
                 or ord(c) in _punycode_arabic_presentation_a
@@ -2503,8 +2598,8 @@ def _encode_idna(host: str) -> str | None:
                 # matched; falling through reaches the strict
                 # path, which rejects the presentation form and
                 # returns None for the rejected shapes (the
-                # remapped RTL-context shapes stay a separate
-                # candidate).
+                # remapped RTL-context shapes are handled by
+                # the branch above).
                 # A label combining an as-is form with DOUBLE
                 # EXCLAMATION MARK U+203C ("©‼" -> browser
                 # "xn--!!-sda") previously punycoded the raw
