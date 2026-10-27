@@ -435,6 +435,9 @@ class AuthService:
             raise InvalidOperationException(f"The email '{payload.email}' is already in use by another account. Cannot change email.")
         
         user.email = payload.email
+        # Direct .save() bypasses BaseRepository.update()'s central
+        # updated_at stamp (iteration 411), so stamp it here.
+        user.updated_at = get_utc_now()
         logger.info(f"User {user.id} changed email to {payload.email}.")
         await user.save()
         html = notify_email_change_template_html(user_first_name=user.first_name)
