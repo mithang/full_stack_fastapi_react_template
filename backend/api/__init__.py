@@ -1149,6 +1149,19 @@ def _encode_idna(host: str) -> str | None:
         + list(range(0x33D9, 0x33DE))
         + list(range(0x33E0, 0x3400))
     )
+    # Arabic Presentation Forms-B U+FE80-U+FEFC: UTS46 maps each to
+    # its standard Arabic letter (isolated/final form -> base letter,
+    # e.g. ﺀ -> ء, ﺋ -> ئ, ﻼ -> لا) and punycodes the result, while
+    # strict IDNA2008 rejects them all, so the helper left a
+    # configured origin containing one alone and never matched under
+    # Starlette's exact allow_origins matching. The whole run shares
+    # the class, so it is one range; U+FEFD-U+FEFF fail under both
+    # strict and UTS46 (and are browser-rejected) and are left alone.
+    # Note the UTS46 bidi rule: an LTR label cannot mix in these RTL
+    # letters, so "aﺀb" is invalid in both the browser and the
+    # package — the valid mixed forms are RTL-context ones (e.g.
+    # "اﺀ"), which the retry reproduces exactly.
+    _punycode_arabic_presentation_b = frozenset(range(0xFE80, 0xFEFD))
     if any(
         ord(c) in _punycode_modifiers or ord(c) in _punycode_letterlike
         or ord(c) in _punycode_digraphs or ord(c) in _punycode_cherokee
@@ -1174,6 +1187,7 @@ def _encode_idna(host: str) -> str | None:
         or ord(c) in _punycode_kangxi
         or ord(c) in _punycode_enclosed_cjk
         or ord(c) in _punycode_square_cjk
+        or ord(c) in _punycode_arabic_presentation_b
         for c in host
     ):
         try:
