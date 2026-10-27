@@ -1006,6 +1006,20 @@ def _encode_idna(host: str) -> str | None:
     # confirmed they are the only strict-reject/UTS46-ok members
     # of the block after lower().
     _punycode_japanese_digraphs = frozenset([0x309F, 0x30FF])
+    # MODIFIER LETTER US U+A770 (ꝰ), MODIFIER LETTER CAPITAL H
+    # WITH STROKE U+A7F8 (ꟸ) and MODIFIER LETTER SMALL LIGATURE
+    # OE U+A7F9 (ꟹ): the strict IDNA2008 path rejects them,
+    # while UTS46 punycodes them as-is (ꝰ -> "xn--948a", ꟸ ->
+    # "xn--1ea", ꟹ -> "xn--bga"), matching Node's WHATWG parser.
+    # A translate table cannot express this class (there is no
+    # plain-letter target), so they join the UTS46 retry here; the
+    # pipeline's lower() leaves them unchanged, so the forms above
+    # are what the retry sees in practice. A full scan of
+    # U+A700-U+A7FF confirmed they are the only strict-reject/
+    # UTS46-ok members of the block after lower() not already
+    # handled by a translate table (U+A7F2-U+A7F4 map to plain
+    # letters and need no retry entry).
+    _punycode_latin_modifiers = frozenset([0xA770, 0xA7F8, 0xA7F9])
     if any(
         ord(c) in _punycode_modifiers or ord(c) in _punycode_letterlike
         or ord(c) in _punycode_digraphs or ord(c) in _punycode_cherokee
@@ -1023,6 +1037,7 @@ def _encode_idna(host: str) -> str | None:
         or ord(c) in _punycode_cjk_repeat
         or ord(c) in _punycode_ethiopic
         or ord(c) in _punycode_japanese_digraphs
+        or ord(c) in _punycode_latin_modifiers
         for c in host
     ):
         try:
