@@ -573,8 +573,32 @@ def _encode_idna(host: str) -> str | None:
             0x213C, 0x213D, 0x213E, 0x213F,
         ]
     )
+    # The same class covers the Latin digraphs U+0132-U+0133
+    # (Ĳ/ĳ), U+01C4-U+01CC (Ǆ/ǅ/ǆ, Ǉ/ǈ/ǉ, Ǌ/ǋ/ǌ) and
+    # U+01F1-U+01F3 (Ǳ/ǲ/ǳ): UTS46 maps some to plain letters
+    # (Ĳ -> "ij", Ǉ -> "lj", Ǌ -> "nj", Ǳ -> "dz") and punycodes
+    # others as-is (Ǆ -> "xn--d-toa"), but the strict IDNA2008
+    # path rejects them all, so a configured origin containing one
+    # was left alone and never matched. A translate table cannot
+    # express the mixed class, so they join the UTS46 retry here;
+    # the pipeline's lower() already folds the capitals to their
+    # small forms before this helper runs, so the small forms are
+    # what the retry sees in practice, but all forms are listed so
+    # the helper stays correct if called directly. Verified
+    # against Node's WHATWG parser, which matches the package's
+    # UTS46 processing for every form above.
+    _punycode_digraphs = frozenset(
+        [
+            0x0132, 0x0133,
+            0x01C4, 0x01C5, 0x01C6,
+            0x01C7, 0x01C8, 0x01C9,
+            0x01CA, 0x01CB, 0x01CC,
+            0x01F1, 0x01F2, 0x01F3,
+        ]
+    )
     if any(
         ord(c) in _punycode_modifiers or ord(c) in _punycode_letterlike
+        or ord(c) in _punycode_digraphs
         for c in host
     ):
         try:
