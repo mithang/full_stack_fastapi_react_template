@@ -72,7 +72,7 @@ export function TenantsProvider({ children }: TenantsProviderProps) {
         // AdvanceTable's display guards (iterations 134-135).
         const parsedSkip = skip ? parseInt(skip) : 0;
         const parsedLimit = limit ? parseInt(limit) : 10;
-        const safeSkip = Number.isFinite(parsedSkip) && parsedSkip >= 0 ? parsedSkip : 0;
+        const safeSkip = Number.isFinite(parsedSkip) && parsedSkip >= 0 ? Math.min(parsedSkip, 10000) : 0;
         // Clamp to the backend's Query bound (limit le=100), mirroring the
         // audit-log provider (iteration 398): a hand-edited ?limit=500
         // previously passed the guards above but still failed with 422.
