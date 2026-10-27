@@ -1428,6 +1428,58 @@ def _encode_idna(host: str) -> str | None:
                 except (UnicodeError, ValueError):
                     _fb29_mapped_ok = False
                 if not _fb29_mapped_ok:
+                    # UTS46-mapped symbols mixed with U+FB29
+                    # (e.g. "¼﬩"): the gate above fails because
+                    # browsers map the symbol first (¼ -> "1⁄4")
+                    # while the label as written is unchanged by
+                    # remapping, so remap the label and qualify
+                    # the remapped form instead — the punycode of
+                    # "1⁄4+" is exactly the browser form
+                    # ("¼﬩" -> "xn--14+-ot0a"). The remapped
+                    # label must still contain the U+FB29 "+",
+                    # remap idempotently, and pass the same
+                    # category/bidirectional/leading-mark gates,
+                    # so a symbol browsers reject or remap to a
+                    # disallowed form still falls through.
+                    try:
+                        _fb29_remapped = _idna.uts46_remap(
+                            _fb29_mapped_t,
+                            std3_rules=False,
+                            transitional=False,
+                        )
+                        _fb29_mapped_ok = (
+                            _fb29_remapped != _fb29_mapped_t
+                            and "+" in _fb29_remapped
+                            and _fb29_unicodedata.category(
+                                _fb29_remapped[0]
+                            )[0]
+                            != "M"
+                            and all(
+                                c in _fb29_label_chars
+                                or (
+                                    ord(c) > 127
+                                    and (
+                                        _fb29_unicodedata.category(c)[0]
+                                        in "LMNSP"
+                                        or c in _fb29_asis_outputs
+                                    )
+                                    and _fb29_unicodedata.bidirectional(c)
+                                    not in ("R", "AL", "AN")
+                                )
+                                for c in _fb29_remapped
+                            )
+                            and _idna.uts46_remap(
+                                _fb29_remapped,
+                                std3_rules=False,
+                                transitional=False,
+                            )
+                            == _fb29_remapped
+                        )
+                        if _fb29_mapped_ok:
+                            _fb29_mapped_t = _fb29_remapped
+                    except (UnicodeError, ValueError):
+                        _fb29_mapped_ok = False
+                if not _fb29_mapped_ok:
                     _fb29_mixed_ok = False
                     break
                 _fb29_mixed_labels.append(
