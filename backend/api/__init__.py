@@ -2425,6 +2425,107 @@ def _encode_idna(host: str) -> str | None:
                 encoded_labels.append(
                     "xn--" + label.encode("punycode").decode("ascii")
                 )
+            elif any(
+                0x3200 <= ord(c) <= 0x321E
+                or 0x3220 <= ord(c) <= 0x3243
+                or 0x3248 <= ord(c) <= 0x324F
+                or 0x3260 <= ord(c) <= 0x326D
+                or ord(c) == 0x327F
+                for c in label
+            ):
+                # Enclosed CJK Letters and Months forms that
+                # UTS46 remaps before IDNA processing but the
+                # `idna` package rejects under both strict and
+                # UTS46 processing, so neither path above
+                # reproduces them — but browsers punycode the
+                # remapped form ("㈀" -> "(ᄀ)" ->
+                # "xn--()-dmk", "㈠" -> "(一)" ->
+                # "xn--()-vu2c", "㉈" -> "xn--eok"). The
+                # ranges above are exactly the members of
+                # U+3200-U+32FF whose remapped punycode the
+                # browser carries while this helper returned
+                # None (verified against Node's WHATWG parser
+                # over the whole range): the remaining
+                # members already match via the UTS46 retry
+                # above (circled digits/letters, square era
+                # names), and U+321F is browser-rejected, so
+                # it is excluded here. The gates mirror the
+                # U+1ABE branch: the remap must succeed and
+                # be idempotent, the first character must not
+                # be a mark, and every remapped character must
+                # be an ASCII label character ("+" included,
+                # covering a U+FB29 remap that fell through,
+                # and "(" / ")" for the parenthesized forms
+                # themselves — ASCII punctuation, so they need
+                # explicit listing rather than the non-ASCII
+                # category check below)
+                # or a non-ASCII letter, mark, number, symbol
+                # or punctuation that is not right-to-left —
+                # so a space, joiner, RTL mix or mark-first
+                # label falls through to the fallback below
+                # (None, as before) instead of emitting a form
+                # no browser origin could carry. Placed after
+                # every earlier branch, so labels mixing one
+                # of these forms with a fraction, as-is symbol,
+                # double exclamation mark, symbol mark, Arabic
+                # presentation form or similar keep their
+                # existing behaviour, and a gate failure falls
+                # through to the same fallback below rather
+                # than adding a new failure mode.
+                import unicodedata as _enc_unicodedata
+
+                try:
+                    _enc_remapped = _idna.uts46_remap(
+                        label, std3_rules=False, transitional=False
+                    )
+                    _enc_remapped_again = _idna.uts46_remap(
+                        _enc_remapped, std3_rules=False,
+                        transitional=False,
+                    )
+                except (UnicodeError, ValueError):
+                    _enc_remapped = None
+                    _enc_remapped_again = None
+                _enc_label_chars = (
+                    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                    "0123456789_+-()"
+                )
+                if (
+                    _enc_remapped is not None
+                    and _enc_remapped_again == _enc_remapped
+                    and _enc_unicodedata.category(
+                        _enc_remapped[0]
+                    )[0] != "M"
+                    and all(
+                        c in _enc_label_chars
+                        or (
+                            ord(c) > 127
+                            and _enc_unicodedata.category(c)[0]
+                            in "LMNSP"
+                            and _enc_unicodedata.bidirectional(c)
+                            not in ("R", "AL", "AN")
+                        )
+                        for c in _enc_remapped
+                    )
+                ):
+                    if any(ord(c) > 127 for c in _enc_remapped):
+                        encoded_labels.append(
+                            "xn--"
+                            + _enc_remapped.encode("punycode").decode(
+                                "ascii"
+                            )
+                        )
+                    else:
+                        encoded_labels.append(_enc_remapped)
+                elif "_" not in label:
+                    encoded_labels.append(
+                        _idna.encode(label).decode("ascii")
+                    )
+                elif any(ord(c) > 127 for c in label):
+                    encoded_labels.append(
+                        "xn--" + label.encode("punycode").decode("ascii")
+                    )
+                else:
+                    encoded_labels.append(label)
             elif "_" not in label:
                 encoded_labels.append(_idna.encode(label).decode("ascii"))
             elif any(ord(c) > 127 for c in label):
