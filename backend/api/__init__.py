@@ -169,6 +169,15 @@ def _normalize_cors_origin(origin: str) -> str:
             sep_pos = o.find(sep, scheme_end + 3)
             if sep_pos != -1:
                 o = o[:sep_pos]
+        # Browsers send Origin as scheme://host[:port] only, never with
+        # userinfo, so a configured "https://user@app.example.com"
+        # would likewise never match; strip everything up to the last
+        # "@" in the host part (before the default-port strip below,
+        # so "https://user@app.example.com:443" still normalizes to
+        # "https://app.example.com").
+        at_pos = o.rfind("@", scheme_end + 3)
+        if at_pos != -1:
+            o = o[: scheme_end + 3] + o[at_pos + 1 :]
     if o.startswith("https://") and o.endswith(":443"):
         return o[:-4]
     if o.startswith("http://") and o.endswith(":80"):
