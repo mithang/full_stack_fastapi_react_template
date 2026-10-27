@@ -659,15 +659,29 @@ def _encode_idna(host: str) -> str | None:
     # the pipeline's lower() leaves them unchanged, so the forms
     # above are what the retry sees in practice. The nukta
     # letters of the remaining Indic script (Oriya) are the
-    # same class but a separate range, assessed separately.
+    # same class but a separate range, handled below.
     _punycode_gurmukhi = frozenset(
         [0x0A33, 0x0A36, 0x0A59, 0x0A5A, 0x0A5B, 0x0A5E]
     )
+    # The same class covers the Oriya letters with nukta
+    # U+0B5C/U+0B5D (ଡ଼/ଢ଼, the single-codepoint forms of base
+    # letter + NUKTA U+0B3C): the strict IDNA2008 path rejects
+    # them both, while UTS46 punycodes them as-is
+    # (ଡ଼ -> "xn--0hc8c", ଢ଼ -> "xn--1hc6c"), matching Node's
+    # WHATWG parser. A translate table cannot express this
+    # class (there is no plain-letter target), so they join
+    # the UTS46 retry here; the pipeline's lower() leaves
+    # them unchanged, so the forms above are what the retry
+    # sees in practice. A full block scan (U+0B01-U+0B7F)
+    # confirmed exactly these two are strict-reject/UTS46-ok.
+    # The Tibetan forms are the same class but a separate
+    # range, assessed separately.
+    _punycode_oriya = frozenset([0x0B5C, 0x0B5D])
     if any(
         ord(c) in _punycode_modifiers or ord(c) in _punycode_letterlike
         or ord(c) in _punycode_digraphs or ord(c) in _punycode_cherokee
         or ord(c) in _punycode_devanagari or ord(c) in _punycode_bengali
-        or ord(c) in _punycode_gurmukhi
+        or ord(c) in _punycode_gurmukhi or ord(c) in _punycode_oriya
         for c in host
     ):
         try:
