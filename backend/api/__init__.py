@@ -138,7 +138,12 @@ if is_tenancy_enabled():
 # requests, so it is added last (Starlette runs last-added first).
 # Only enabled when CORS_ALLOW_ORIGINS is explicitly configured, and
 # only for those exact origins, so cookie auth is not opened up.
-_cors_origins = [o.strip() for o in settings.cors_allow_origins.split(",") if o.strip()]
+# Browser Origin headers never carry a path or trailing slash, and
+# Starlette matches allow_origins exactly, so a configured origin like
+# "https://app.example.com/" would silently never match and the
+# frontend's calls would fail with CORS errors. Normalize trailing
+# slashes away (same class of fix as the frontend base-URL trim).
+_cors_origins = [o for o in (o.strip().rstrip("/") for o in settings.cors_allow_origins.split(",")) if o]
 # A "*" entry would defeat the exact-origins promise above: with
 # allow_credentials=True, a wildcard origin is reflected back to the
 # requester, so any site could make credentialed (cookie) calls; and
