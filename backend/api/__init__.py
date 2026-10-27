@@ -3323,7 +3323,15 @@ def _encode_idna(host: str) -> str | None:
                 # still run against the form actually
                 # punycoded, so a mark-first ("́!-") or RTL
                 # ("م-!") label still falls through to None,
-                # matching the browser's rejection. A label
+                # matching the browser's rejection, unless it
+                # satisfies UTS46's RTL-label rule (see the
+                # _hyph_rtl_ok gate below: first character
+                # strong RTL, last character strong RTL, a
+                # digit or NSM, no Latin character, no
+                # European/Arabic-Indic digit mix), in which
+                # case the browser carries it ("م_م!٣" ->
+                # "xn--_!-vvdb5m", "م!٣" -> "xn--!-ooc5g")
+                # and the gate admits it. A label
                 # with punctuation but no hyphen edge
                 # ("münchen!" -> "xn--mnchen!-n2a") is
                 # covered by the same branch: the condition
@@ -3394,6 +3402,55 @@ def _encode_idna(host: str) -> str | None:
                             _hyph_stable = None
                         if _hyph_stable == _hyph_nfc:
                             _hyph_form = _hyph_nfc
+                # The RTL-label alternative to the character
+                # gate below, mirroring the underscore
+                # fallback's UTS46 bidi gate: a label whose
+                # first character is strong RTL, whose last
+                # character is strong RTL, a digit or NSM,
+                # which contains no Latin character and does
+                # not mix European and Arabic-Indic digits,
+                # and whose every character is otherwise an
+                # admitted ASCII or _hyph_punct character or a
+                # non-ASCII letter, mark, number, symbol or
+                # punctuation, is a valid RTL label under
+                # UTS46 even though it contains RTL
+                # characters, so the browser carries it
+                # ("م_م!٣", "م!٣", "م-م!٣") while a
+                # hyphen-edge RTL label ("م_م-", "م!٣-",
+                # "-م!٣") or a Latin-mixing one ("م_م!x")
+                # still fails the rule and falls through as
+                # before. The gate runs on the form actually
+                # punycoded, and a label with no strong-RTL
+                # first character ("١!م", "1!م") fails it.
+                _hyph_rtl_ok = False
+                if _hyph_form is not None:
+                    _hyph_rtl_bidi = [
+                        _hyph_unicodedata.bidirectional(c)
+                        for c in _hyph_form
+                    ]
+                    _hyph_rtl_ok = (
+                        _hyph_rtl_bidi[0] in ("R", "AL")
+                        and _hyph_rtl_bidi[-1]
+                        in ("R", "AL", "EN", "AN", "NSM")
+                        and "L" not in _hyph_rtl_bidi
+                        and not (
+                            "EN" in _hyph_rtl_bidi
+                            and "AN" in _hyph_rtl_bidi
+                        )
+                        and all(
+                            c
+                            in (
+                                "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"
+                                + _hyph_punct
+                            )
+                            or (
+                                ord(c) > 127
+                                and _hyph_unicodedata.category(c)[0]
+                                in "LMNSP"
+                            )
+                            for c in _hyph_form
+                        )
+                    )
                 if (
                     _hyph_form is not None
                     and (
@@ -3403,20 +3460,23 @@ def _encode_idna(host: str) -> str | None:
                     )
                     and _hyph_unicodedata.category(_hyph_form[0])[0]
                     != "M"
-                    and all(
-                        c
-                        in (
-                            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"
-                            + _hyph_punct
+                    and (
+                        all(
+                            c
+                            in (
+                                "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"
+                                + _hyph_punct
+                            )
+                            or (
+                                ord(c) > 127
+                                and _hyph_unicodedata.category(c)[0]
+                                in "LMNSP"
+                                and _hyph_unicodedata.bidirectional(c)
+                                not in ("R", "AL", "AN")
+                            )
+                            for c in _hyph_form
                         )
-                        or (
-                            ord(c) > 127
-                            and _hyph_unicodedata.category(c)[0]
-                            in "LMNSP"
-                            and _hyph_unicodedata.bidirectional(c)
-                            not in ("R", "AL", "AN")
-                        )
-                        for c in _hyph_form
+                        or _hyph_rtl_ok
                     )
                 ):
                     encoded_labels.append(
