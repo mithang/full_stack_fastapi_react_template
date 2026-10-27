@@ -1308,9 +1308,13 @@ def _encode_idna(host: str) -> str | None:
         # "xn--a_-hia0147w") instead of the browser's
         # "xn--a_+-6ka". Handle such labels per label: a label
         # without U+FB29 must already consist of kept-verbatim
-        # characters (it passes through unchanged); a non-ASCII
-        # label without U+FB29 (e.g. the "münchen" in
-        # "ß﬩.münchen") is left to the existing paths, so no
+        # characters (it passes through unchanged), or encode
+        # per label with the same paths the post-FB29 fallback
+        # uses (strict IDNA2008, then the "xn--" + punycode form
+        # for underscore labels) — so a non-ASCII label without
+        # U+FB29 (e.g. the "münchen" in "ß﬩.münchen", which
+        # previously failed the whole host here) now encodes
+        # instead of leaving the entry unmatched, while no
         # un-encoded label is ever emitted. A mixed label
         # qualifies only when every character is either an
         # ASCII letter, digit, "_", "+" or "-" (the characters
@@ -1342,8 +1346,23 @@ def _encode_idna(host: str) -> str | None:
                 ):
                     _fb29_mixed_labels.append(_fb29_mapped)
                 else:
-                    _fb29_mixed_ok = False
-                    break
+                    try:
+                        _fb29_mixed_labels.append(
+                            _idna.encode(_fb29_orig).decode("ascii")
+                        )
+                    except (UnicodeError, ValueError):
+                        if "_" in _fb29_orig and any(
+                            ord(c) > 127 for c in _fb29_orig
+                        ):
+                            _fb29_mixed_labels.append(
+                                "xn--"
+                                + _fb29_orig.encode("punycode").decode(
+                                    "ascii"
+                                )
+                            )
+                        else:
+                            _fb29_mixed_ok = False
+                            break
             elif all(c in _fb29_label_chars for c in _fb29_mapped):
                 _fb29_mixed_labels.append(_fb29_mapped)
             else:
