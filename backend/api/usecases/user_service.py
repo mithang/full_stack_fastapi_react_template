@@ -43,8 +43,15 @@ class UserService:
             raise UserNotFoundException(user_id)
         return existing
 
-    async def create_user(self, user_data: CreateUserDto) -> PydanticObjectId:
+    async def create_user(self, user_data: CreateUserDto, *, skip_password_validation: bool = False) -> PydanticObjectId:
         """Create a new user and returns its ID. Raises EmailAlreadyExistsException if email already exists."""
+        # Enforce the same password policy as tenant creation (iteration 427)
+        # and password reset (iteration 428) for user-chosen passwords.
+        # Only SSO signups skip it: they pass a random, undisclosed
+        # password (iteration 429) that need not match the policy, and
+        # SSO login never checks the password.
+        if not skip_password_validation:
+            validate_password(user_data.password)
         existing = await self.user_repository.single_or_none(email=user_data.email)
         if existing is not None:
             raise EmailAlreadyExistsException(user_data.email)

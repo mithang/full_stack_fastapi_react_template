@@ -166,20 +166,24 @@ class AuthService:
         except UserNotFoundException:
             logger.error(f"User not found for email: {email}")
             role: Role = await self.role_service.find_by_name(name=RoleType.GUEST)  # Ensure default role exists
-            await self.user_service.create_user(user_data=CreateUserDto(
-                email=email,
-                first_name=first_name or display_name or "N/A",
-                last_name=last_name or display_name or "N/A",
-                # Random, undisclosed password: the previous placeholder was
-                # predictable (provider name only), and password login checks
-                # only the hash, so anyone knowing the victim's email and SSO
-                # provider could log in as an SSO-created user. SSO login
-                # never uses this password, so a random value breaks nothing.
-                password=secrets.token_urlsafe(32),
-                gender="prefer_not_to_say",
-                role_id=role.id if role else None,
-                tenant_id=tenant_id if tenant_id else None,
-            ))
+            await self.user_service.create_user(
+                user_data=CreateUserDto(
+                    email=email,
+                    first_name=first_name or display_name or "N/A",
+                    last_name=last_name or display_name or "N/A",
+                    # Random, undisclosed password: the previous placeholder was
+                    # predictable (provider name only), and password login checks
+                    # only the hash, so anyone knowing the victim's email and SSO
+                    # provider could log in as an SSO-created user. SSO login
+                    # never uses this password, so a random value breaks nothing.
+                    password=secrets.token_urlsafe(32),
+                    gender="prefer_not_to_say",
+                    role_id=role.id if role else None,
+                    tenant_id=tenant_id if tenant_id else None,
+                ),
+                # Skip policy validation for this random SSO password (see
+                # UserService.create_user): it need not match the policy.
+                skip_password_validation=True)
         
         user = await self.user_service.find_by_email(email=email)
         if user.is_active is False:
