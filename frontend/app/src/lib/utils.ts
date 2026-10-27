@@ -66,7 +66,16 @@ export function getApiBaseUrl(): string {
   // Strip trailing slashes: callers append '/api/v1/...', so a base
   // like 'https://api.example.com/' would otherwise produce a
   // double-slash path ('//api/v1/...') that the backend may not route.
-  return (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/+$/, '');
+  // Also strip one trailing '/api/v1' segment: every caller appends
+  // '/api/v1/...' itself (generated services concatenate BASE + the
+  // absolute path, ai-chat/SSO/worker all append it), so a base set
+  // to the full API URL ('https://api.example.com/api/v1') would
+  // otherwise double the prefix ('/api/v1/api/v1/...') and every
+  // client call would 404. A subpath base without that segment
+  // ('https://host/myapp') is left untouched. Only the exact
+  // segment is stripped, so '/api/v1beta' and '/api/v10' are safe.
+  const withoutSlashes = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/+$/, '');
+  return withoutSlashes.replace(/\/api\/v1$/, '');
 }
 
 export function getApiClient(accessToken?: string) {
