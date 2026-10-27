@@ -198,7 +198,7 @@ def _normalize_cors_origin(origin: str) -> str:
         # assumption above (e.g. "localhost.:3000"); the dot itself is
         # stripped from the rebuilt origin by the scheme branch below.
         if host.endswith("."):
-            host = host[:-1]
+            host = host.rstrip(".") or host
         scheme = "http" if host in ("localhost", "127.0.0.1", "[::1]") else "https"
         o = scheme + "://" + bare if not o.startswith("//") else scheme + ":" + o
     scheme_end = o.find("://")
@@ -225,18 +225,24 @@ def _normalize_cors_origin(origin: str) -> str:
             o = o[: scheme_end + 3] + o[at_pos + 1 :]
         # A trailing dot is a valid DNS root label, so a configured
         # "https://app.example.com." names the same host — but browsers
-        # send Origin without it, so it would never match. Strip one
-        # trailing dot from the host (before the default-port strip
+        # send Origin without it, so it would never match. Strip
+        # trailing dots from the host (before the default-port strip
         # below, so "https://app.example.com.:443" still normalizes to
-        # "https://app.example.com"); bracketed IPv6 hosts never carry
-        # a trailing dot and are left alone.
+        # "https://app.example.com"); a single-dot strip left a second
+        # dot behind for "app.example.com..", which still never
+        # matched. Bracketed IPv6 hosts never carry a trailing dot
+        # and are left alone; a host of only dots is left alone
+        # rather than being emptied.
         rest = o[scheme_end + 3 :]
         if not rest.startswith("[") and ":" in rest:
             host, port = rest.rsplit(":", 1)
-            if host.endswith(".") and len(host) > 1:
-                o = o[: scheme_end + 3] + host[:-1] + ":" + port
-        elif rest.endswith(".") and len(rest) > 1:
-            o = o[:-1]
+            stripped = host.rstrip(".")
+            if stripped:
+                o = o[: scheme_end + 3] + stripped + ":" + port
+        elif rest.endswith("."):
+            stripped = rest.rstrip(".")
+            if stripped:
+                o = o[: scheme_end + 3] + stripped
     if o.startswith("https://") and o.endswith(":443"):
         return o[:-4]
     if o.startswith("http://") and o.endswith(":80"):
