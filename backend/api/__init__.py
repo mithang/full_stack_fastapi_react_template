@@ -143,7 +143,10 @@ if is_tenancy_enabled():
 # "https://app.example.com/" would silently never match and the
 # frontend's calls would fail with CORS errors. Normalize trailing
 # slashes away (same class of fix as the frontend base-URL trim).
-_cors_origins = [o for o in (o.strip().rstrip("/") for o in settings.cors_allow_origins.split(",")) if o]
+# Scheme and host are case-insensitive, and browsers send them
+# lowercased, so also lowercase each entry: an uppercase typo like
+# "HTTPS://App.Example.com" would otherwise silently never match.
+_cors_origins = [o for o in (o.strip().rstrip("/").lower() for o in settings.cors_allow_origins.split(",")) if o]
 # A "*" entry would defeat the exact-origins promise above: with
 # allow_credentials=True, a wildcard origin is reflected back to the
 # requester, so any site could make credentialed (cookie) calls; and
