@@ -30,7 +30,17 @@ async def create_host_checkout_session(
         if checkout_req.tenant_id != current_user.tenant_id:
             logger.error(f"Tenant ID mismatch for the current user. And current user's tenant id is: {current_user.tenant_id} and requested tenant id is: {checkout_req.tenant_id}")
             raise InvalidOperationException(f"Tenant ID mismatch for the current user. {checkout_req.tenant_id}")
-        
+
+        # Mirror the tenant checkout session endpoint below: the Stripe
+        # customer for this session is created with checkout_req.email,
+        # so without this check a caller could create a host-scope
+        # session (and its billing record) under someone else's email.
+        # Legitimate callers pass their own email, as the tenant
+        # endpoint already requires.
+        if current_user.email != checkout_req.email:
+            logger.error(f"Email mismatch for the current user. And current user's email is: {current_user.email} and requested email is: {checkout_req.email}")
+            raise InvalidOperationException(f"Email mismatch for the current user. {checkout_req.email}")
+
         host_main_domain = f"https://{get_host_main_domain_name()}"
         url = await billing_service.create_host_check_out_session_for_tenant(frontend_url=host_main_domain, checkout_req=checkout_req)
         return CheckoutResponseDto(checkout_url=url)
