@@ -106,7 +106,12 @@ class UserService:
                 raise RoleNotFoundException(role_id=user_data.role_id)
         doc = await existing.to_serializable_dict()
         doc["image_url"] = user_data.image_url or existing.image_url
-        logger.info(f"Updating user {user_id} with data: {doc}")
+        # to_serializable_dict() is a full model_dump(), so doc carries the
+        # hashed password — logging it would leak a credential hash into
+        # server logs (same class as the token/password logs removed in
+        # iterations 18-20 and 426). Log everything except the password.
+        log_doc = {k: v for k, v in doc.items() if k != "password"}
+        logger.info(f"Updating user {user_id} with data: {log_doc}")
         return await self.user_repository.update(user_id=user_id, data=UpdateUserDto(**doc))
      
 
