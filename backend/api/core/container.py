@@ -167,8 +167,11 @@ async def get_registered_dependency(dep_type: Type[DT]) -> DT:
         if not isinstance(instance, dep_type):
             raise TypeError(f"Resolved dependency is not of type {dep_type.__name__}")
         return instance
-    except Exception as e:
-        raise RuntimeError(f"Failed to resolve dependency {dep_type.__name__}: {e}")
+    except Exception:
+        # The chained exception detail stays server-side in the traceback;
+        # it is not embedded in the message, so container internals (missing
+        # env vars, connection details) cannot leak through the raised error.
+        raise RuntimeError(f"Failed to resolve dependency {dep_type.__name__}")
 
 
 # Use this function in endpoints fast api Depends
