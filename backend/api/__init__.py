@@ -1271,6 +1271,34 @@ def _encode_idna(host: str) -> str | None:
             return _idna.encode(host, uts46=True).decode("ascii")
         except (UnicodeError, ValueError):
             pass
+    # U+FB29 (HEBREW LETTER ALTERNATE PLUS SIGN): UTS46 maps it
+    # to "+" before IDNA processing, but the `idna` package
+    # rejects "+" itself under both strict and UTS46 processing,
+    # so a configured origin containing it was left alone and
+    # never matched (the Hebrew presentation retry above
+    # deliberately excludes it). Browsers serialize it as a
+    # literal "+" in the host ("﬩.example" -> "+.example",
+    # "a﬩b.example" -> "a+b.example", verified against Node's
+    # WHATWG parser), so when every label of the host is plain
+    # ASCII once U+FB29 is replaced by "+" (underscores and
+    # hyphens included, as browsers keep them; ligatures mapped
+    # up front, e.g. "ﬀ﬩" -> "ff+", qualify), return that form
+    # directly. The branch only runs when U+FB29 is present, so
+    # a literally configured "+" host still returns None as
+    # before, and a label mixing U+FB29 with other non-ASCII
+    # (e.g. "ß﬩" -> browser "xn--+-pfa") falls through to the
+    # existing paths unchanged, for separate assessment.
+    if "\uFB29" in host:
+        _fb29_candidate = host.replace("\uFB29", "+")
+        _fb29_label_chars = (
+            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+            "0123456789_+-"
+        )
+        if all(
+            all(c in _fb29_label_chars for c in label)
+            for label in _fb29_candidate.split(".")
+        ):
+            return _fb29_candidate
     # Fallback for underscore labels: the `idna` package follows
     # IDNA2008, where "_" is disallowed, but browsers serialize Origin
     # hosts per WHATWG URL (UTS46 without STD3 rules), which keeps "_"
