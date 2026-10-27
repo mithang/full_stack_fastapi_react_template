@@ -35,7 +35,12 @@ class BrandingService:
             logger.debug(f"Updating branding with ID {id}")
             updated = await self.branding_repository.update_branding(id, Branding(**data.model_dump(exclude_unset=True, exclude_none=True), app_name=data.identity.app_name))
         except Exception as e:
-            raise BrandingException(str(e))
+            # Log the detail server-side only: the ApiBaseException
+            # handler returns the message verbatim, so str(e) here would
+            # leak repository internals to the client (same class as
+            # iterations 467-471 for tenant/product/plan/invoice/price).
+            logger.error(f"Failed to update branding {id}: {e}")
+            raise BrandingException("Failed to update branding.")
         # The not-found check sits outside the try on purpose: raising
         # inside it would be re-wrapped by the except above and double
         # the "Branding Error:" prefix. A None return means no branding
