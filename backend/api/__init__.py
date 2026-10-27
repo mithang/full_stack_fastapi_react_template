@@ -1122,6 +1122,33 @@ def _encode_idna(host: str) -> str | None:
         + list(range(0x326E, 0x327F))
         + list(range(0x3280, 0x3300))
     )
+    # CJK Compatibility square forms (U+3300-U+33FF): a full
+    # scan of the block against the actual helper isolated
+    # exactly these 246 as strict-reject/UTS46-ok after lower()
+    # (they have no case, so lower() is identity; the remaining
+    # 10 members of the block fail under both strict and UTS46).
+    # UTS46 maps some to plain forms (㍱ -> "hpa",
+    # ㎀ -> "pa", ㏿ -> "gal") and punycodes the others as-is
+    # (㌀ -> "xn--cckzd0a3n", ㍻ -> "xn--gwt73f"),
+    # matching Node's WHATWG parser on all 246 alone and
+    # mid-word. They join the UTS46 retry here rather than
+    # needing a translate table, since the retry's uts46=True
+    # encoding reproduces both the mapped and the as-is forms.
+    # Seven of the remaining 10 (㎧/㎨/㎮/㎯/㏆/㏞/㏟) are a
+    # different class — the browser punycodes them as-is while
+    # the package's UTS46 processing rejects them — and are
+    # assessed separately; the other three (㏂/㏇/㏘) are
+    # rejected by the browser too and are deliberately left
+    # alone.
+    _punycode_square_cjk = frozenset(
+        list(range(0x3300, 0x33A7))
+        + list(range(0x33A9, 0x33AE))
+        + list(range(0x33B0, 0x33C2))
+        + list(range(0x33C3, 0x33C6))
+        + list(range(0x33C8, 0x33D8))
+        + list(range(0x33D9, 0x33DE))
+        + list(range(0x33E0, 0x3400))
+    )
     if any(
         ord(c) in _punycode_modifiers or ord(c) in _punycode_letterlike
         or ord(c) in _punycode_digraphs or ord(c) in _punycode_cherokee
@@ -1146,6 +1173,7 @@ def _encode_idna(host: str) -> str | None:
         or ord(c) in _punycode_greek_extended
         or ord(c) in _punycode_kangxi
         or ord(c) in _punycode_enclosed_cjk
+        or ord(c) in _punycode_square_cjk
         for c in host
     ):
         try:
