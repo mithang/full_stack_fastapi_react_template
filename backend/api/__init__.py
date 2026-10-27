@@ -253,6 +253,15 @@ def _normalize_cors_origin(origin: str) -> str:
             # port too (a port never legitimately contains one); a
             # port of only dots is left alone rather than emptied.
             stripped_port = port.rstrip(".")
+            # A zero-padded port (e.g. "https://app.example.com:0443",
+            # copied from a padded config) likewise never matches:
+            # browsers send the canonical port, so ":0443" is not
+            # ":443" under exact matching. Normalize digit ports by
+            # dropping leading zeros (a port of only zeros becomes
+            # "0"); the default-port strip below then still applies
+            # to ":0443" for https. Non-digit ports are left alone.
+            if stripped_port.isdigit():
+                stripped_port = stripped_port.lstrip("0") or "0"
             if stripped and stripped_port:
                 o = o[: scheme_end + 3] + stripped + ":" + stripped_port
             elif stripped and port == "":
