@@ -310,7 +310,11 @@ def _encode_idna(host: str) -> str | None:
     # left alone and never matched. Map them up front (the stdlib
     # codec did this too, which is why it got ligatures right while
     # getting ß wrong); every other character keeps the IDNA2008 path
-    # below, so ß/ς behaviour is unchanged.
+    # below, so ß/ς behaviour is unchanged. UTS46 likewise maps the
+    # Armenian ligatures U+FB13-U+FB17 to their letter expansions
+    # (ﬓ -> "մն", ﬔ -> "մե", ﬕ -> "մի", ﬖ -> "վն", ﬗ -> "մխ"),
+    # which the strict IDNA2008 path likewise rejects, so they are
+    # mapped in the same table.
     host = host.translate(
         {
             0xFB00: "ff",
@@ -320,6 +324,11 @@ def _encode_idna(host: str) -> str | None:
             0xFB04: "ffl",
             0xFB05: "st",
             0xFB06: "st",
+            0xFB13: "մն",
+            0xFB14: "մե",
+            0xFB15: "մի",
+            0xFB16: "վն",
+            0xFB17: "մխ",
         }
     )
     # UTS46 likewise maps the fullwidth ASCII forms U+FF01-U+FF5E to
