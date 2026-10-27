@@ -416,6 +416,28 @@ def _normalize_cors_origin(origin: str) -> str:
             if _seps:
                 o = _scheme + "//" + _after[_seps:]
             break
+    # A bare "https:host" with no separator at all is likewise what
+    # the WHATWG URL parser serializes as "https://host" (a special
+    # scheme needs no slashes), but the scheme-less branch below saw
+    # no "://" and rebuilt it as a dead "https://https:host", so it
+    # never matched. Rewrite it to "https://host" here — but only
+    # when the authority that follows the colon cannot be a port:
+    # a purely numeric authority ("https:443") is ambiguous with a
+    # host:port pair (host "https", port 443) in that branch, so it
+    # is deliberately left alone, as before. Any other authority
+    # (a dotted host, localhost, a host:port pair) cannot be a port,
+    # so the scheme reading is unambiguous; an authority starting
+    # with "?" or "#" is likewise left alone.
+    for _scheme in ("https:", "http:"):
+        if o.startswith(_scheme):
+            _after = o[len(_scheme) :]
+            if _after and _after[0] not in "/\\?#":
+                _auth = _after
+                for _sep in ("/", "\\", "?", "#"):
+                    _auth = _auth.split(_sep, 1)[0]
+                if _auth and not _auth.isdigit():
+                    o = _scheme + "//" + _after
+            break
     # A browser Origin always carries a scheme, so a scheme-less entry
     # like "app.example.com" (or protocol-relative "//app.example.com")
     # would likewise never match; assume https, the production default,
