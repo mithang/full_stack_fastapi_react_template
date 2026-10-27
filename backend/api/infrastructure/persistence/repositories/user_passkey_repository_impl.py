@@ -24,7 +24,13 @@ class UserPasskeyChallengesRepository(BaseRepository[Challenges], AuditLogReposi
             Save challenges with current user email, return challenge
         """
         cv = base64.urlsafe_b64encode(challenge).decode("utf-8").rstrip("=")
-        logger.debug(f"challenge bytes to a string {cv}")
+        # Do not log the challenge value itself: it is a single-use
+        # WebAuthn nonce, and the api logger runs at DEBUG in all
+        # environments — so the old line leaked live auth material into
+        # server logs on every passkey registration/login, same class as
+        # the token/password/hash logs removed in earlier iterations.
+        # Its length is all a debug line here needs.
+        logger.debug(f"challenge bytes to a string of {len(cv)} characters")
         data = Challenges(
             email=email,
             challenge=cv,
