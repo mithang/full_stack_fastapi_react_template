@@ -1873,6 +1873,100 @@ def _encode_idna(host: str) -> str | None:
                     )
                 else:
                     encoded_labels.append(label)
+            elif any(ord(c) == 0x1DFA for c in label):
+                # COMBINING DOT BELOW LEFT U+1DFA: the `idna`
+                # package rejects it under both strict and UTS46
+                # processing when it starts a label ("Label
+                # begins with an illegal combining character"),
+                # so the helper left such a host alone and it
+                # never matched under Starlette's exact
+                # allow_origins matching — but browsers
+                # serialize a label starting with it as-is
+                # ("᷺" -> "xn--vfg", "᷺a" -> "xn--a-hlm",
+                # "᷺᷺" -> "xn--vfga"), matching the punycode
+                # form. It is the only member of U+1DC0-U+1DFF
+                # with this property: every other mark in the
+                # block is browser-rejected at a label start,
+                # matching the helper's None, and a mark after
+                # a base letter already encodes via the strict
+                # path, so only the label-start case is the gap.
+                # The label is punycoded in its UTS46-remapped
+                # form, not raw: the remap reorders combining
+                # marks canonically ("᷺̀" -> "᷺̀" ->
+                # "xn--ksa529k") and maps other characters
+                # first ("᷺ͅ" -> "᷺ι" -> "xn--uxa555k",
+                # "᷺µ" -> "᷺μ" -> "xn--xxa945k"), matching the
+                # browser, while the raw punycode is not. The
+                # gates mirror the U+20D0 branch: the remap
+                # must succeed and be idempotent, the remapped
+                # label must start with U+1DFA (so a remap that
+                # reorders another mark first, e.g. "᷺ﾞ" ->
+                # "゙᷺", still falls through, matching the
+                # browser's rejection), and every other
+                # character must be an ASCII label character
+                # ("+" included, covering the U+FB29 remap
+                # "᷺﬩" -> "᷺+" -> "xn--+-hlm" and the literal
+                # "+" form, which browsers accept the same way)
+                # or a non-ASCII letter, mark, number, symbol
+                # or punctuation that is not right-to-left (so
+                # an RTL mix, a ZWJ/ZWNJ, or a space still falls
+                # through, matching browser rejection). Placed
+                # after the fraction/as-is/double-exclamation/
+                # U+20D0 branches, so labels mixing U+1DFA with
+                # one of those keep their existing behaviour,
+                # and a gate failure falls through to the same
+                # "_" / strict / plain handling below rather
+                # than adding a new failure mode.
+                import unicodedata as _dfl_unicodedata
+
+                try:
+                    _dfl_remapped = _idna.uts46_remap(
+                        label, std3_rules=False, transitional=False
+                    )
+                    _dfl_remapped_again = _idna.uts46_remap(
+                        _dfl_remapped, std3_rules=False,
+                        transitional=False,
+                    )
+                except (UnicodeError, ValueError):
+                    _dfl_remapped = None
+                    _dfl_remapped_again = None
+                _dfl_label_chars = (
+                    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                    "0123456789_+-"
+                )
+                if (
+                    _dfl_remapped is not None
+                    and _dfl_remapped_again == _dfl_remapped
+                    and _dfl_remapped
+                    and ord(_dfl_remapped[0]) == 0x1DFA
+                    and all(
+                        c in _dfl_label_chars
+                        or (
+                            ord(c) > 127
+                            and _dfl_unicodedata.category(c)[0]
+                            in "LMNSP"
+                            and _dfl_unicodedata.bidirectional(c)
+                            not in ("R", "AL", "AN")
+                        )
+                        for c in _dfl_remapped
+                    )
+                ):
+                    encoded_labels.append(
+                        "xn--"
+                        + _dfl_remapped.encode("punycode").decode(
+                            "ascii"
+                        )
+                    )
+                elif "_" not in label:
+                    encoded_labels.append(
+                        _idna.encode(label).decode("ascii")
+                    )
+                elif any(ord(c) > 127 for c in label):
+                    encoded_labels.append(
+                        "xn--" + label.encode("punycode").decode("ascii")
+                    )
+                else:
+                    encoded_labels.append(label)
             elif "_" not in label:
                 encoded_labels.append(_idna.encode(label).decode("ascii"))
             elif any(ord(c) > 127 for c in label):
