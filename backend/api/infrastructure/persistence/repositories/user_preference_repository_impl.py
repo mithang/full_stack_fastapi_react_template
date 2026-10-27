@@ -27,7 +27,8 @@ class UserPreferenceRepository(BaseRepository[UserPreference], AuditLogRepositor
                 preferences=preferences
             )
             await self.create(data=new_pref.model_dump())
-            logger.debug(f"Created new preferences for user {user_id}: {preferences}")
+            # Log keys only, not values: full preference payloads must not reach server logs.
+            logger.debug(f"Created new preferences for user {user_id} (keys: {sorted(preferences.keys())})")
             existing =  await self.get_preferences(user_id=user_id)
             await self.add_audit_log(AuditLogDto(
                 action="create",
@@ -43,7 +44,8 @@ class UserPreferenceRepository(BaseRepository[UserPreference], AuditLogRepositor
             user_id=existing.user_id,
             preferences=prf
         )
-        logger.debug(f"Updating preferences for user {user_id}: {payload.preferences}")
+        # Log keys only, not values: full preference payloads must not reach server logs.
+        logger.debug(f"Updating preferences for user {user_id} (keys: {sorted(payload.preferences.keys())})")
         await self.update(id=existing.id, data=payload.model_dump())
         logger.debug(f"Updated preferences for user {user_id}")
         await self.add_audit_log(AuditLogDto(
