@@ -503,9 +503,25 @@ def _normalize_cors_origin(origin: str) -> str:
         o = scheme + "://" + bare if not o.startswith("//") else scheme + ":" + o
     scheme_end = o.find("://")
     if scheme_end != -1:
-        path_start = o.find("/", scheme_end + 3)
-        if path_start != -1:
-            o = o[:path_start]
+        # WHATWG treats a backslash as a slash in special-scheme URLs,
+        # so a configured "https://app.example.com\docs" (pasted from
+        # a Windows path, say) is serialized by browsers as the bare
+        # Origin "https://app.example.com" — but the slash-only strip
+        # above left "\docs" on the host, so it never matched. Cut
+        # the host part at the first "/" or "\" alike; the query,
+        # fragment and userinfo strips below still apply to what
+        # remains, and a backslash cannot legitimately occur in a
+        # host (bracketed IPv6 hosts included).
+        path_starts = [
+            i
+            for i in (
+                o.find("/", scheme_end + 3),
+                o.find("\\", scheme_end + 3),
+            )
+            if i != -1
+        ]
+        if path_starts:
+            o = o[: min(path_starts)]
         # Browsers send Origin as scheme://host[:port] only, never with a
         # query or fragment, so strip those too (before the default-port
         # strip below, so "https://app.example.com:443?ref=docs" still
