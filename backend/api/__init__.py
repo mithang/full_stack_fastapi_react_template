@@ -803,9 +803,10 @@ def _encode_idna(host: str) -> str | None:
     # Armenian ligatures mapped in the first table above), so
     # it joins the UTS46 retry here; the pipeline's lower()
     # leaves it unchanged, so the form above is what the retry
-    # sees in practice. The Arabic, Lao, Georgian and Latin
-    # forms flagged alongside it are the same class but
-    # separate ranges, assessed separately.
+    # sees in practice. The Arabic, Lao and Georgian forms
+    # flagged alongside it are the same class but separate
+    # ranges, each with its own retry set below; the Latin
+    # form joins the retry below as well.
     _punycode_armenian = frozenset([0x0587])
     # The same class covers the Arabic high-hamza letters
     # U+0675/U+0676/U+0677/U+0678 (ٵ/ٶ/ٷ/ٸ): the strict
@@ -833,8 +834,8 @@ def _encode_idna(host: str) -> str | None:
     # scan of U+0E80-U+0EFF confirmed exactly these two are
     # strict-reject/UTS46-ok after lower(). The Georgian form
     # flagged alongside them is the same class but a separate
-    # range, and joins the retry below; the Latin form is
-    # assessed separately.
+    # range, and joins the retry below; the Latin form
+    # joins the retry below as well.
     _punycode_lao = frozenset([0x0EDC, 0x0EDD])
     # The same class covers MODIFIER LETTER GEORGIAN NAR
     # U+10FC (ჼ): the strict IDNA2008 path rejects it, while
@@ -847,6 +848,17 @@ def _encode_idna(host: str) -> str | None:
     # confirmed it is the only strict-reject/UTS46-ok member
     # of the Georgian block after lower().
     _punycode_georgian = frozenset([0x10FC])
+    # The same class covers the Latin letters U+1E9A/U+1E9B
+    # (ẚ/ẛ): the strict IDNA2008 path rejects them both,
+    # while UTS46 punycodes them as-is (ẚ -> "xn--a-36a",
+    # ẛ -> "xn--tig"), matching Node's WHATWG parser. A
+    # translate table cannot express this class (there is no
+    # plain-letter target), so they join the UTS46 retry here;
+    # the pipeline's lower() leaves them unchanged, so the
+    # forms above are what the retry sees in practice. A full
+    # scan of U+1E00-U+1EFF confirmed exactly these two are
+    # strict-reject/UTS46-ok after lower().
+    _punycode_latin = frozenset([0x1E9A, 0x1E9B])
     if any(
         ord(c) in _punycode_modifiers or ord(c) in _punycode_letterlike
         or ord(c) in _punycode_digraphs or ord(c) in _punycode_cherokee
@@ -856,6 +868,7 @@ def _encode_idna(host: str) -> str | None:
         or ord(c) in _punycode_subschwa or ord(c) in _punycode_greek
         or ord(c) in _punycode_armenian or ord(c) in _punycode_arabic
         or ord(c) in _punycode_lao or ord(c) in _punycode_georgian
+        or ord(c) in _punycode_latin
         for c in host
     ):
         try:
