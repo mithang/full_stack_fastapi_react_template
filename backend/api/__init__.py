@@ -467,10 +467,15 @@ def _encode_idna(host: str) -> str | None:
     # and never matched. Map them up front; they survive the
     # pipeline's lower() unchanged, which is why they are the gap.
     # The other members of the range are a different fix class and
-    # are left alone here: multi-letter mappings (№ -> "no",
-    # ℠ -> "sm", ℡ -> "tel", ™ -> "tm", ℻ -> "fax"), punycode
-    # forms (℃, ℇ, ℈, ℉, ℏ, and the like), and codepoints the
-    # browser itself rejects (℀, ℁, ℅, ℆).
+    # are left alone here: punycode forms (℃, ℇ, ℈, ℉, ℏ, and
+    # the like), and codepoints the browser itself rejects
+    # (℀, ℁, ℅, ℆). The multi-letter mappings of the range
+    # (№ -> "no", ℠ -> "sm", ℡ -> "tel", ™ -> "tm", ℻ -> "fax")
+    # are the same class as the single-letter mappings above —
+    # UTS46 maps them before IDNA processing and the strict
+    # IDNA2008 path rejects them — so they are mapped in the
+    # next table below. They likewise survive the pipeline's
+    # lower() unchanged, which is why they are the gap.
     host = host.translate(
         {
             0x2102: "c", 0x210A: "g", 0x210B: "h", 0x210C: "h",
@@ -481,6 +486,18 @@ def _encode_idna(host: str) -> str | None:
             0x212F: "e", 0x2130: "e", 0x2131: "f", 0x2133: "m",
             0x2134: "o", 0x2139: "i", 0x2145: "d", 0x2146: "d",
             0x2147: "e", 0x2148: "i", 0x2149: "j",
+        }
+    )
+    # UTS46 likewise maps the multi-letter letterlike symbols in
+    # U+2100-U+214F to their letter expansions (№ -> "no",
+    # ℠ -> "sm", ℡ -> "tel", ™ -> "tm", ℻ -> "fax"), which the
+    # strict IDNA2008 path likewise rejects, so they are mapped
+    # here too. They survive the pipeline's lower() unchanged,
+    # which is why they are the gap.
+    host = host.translate(
+        {
+            0x2116: "no", 0x2120: "sm", 0x2121: "tel",
+            0x2122: "tm", 0x213B: "fax",
         }
     )
     # UTS46 likewise maps the fullwidth ASCII forms U+FF01-U+FF5E to
