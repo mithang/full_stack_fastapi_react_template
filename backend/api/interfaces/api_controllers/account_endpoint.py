@@ -412,7 +412,17 @@ async def sso_provider_login(
     provider_name: SSOProvider,
     sso_auth_provider: SSOAuthProvider = Depends(get_sso_auth_provider)
 ):
-    return await sso_auth_provider.login(provider_name)
+    # This redirect carries a per-request provider authorization URL,
+    # so it must never be served from a browser or proxy cache: a
+    # cached redirect would send a later user to the provider with
+    # another login's authorization request instead of starting a
+    # fresh one. Same no-store hardening as the SSO callback and the
+    # magic-link validation GET below; the redirect target and the
+    # 307 status are unchanged.
+    redirect = await sso_auth_provider.login(provider_name)
+    redirect.headers["Cache-Control"] = "no-store"
+    redirect.headers["Pragma"] = "no-cache"
+    return redirect
     
 @router.get("/sso/{provider_name}/callback", status_code=status.HTTP_307_TEMPORARY_REDIRECT)
 async def sso_provider_callback(
