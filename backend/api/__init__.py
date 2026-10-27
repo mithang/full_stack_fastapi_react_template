@@ -1036,6 +1036,19 @@ def _encode_idna(host: str) -> str | None:
     # U+1D00-U+1D7F modifiers map via translate tables above,
     # and U+1D78 already has its own retry entry).
     _punycode_phonetic_supplement = frozenset(range(0x1D9B, 0x1DC0))
+    # The same class covers the ideographic annotation marks
+    # U+3192-U+319F (㆒-㆟): the strict IDNA2008 path rejects
+    # them all, while UTS46 punycodes them as-is (㆒ ->
+    # "xn--4gq", ㆟ -> "xn--gmq"), matching Node's WHATWG
+    # parser. A translate table cannot express this class
+    # (there is no plain-letter target), so they join the UTS46
+    # retry here; the pipeline's lower() leaves them unchanged,
+    # so the forms above are what the retry sees in practice.
+    # A full scan of U+3190-U+319F confirmed exactly these
+    # fourteen are strict-reject/UTS46-ok after lower()
+    # (U+3190/U+3191 fail under both strict and UTS46 and are
+    # deliberately left alone).
+    _punycode_kanbun = frozenset(range(0x3192, 0x31A0))
     if any(
         ord(c) in _punycode_modifiers or ord(c) in _punycode_letterlike
         or ord(c) in _punycode_digraphs or ord(c) in _punycode_cherokee
@@ -1055,6 +1068,7 @@ def _encode_idna(host: str) -> str | None:
         or ord(c) in _punycode_japanese_digraphs
         or ord(c) in _punycode_latin_modifiers
         or ord(c) in _punycode_phonetic_supplement
+        or ord(c) in _punycode_kanbun
         for c in host
     ):
         try:
