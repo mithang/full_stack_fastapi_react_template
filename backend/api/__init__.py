@@ -1873,7 +1873,10 @@ def _encode_idna(host: str) -> str | None:
                     )
                 else:
                     encoded_labels.append(label)
-            elif any(ord(c) == 0x1DFA for c in label):
+            elif any(
+                ord(c) == 0x1DFA or 0x1AC1 <= ord(c) <= 0x1ACE
+                for c in label
+            ):
                 # COMBINING DOT BELOW LEFT U+1DFA: the `idna`
                 # package rejects it under both strict and UTS46
                 # processing when it starts a label ("Label
@@ -1890,6 +1893,20 @@ def _encode_idna(host: str) -> str | None:
                 # matching the helper's None, and a mark after
                 # a base letter already encodes via the strict
                 # path, so only the label-start case is the gap.
+                # The combining marks U+1AC1-U+1ACE share exactly
+                # that property: the package rejects them at a
+                # label start but accepts them after a base
+                # letter, while browsers serialize a label
+                # starting with one as-is ("᫁" -> "xn--brf",
+                # "᫁a" -> "xn--a-c8k"), so they are handled by
+                # the same branch and the same remapped-first-
+                # character gate below. (U+1AC0 and the rest of
+                # U+1AB0-U+1AC0 are browser-rejected at a label
+                # start, matching the helper's None, and the
+                # U+1ACF-U+1AEB forms are unassigned in this
+                # Python's Unicode data, so they are not part
+                # of this branch; a label starting with one of
+                # them still falls through, as before.)
                 # The label is punycoded in its UTS46-remapped
                 # form, not raw: the remap reorders combining
                 # marks canonically ("᷺̀" -> "᷺̀" ->
@@ -1938,7 +1955,10 @@ def _encode_idna(host: str) -> str | None:
                     _dfl_remapped is not None
                     and _dfl_remapped_again == _dfl_remapped
                     and _dfl_remapped
-                    and ord(_dfl_remapped[0]) == 0x1DFA
+                    and (
+                        ord(_dfl_remapped[0]) == 0x1DFA
+                        or 0x1AC1 <= ord(_dfl_remapped[0]) <= 0x1ACE
+                    )
                     and all(
                         c in _dfl_label_chars
                         or (
