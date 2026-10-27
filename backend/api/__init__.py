@@ -384,6 +384,28 @@ def _normalize_cors_origin(origin: str) -> str:
                         + rest[rest.find("]") + 1 :]
                     )
                     rest = o[scheme_end + 3 :]
+        # Browsers send Origin hosts in ASCII form (WHATWG URL
+        # serialization), so a configured Unicode host like
+        # "https://münchen.example" would never match: the browser
+        # sends "https://xn--mnchen-3ya.example". Encode non-ASCII
+        # hosts to punycode (IDNA) here, before the port branches
+        # below (which still strip trailing dots / default ports);
+        # bracketed IPv6 hosts are ASCII by construction and are
+        # left alone, as are hosts that fail IDNA encoding.
+        if not rest.startswith("["):
+            idn_host, idn_port = (
+                rest.rsplit(":", 1) if ":" in rest else (rest, None)
+            )
+            if any(ord(c) > 127 for c in idn_host):
+                try:
+                    idn_encoded = idn_host.encode("idna").decode("ascii")
+                except (UnicodeError, ValueError):
+                    idn_encoded = None
+                if idn_encoded is not None and idn_encoded != idn_host:
+                    o = o[: scheme_end + 3] + idn_encoded
+                    if idn_port is not None:
+                        o += ":" + idn_port
+                    rest = o[scheme_end + 3 :]
         if (
             rest.startswith("[")
             and "]" in rest
