@@ -139,6 +139,16 @@ if is_tenancy_enabled():
 # Only enabled when CORS_ALLOW_ORIGINS is explicitly configured, and
 # only for those exact origins, so cookie auth is not opened up.
 _cors_origins = [o.strip() for o in settings.cors_allow_origins.split(",") if o.strip()]
+# A "*" entry would defeat the exact-origins promise above: with
+# allow_credentials=True, a wildcard origin is reflected back to the
+# requester, so any site could make credentialed (cookie) calls; and
+# a literal "*" is in any case ignored by browsers for credentialed
+# requests. Drop it with a warning instead of opening up cookie auth;
+# exact origins are unaffected, and if "*" was the only entry CORS
+# simply stays disabled (the guard below).
+if "*" in _cors_origins:
+    logger.warning("CORS_ALLOW_ORIGINS contains '*', which is not allowed with credentialed cookie auth; ignoring the wildcard entry.")
+    _cors_origins = [o for o in _cors_origins if o != "*"]
 if _cors_origins:
     app.add_middleware(
         CORSMiddleware,
