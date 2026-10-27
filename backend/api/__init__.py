@@ -199,7 +199,15 @@ def _normalize_cors_origin(origin: str) -> str:
         # stripped from the rebuilt origin by the scheme branch below.
         if host.endswith("."):
             host = host.rstrip(".") or host
-        scheme = "http" if host in ("localhost", "127.0.0.1", "[::1]") else "https"
+        # The whole 127.0.0.0/8 range is loopback (127.0.0.2, 127.0.1.1,
+        # ...), not just 127.0.0.1, so a scheme-less entry for any of
+        # them would otherwise assume https and never match the
+        # plain-http Origin a dev frontend sends.
+        scheme = (
+            "http"
+            if host in ("localhost", "[::1]") or host.startswith("127.")
+            else "https"
+        )
         o = scheme + "://" + bare if not o.startswith("//") else scheme + ":" + o
     scheme_end = o.find("://")
     if scheme_end != -1:
