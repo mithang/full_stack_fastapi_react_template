@@ -2663,6 +2663,7 @@ def _encode_idna(host: str) -> str | None:
             elif (
                 label.strip(_hyph_punct).startswith("-")
                 or label.strip(_hyph_punct).endswith("-")
+                or any(c in _hyph_punct for c in label)
             ) and any(ord(c) > 127 for c in label):
                 # A non-ASCII label with a leading or trailing
                 # hyphen: WHATWG URL serialization punycodes it
@@ -2693,8 +2694,13 @@ def _encode_idna(host: str) -> str | None:
                 # ("م-!") label still falls through to None,
                 # matching the browser's rejection. A label
                 # with punctuation but no hyphen edge
-                # ("münchen!") is a different, broader class
-                # and still falls through unchanged. The
+                # ("münchen!" -> "xn--mnchen!-n2a") is
+                # covered by the same branch: the condition
+                # above admits any _hyph_punct member, and
+                # the character gate below already admits
+                # that set, so the package's rejection of
+                # the punctuation no longer makes the whole
+                # host fall through to None. The
                 # gates mirror the enclosed-CJK branch: the
                 # UTS46 remap must be identity, except for the
                 # one NFC-normalizing exception below (a label
@@ -2762,6 +2768,7 @@ def _encode_idna(host: str) -> str | None:
                     and (
                         _hyph_form.strip(_hyph_punct).startswith("-")
                         or _hyph_form.strip(_hyph_punct).endswith("-")
+                        or any(c in _hyph_punct for c in _hyph_form)
                     )
                     and _hyph_unicodedata.category(_hyph_form[0])[0]
                     != "M"
