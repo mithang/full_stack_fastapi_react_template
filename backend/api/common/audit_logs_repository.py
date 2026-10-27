@@ -43,7 +43,15 @@ class AuditLogRepository:
             try:
                 with open(file_path, "r") as f:
                     for line in f:
-                        obj = json.loads(line)
+                        try:
+                            obj = json.loads(line)
+                        except json.JSONDecodeError:
+                            # A torn line (crash mid-append, or a read racing
+                            # a concurrent append — capture_audit_log appends
+                            # without locking) must not abort the whole listing;
+                            # skip it and keep the parseable entries.
+                            logger.warning(f"Skipping unparseable audit log line in {file_path}")
+                            continue
                         if action and obj.get("action") != action:
                             continue
                         total += 1
@@ -77,7 +85,13 @@ class AuditLogRepository:
             try:
                 with open(file_path, "r") as f:
                     for line in f:
-                        obj = json.loads(line)
+                        try:
+                            obj = json.loads(line)
+                        except json.JSONDecodeError:
+                            # Same torn-line reasoning as list_audit_logs:
+                            # one unparseable line must not abort the report.
+                            logger.warning(f"Skipping unparseable audit log line in {file_path}")
+                            continue
                         if action and obj.get("action") != action:
                             continue
                         results.append(AuditLogDto(**obj))
