@@ -1774,6 +1774,105 @@ def _encode_idna(host: str) -> str | None:
                     )
                 else:
                     encoded_labels.append(_excl_remapped)
+            elif any(0x20D0 <= ord(c) <= 0x20F0 for c in label):
+                # Combining marks for symbols U+20D0-U+20F0: the
+                # `idna` package rejects them under both strict
+                # and UTS46 processing, so neither path above
+                # reproduces them — but browsers punycode a label
+                # with such a mark after a base character as-is
+                # ("a\u20d0" -> "xn--a-zrn", "a\u20d0b" ->
+                # "xn--ab-cju", stacked "a\u20d0\u20d1" ->
+                # "xn--a-zrnd"), matching the punycode form.
+                # A mark alone at a label start is browser-rejected
+                # ("\u20d0a" is an invalid URL), as are the
+                # unassigned U+20F1-U+20FF forms even after a base
+                # ("a\u20f1" is rejected), so the range gate above
+                # excludes them, the remap below raises for them,
+                # and the first-character gate excludes mark-first
+                # labels — all fall through to the existing
+                # branches (None for a plain label, as before).
+                # The label is punycoded in its UTS46-remapped
+                # form, not raw: a decomposed "a\u0300\u20d0"
+                # normalizes to "à\u20d0" and a micro sign remaps
+                # to μ before browsers punycode, so the remapped
+                # punycode ("xn--0ca664n", "xn--a-mmb644t") is the
+                # browser form while the raw punycode is not.
+                # The gates mirror the FB29 mixed-label gates: the
+                # remap must succeed and be idempotent, the mark
+                # must survive it, the first character must not
+                # be a mark, and every other character must be an
+                # ASCII label character or a non-ASCII letter,
+                # mark, number, symbol or punctuation that is not
+                # right-to-left (so a ZWJ, a remap to a disallowed
+                # form, or an RTL mix still falls through).
+                # Placed after the fraction/as-is/double-exclamation
+                # branches, so labels mixing a mark with one of
+                # those keep their existing behaviour, and a gate
+                # failure falls through to the same "_" / strict /
+                # plain handling below rather than adding a new
+                # failure mode. Underscore labels already
+                # punycoded correctly via the "_" branch below;
+                # this branch produces the identical form for
+                # them, so their behaviour is unchanged.
+                import unicodedata as _sym_unicodedata
+
+                try:
+                    _sym_remapped = _idna.uts46_remap(
+                        label, std3_rules=False, transitional=False
+                    )
+                    _sym_remapped_again = _idna.uts46_remap(
+                        _sym_remapped, std3_rules=False,
+                        transitional=False,
+                    )
+                except (UnicodeError, ValueError):
+                    _sym_remapped = None
+                    _sym_remapped_again = None
+                _sym_label_chars = (
+                    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                    "0123456789_-"
+                )
+                if (
+                    _sym_remapped is not None
+                    and _sym_remapped_again == _sym_remapped
+                    and any(
+                        0x20D0 <= ord(c) <= 0x20F0
+                        for c in _sym_remapped
+                    )
+                    and not any(
+                        0x20F1 <= ord(c) <= 0x20FF
+                        for c in _sym_remapped
+                    )
+                    and _sym_unicodedata.category(
+                        _sym_remapped[0]
+                    )[0] != "M"
+                    and all(
+                        c in _sym_label_chars
+                        or (
+                            ord(c) > 127
+                            and _sym_unicodedata.category(c)[0]
+                            in "LMNSP"
+                            and _sym_unicodedata.bidirectional(c)
+                            not in ("R", "AL", "AN")
+                        )
+                        for c in _sym_remapped
+                    )
+                ):
+                    encoded_labels.append(
+                        "xn--"
+                        + _sym_remapped.encode("punycode").decode(
+                            "ascii"
+                        )
+                    )
+                elif "_" not in label:
+                    encoded_labels.append(
+                        _idna.encode(label).decode("ascii")
+                    )
+                elif any(ord(c) > 127 for c in label):
+                    encoded_labels.append(
+                        "xn--" + label.encode("punycode").decode("ascii")
+                    )
+                else:
+                    encoded_labels.append(label)
             elif "_" not in label:
                 encoded_labels.append(_idna.encode(label).decode("ascii"))
             elif any(ord(c) > 127 for c in label):
