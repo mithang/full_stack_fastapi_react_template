@@ -154,8 +154,27 @@ if is_tenancy_enabled():
 # "https://app.example.com/spa" would likewise never match; strip any
 # path after scheme://host[:port] (the default-port strip below then
 # still applies to e.g. "https://app.example.com:443/spa").
+# Likewise a scheme-less entry like "app.example.com" would never
+# match a browser Origin, which always carries a scheme; assume https
+# (the production default) so the rest of the pipeline applies to it.
 def _normalize_cors_origin(origin: str) -> str:
     o = origin.strip().rstrip("/").lower()
+    if not o:
+        return ""
+    # Leave "*" untouched: the wildcard filter below drops it with a
+    # warning, and prepending a scheme here would turn it into a dead
+    # "https://*" entry that escapes that filter.
+    if o == "*":
+        return "*"
+    # A browser Origin always carries a scheme, so a scheme-less entry
+    # like "app.example.com" (or protocol-relative "//app.example.com")
+    # would likewise never match; assume https, the production default.
+    # An http origin (e.g. dev http://localhost:3000) must still be
+    # written explicitly, since https is assumed here, not http.
+    if o.startswith("//"):
+        o = "https:" + o
+    elif "://" not in o:
+        o = "https://" + o
     scheme_end = o.find("://")
     if scheme_end != -1:
         path_start = o.find("/", scheme_end + 3)
