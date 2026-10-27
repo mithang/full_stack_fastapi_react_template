@@ -2802,6 +2802,39 @@ def _encode_idna(host: str) -> str | None:
                     )
                 else:
                     encoded_labels.append(label)
+            elif all(
+                c
+                in (
+                    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"
+                    + _hyph_punct
+                )
+                for c in label
+            ):
+                # A pure-ASCII label of letters, digits, hyphen,
+                # underscore or WHATWG-carried punctuation: the
+                # `idna` package rejects the punctuation (and
+                # hyphen-edge forms such as "a-") under its
+                # strict path, so such a label fell through to
+                # _idna.encode below, raised, and returned None
+                # for the whole host. That only matters when
+                # the host reaches this helper at all — i.e.
+                # when another label is non-ASCII, or when the
+                # label itself became pure ASCII only after the
+                # up-front UTS46 translate (a ligature label
+                # such as "ﬀ!" -> "ff!", or "ﬀ!.example" ->
+                # "ff!.example") — because the pipeline only
+                # calls this helper for non-ASCII hosts and
+                # leaves a purely ASCII host alone either way.
+                # Browsers carry every one of these characters
+                # through a label verbatim (verified against
+                # Node's WHATWG parser: all 17 _hyph_punct marks
+                # in 10 positions each, plus hyphen-edge and
+                # underscore mixes), so pass the label through
+                # unchanged instead of failing the host. A
+                # label containing any other character still
+                # falls through to the strict path below, so
+                # browser-rejected forms keep returning None.
+                encoded_labels.append(label)
             elif "_" not in label:
                 encoded_labels.append(_idna.encode(label).decode("ascii"))
             elif any(ord(c) > 127 for c in label):
