@@ -25,7 +25,10 @@ class PricingService:
             # Anything else is a pricing error, not a 404.
             if getattr(e, "http_status", None) == 404:
                 raise ProductNotFoundException(price.product) from e
-            raise PricingException(str(e))
+            # Generic message only: the Stripe/resolver detail stays in
+            # the logger.error line above instead of reaching the client
+            # verbatim via the ApiBaseException handler.
+            raise PricingException("Failed to create price.")
 
     async def list_prices(self, scope: ScopeType) -> PricingListDto:
         # Wrap the Stripe calls, mirroring create_price/update_price in
@@ -39,7 +42,10 @@ class PricingService:
             result = await sc.v1.prices.list_async(params={"limit": 100})
         except Exception as e:
             logger.error(f"Error listing prices: {e}")
-            raise PricingException(str(e))
+            # Generic message only: the Stripe/resolver detail stays in
+            # the logger.error line above instead of reaching the client
+            # verbatim via the ApiBaseException handler.
+            raise PricingException("Failed to list prices.")
         return PricingListDto(pricings=[pricing for pricing in result.data],  has_more=result.has_more)
     
     async def update_price(self, price_id: str, update: UpdatePricingDto, scope: ScopeType) -> None:
@@ -59,5 +65,9 @@ class PricingService:
             # pricing error, not a 404 claiming the price does not exist.
             if getattr(e, "http_status", None) == 404:
                 raise PricingNotFoundException(price_id) from e
-            raise PricingException(str(e))
+            # Generic message only (price_id is client-supplied, so it is
+            # safe to retain): the Stripe/resolver detail stays in the
+            # logger.error line above instead of reaching the client
+            # verbatim via the ApiBaseException handler.
+            raise PricingException(f"Failed to update price {price_id}.")
     
