@@ -425,6 +425,24 @@ def _encode_idna(host: str) -> str | None:
         | {cp: str(cp - 0x2070) for cp in range(0x2074, 0x207A)}
         | {cp: str(cp - 0x2080) for cp in range(0x2080, 0x208A)}
     )
+    # UTS46 likewise maps the subscript letters U+2090-U+209C to
+    # their plain letters (ₐ -> "a", ₑ -> "e", ₒ -> "o", ₓ -> "x",
+    # ₕ -> "h", ₖ -> "k", ₗ -> "l", ₘ -> "m", ₙ -> "n", ₚ -> "p",
+    # ₛ -> "s", ₜ -> "t"), which the strict IDNA2008 path likewise
+    # rejects, so they are mapped here too, as the counterpart of
+    # the subscript digits above. They survive the pipeline's
+    # lower() unchanged, which is why they are the gap. The one
+    # remaining member of the range, SUBSCRIPT SCHWA U+2094, is a
+    # different fix class: UTS46 punycodes it as-is
+    # (ₔ -> "xn--sna"), so it is left alone here for the UTS46
+    # retry, as with the punycode-valid modifier letters.
+    host = host.translate(
+        {
+            0x2090: "a", 0x2091: "e", 0x2092: "o", 0x2093: "x",
+            0x2095: "h", 0x2096: "k", 0x2097: "l", 0x2098: "m",
+            0x2099: "n", 0x209A: "p", 0x209B: "s", 0x209C: "t",
+        }
+    )
     # UTS46 likewise maps the plain-letter modifier letters in
     # U+1D2C-U+1D6A to their base letters (ᴬ -> "a", ᵃ -> "a",
     # ᵢ -> "i"), which the strict IDNA2008 path likewise rejects,
