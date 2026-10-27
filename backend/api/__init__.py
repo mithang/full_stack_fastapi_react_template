@@ -2459,6 +2459,110 @@ def _encode_idna(host: str) -> str | None:
                         )
                     else:
                         encoded_labels.append(_frac_remapped)
+                elif any(
+                    ord(c) in _punycode_arabic_presentation_b
+                    or ord(c) in _punycode_arabic_presentation_a
+                    for c in label
+                ):
+                    # A fraction label mixed with an Arabic
+                    # Presentation Form in an RTL context:
+                    # the main gate above only accepts a
+                    # remap that changes exactly the
+                    # fractions (and double exclamation
+                    # marks, as-is expansions and Greek
+                    # Extended members), so a form the
+                    # browser also remaps ("ا¼©ﺚ" ->
+                    # "ا1⁄4©ث" -> "xn--14-uda537cxa7911b")
+                    # failed it and fell through to None,
+                    # even though the browser carries it.
+                    # The gates mirror the as-is branch's
+                    # RTL-context branch below, checked on
+                    # the per-character remapped form: the
+                    # first character must be strong RTL
+                    # (R/AL), the last strong RTL or a digit
+                    # (R/AL/EN/AN), European and Arabic-Indic
+                    # digits must not mix, and every
+                    # character must be strong RTL, a digit,
+                    # a neutral (ON/ET/CS) or an underscore
+                    # — so the fraction expansion's EN digits
+                    # and fraction slash (CS) pass, while an
+                    # as-is symbol at an edge, an LTR
+                    # context, a Latin as-is expansion
+                    # ("ا¼℃ﺚ", browser-rejected) or a mixed
+                    # -digit label ("ا¼©ﺚ١") fails. A label
+                    # failing any gate falls through to the
+                    # same "_" / strict / raw handling as
+                    # the as-is RTL branch, so its behaviour
+                    # is unchanged (in particular the
+                    # underscore-edge raw fallback below is
+                    # preserved). Combining marks (NSM) are
+                    # not in the neutral set, so a label like
+                    # "ا¼©ﺚً" stays None for now, matching
+                    # the as-is branch's known NSM gap.
+                    import unicodedata as _frac_rtl_unicodedata
+
+                    try:
+                        _frac_rtl_chars = [
+                            _idna.uts46_remap(
+                                c,
+                                std3_rules=False,
+                                transitional=False,
+                            )
+                            for c in label
+                        ]
+                    except (UnicodeError, ValueError):
+                        _frac_rtl_chars = None
+                    _frac_rtl_remapped = (
+                        "".join(_frac_rtl_chars)
+                        if _frac_rtl_chars is not None
+                        else None
+                    )
+                    if (
+                        _frac_rtl_remapped is not None
+                        and _frac_rtl_unicodedata.bidirectional(
+                            _frac_rtl_remapped[0]
+                        )
+                        in ("R", "AL")
+                        and _frac_rtl_unicodedata.bidirectional(
+                            _frac_rtl_remapped[-1]
+                        )
+                        in ("R", "AL", "EN", "AN")
+                        and not (
+                            any(
+                                _frac_rtl_unicodedata.bidirectional(c)
+                                == "EN"
+                                for c in _frac_rtl_remapped
+                            )
+                            and any(
+                                _frac_rtl_unicodedata.bidirectional(c)
+                                == "AN"
+                                for c in _frac_rtl_remapped
+                            )
+                        )
+                        and all(
+                            c == "_"
+                            or _frac_rtl_unicodedata.bidirectional(c)
+                            in ("R", "AL", "EN", "AN", "ON", "ET", "CS")
+                            for c in _frac_rtl_remapped
+                        )
+                    ):
+                        encoded_labels.append(
+                            "xn--"
+                            + _frac_rtl_remapped.translate(_asis_map)
+                            .encode("punycode")
+                            .decode("ascii")
+                        )
+                    elif "_" not in label:
+                        encoded_labels.append(
+                            _idna.encode(label).decode("ascii")
+                        )
+                    elif any(ord(c) > 127 for c in label):
+                        encoded_labels.append(
+                            "xn--"
+                            + label.encode("punycode").decode("ascii")
+                        )
+                    else:
+                        encoded_labels.append(label)
                 elif any(ord(c) in _punycode_asis for c in label) and not any(
                     ord(c) in _punycode_arabic_presentation_b
                     or ord(c) in _punycode_arabic_presentation_a
