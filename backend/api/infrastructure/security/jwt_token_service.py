@@ -66,7 +66,7 @@ class JwtTokenService:
                 return TokenPayloadDto(**payload)
             elif type == "refresh_token":
                 payload = jwt.decode(token, REFRESH_TOKEN_SECRET, algorithms=[REFRESH_ALGORITHM])
-                logger.debug(f"Decoded refresh token payload: {payload}")
+                # Payload intentionally not logged: it carries user/tenant identifiers.
                 return RefreshTokenPayloadDto(sub=payload.get("sub"), tenant_id=payload.get("tenant_id", None), type=payload.get("type"))
         except jwt.ExpiredSignatureError:
             logger.error("Token has expired.")
@@ -118,7 +118,7 @@ class JwtTokenService:
         """
         try:
             payload = jwt.decode(token, jwt_secret, algorithms=[ALGORITHM])
-            logger.debug(f"Decoded password reset token payload: {payload}")
+            # Payload intentionally not logged: it carries the user's id and email.
             if payload.get("type") != "password_reset_confirmation":
                 logger.debug(f"Invalid token type: {payload.get('type')}")
                 raise InvalidOperationException("Invalid token type")
@@ -146,7 +146,7 @@ class JwtTokenService:
         """
         try:
             payload = jwt.decode(token, JWT_SECRET, algorithms=[ALGORITHM])
-            logger.debug(f"Decoded change email token payload: {payload}")
+            # Payload intentionally not logged: it carries the user's id and email.
             if payload.get("type") != "change_email_confirmation":
                 logger.debug(f"Invalid token type: {payload.get('type')}")
                 raise jwt.InvalidTokenError("Invalid token type")
