@@ -25,7 +25,10 @@ class ProductService:
             # (an empty catalogue is a valid empty result), so it
             # always becomes a product error (406 via ProductException).
             logger.error(f"Failed to list products: {str(e)}")
-            raise ProductException(f"Failed to list products: {str(e)}") from e
+            # Detail stays server-side in the log above: the handler
+            # returns the exception message verbatim, so appending
+            # str(e) would leak Stripe/resolver internals to the client.
+            raise ProductException("Failed to list products.") from e
         return ProductListDto(products=[product for product in result.data],  has_more=result.has_more)
     
     async def get_product_by_id(self, product_id: str,  scope: ScopeType) -> ProductDto:
@@ -43,7 +46,7 @@ class ProductService:
             # product error (406 via ProductException).
             if getattr(e, "http_status", None) == 404:
                 raise ProductNotFoundException(product_id) from e
-            raise ProductException(f"Failed to retrieve product {product_id}: {str(e)}") from e
+            raise ProductException(f"Failed to retrieve product {product_id}.") from e
         if not product:
             raise ProductNotFoundException(f"Product with ID {product_id} not found.")
         return ProductDto(id=product.id, name=product.name, description=product.description, active=product.active, tax_code=product.tax_code) 
@@ -57,7 +60,7 @@ class ProductService:
         except Exception as e:
             # Handle specific exceptions if needed
             logger.error(f"Failed to create product: {str(e)}")
-            raise ProductException(f"Failed to create product: {str(e)}") from e
+            raise ProductException("Failed to create product.") from e
 
     async def update_product(self, product_id: str, product_dto: CreateProductDto, scope: ScopeType):
         try:
@@ -84,7 +87,7 @@ class ProductService:
             logger.error(f"Failed to update product: {str(e)}")
             if getattr(e, "http_status", None) == 404:
                 raise ProductNotFoundException(f"Product with ID {product_id} not found.") from e
-            raise ProductException(f"Failed to update product: {str(e)}") from e
+            raise ProductException(f"Failed to update product {product_id}.") from e
 
     async def delete_product(self, product_id: str, scope: ScopeType):
         try:
@@ -100,4 +103,4 @@ class ProductService:
             # not a 404 claiming the product does not exist.
             if getattr(e, "http_status", None) == 404:
                 raise ProductNotFoundException(f"Product with ID {product_id} not found.") from e
-            raise ProductException(f"Failed to delete product: {str(e)}") from e
+            raise ProductException(f"Failed to delete product {product_id}.") from e
