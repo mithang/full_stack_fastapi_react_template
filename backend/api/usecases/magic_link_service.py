@@ -87,8 +87,18 @@ class EmailMagicLinkService:
         
         result = validate_hashed_value(value=user_id, hashed_value=token)
         if result:
-            # Optionally, you can delete the magic link after successful validation to prevent reuse
-            await self.user_magic_link_repo.delete(id=str(record.id))
+            # A successful validation consumes every outstanding link
+            # for this user, not just the one presented: requesting a
+            # second link (impatience, a resent email) left the first
+            # one valid alongside it, so an old link stayed usable
+            # after the user had already logged in through another
+            # one. The creation cap (4 outstanding) and the 15-minute
+            # TTL bound the window, but a used link must end the whole
+            # set — the same single-use class as the password-reset
+            # record, which is deleted on use.
+            links = await self.user_magic_link_repo.search({"user_id": PydanticObjectId(user_id)})
+            for link in links:
+                await self.user_magic_link_repo.delete(id=str(link.id))
 
         return result
         
