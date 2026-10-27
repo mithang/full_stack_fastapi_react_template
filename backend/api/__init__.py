@@ -310,7 +310,16 @@ def _encode_idna(host: str) -> str | None:
     # -> "ab", "mün\u200bchen" -> "xn--mnchen-3ya"), while the
     # `idna` package rejects every one of them under strict and
     # UTS46 processing, so a configured origin containing one was
-    # left alone and never matched. Delete them up front, before
+    # left alone and never matched. The same ignored class covers
+    # COMBINING GRAPHEME JOINER U+034F, the Mongolian variation
+    # selectors U+180B-U+180D, and ZERO WIDTH NO-BREAK SPACE
+    # U+FEFF (verified against Node's WHATWG parser: "a\u034fb"
+    # -> "ab", "a\u180bb" -> "ab", "a\ufeffb" -> "ab", and a
+    # label of only such a form becomes empty, ".example", as
+    # with the forms above); the package likewise rejects them
+    # under its strict path, and its UTS46 retry is never reached
+    # for them because no retry-guard set below contains them, so
+    # they are stripped here too. Delete them up front, before
     # every other mapping and branch below, so mixed labels also
     # serialize as the browser does ("a©\u200b" -> "xn--a-nca",
     # "a\u203c\u200b" -> "a!!", "a\u00bc\u200b" ->
@@ -326,6 +335,8 @@ def _encode_idna(host: str) -> str | None:
         {0x00AD: None, 0x200B: None}
         | {cp: None for cp in range(0x2060, 0x2065)}
         | {cp: None for cp in range(0x206A, 0x2070)}
+        | {0x034F: None, 0xFEFF: None}
+        | {cp: None for cp in range(0x180B, 0x180E)}
     )
     # UTS46 maps the Latin ligatures U+FB00-U+FB06 to their letter
     # expansions (ﬀ -> "ff", ﬁ -> "fi", ﬂ -> "fl", ﬃ -> "ffi",
