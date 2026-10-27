@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from api.common.exceptions import ApiBaseException, AuthenticationFailedException, AwsException, AzureException, ConflictException, ForbiddenException, InvalidOperationException, NotFoundException, UnauthorizedException
-from api.common.utils import get_logger, is_tenancy_enabled
+from api.common.utils import get_logger, is_production_environment, is_tenancy_enabled
 from api.core.container import container
 from api.core.exceptions import InvalidSubdomainException, TenantNotFoundException
 from api.infrastructure.persistence.mongodb import Database
@@ -58,10 +58,21 @@ async def lifespan(app: FastAPI):
     await db.close()
 
 app = FastAPI(
-    lifespan=lifespan, 
+    lifespan=lifespan,
     title="FastAPI React & MongoDb Template",
     description="A template for building full-stack applications with FastAPI, React and MongoDB. Optional multi-tenancy support.",
-    version="1.0.0"
+    version="1.0.0",
+    # Interactive docs and the raw schema expose every route, request
+    # shape and auth endpoint: useful in development, but an
+    # unnecessary information disclosure on a production deployment
+    # (and the generated frontend client never fetches the schema at
+    # runtime). Disabled only in production; dev keeps /docs, /redoc
+    # and /openapi.json exactly as before. is_production_environment
+    # lowercases the env value, unlike the raw == "production" checks
+    # elsewhere, so "Production" is treated as production too.
+    docs_url=None if is_production_environment() else "/docs",
+    redoc_url=None if is_production_environment() else "/redoc",
+    openapi_url=None if is_production_environment() else "/openapi.json",
 )
 
 
