@@ -1101,6 +1101,27 @@ def _encode_idna(host: str) -> str | None:
     # package's UTS46 processing, so they join the UTS46 retry
     # here rather than needing a translate table.
     _punycode_kangxi = frozenset(range(0x2F00, 0x2FD6))
+    # Enclosed CJK Letters and Months (U+3200-U+32FF): a full
+    # scan of the block against the actual helper isolated
+    # exactly these 165 as strict-reject/UTS46-ok after lower()
+    # (they have no case, so lower() is identity; the remaining
+    # 91 members of the block fail under both strict and UTS46
+    # and are deliberately left alone, as browsers reject them
+    # too). UTS46 maps some to plain forms (㉐ -> "pte",
+    # ㉑ -> "21", ㊱ -> "36", ㋌ -> "hg") and punycodes the
+    # others as-is (㉄ -> "xn--lzr", ㊀ -> "xn--4gq"),
+    # matching Node's WHATWG parser on all 165 alone and
+    # mid-word. They join the UTS46 retry here rather than
+    # needing a translate table, since the retry's uts46=True
+    # encoding reproduces both the mapped and the as-is forms.
+    # U+327F is unassigned (InvalidCodepoint under both paths)
+    # and is the only gap inside the covered runs.
+    _punycode_enclosed_cjk = frozenset(
+        list(range(0x3244, 0x3248))
+        + list(range(0x3250, 0x3260))
+        + list(range(0x326E, 0x327F))
+        + list(range(0x3280, 0x3300))
+    )
     if any(
         ord(c) in _punycode_modifiers or ord(c) in _punycode_letterlike
         or ord(c) in _punycode_digraphs or ord(c) in _punycode_cherokee
@@ -1124,6 +1145,7 @@ def _encode_idna(host: str) -> str | None:
         or ord(c) in _punycode_halfwidth_katakana
         or ord(c) in _punycode_greek_extended
         or ord(c) in _punycode_kangxi
+        or ord(c) in _punycode_enclosed_cjk
         for c in host
     ):
         try:
