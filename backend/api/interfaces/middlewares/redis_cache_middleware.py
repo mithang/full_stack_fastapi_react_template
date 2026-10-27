@@ -393,7 +393,21 @@ class RedisCacheMiddleware(BaseHTTPMiddleware):
         # the profile route harmlessly. Same stale-viewer class as
         # the products/plan detail bypasses, not an enforcement fix:
         # user mutations read/write fresh.
-        if any(request.url.path.endswith(path) for path in not_allowed_cache_paths) or "/check_subdomain/" in request.url.path or "/search_by_subdomain/" in request.url.path or "/search_by_name/" in request.url.path or "/ai/sessions/" in request.url.path or "/api/v1/products/" in request.url.path or "/api/v1/billing/plans/" in request.url.path or "/api/v1/users/" in request.url.path or token is None:
+        # Live role detail: /api/v1/roles/{role_id} reads the role
+        # fresh from the database on every call (get_role_by_id), and
+        # the list bypass above keeps only the list live; the detail
+        # route cannot go in not_allowed_cache_paths for the same
+        # trailing-variable reason, so it is bypassed here. A role
+        # edited, permission-changed, or deleted by another admin
+        # would otherwise stay stale in the viewing admin's
+        # detail/edit view for the rest of the TTL, since a mutation
+        # clears only the acting admin's cache keys. The substring
+        # also re-matches the already-bypassed list harmlessly, and
+        # the search_by_name route (a live name lookup, previously
+        # cached) is bypassed harmlessly too. Same stale-viewer
+        # class as the users-detail bypass, not an enforcement fix:
+        # role mutations read/write fresh.
+        if any(request.url.path.endswith(path) for path in not_allowed_cache_paths) or "/check_subdomain/" in request.url.path or "/search_by_subdomain/" in request.url.path or "/search_by_name/" in request.url.path or "/ai/sessions/" in request.url.path or "/api/v1/products/" in request.url.path or "/api/v1/billing/plans/" in request.url.path or "/api/v1/users/" in request.url.path or "/api/v1/roles/" in request.url.path or token is None:
             logger.debug(f"Bypassing cache for path: {request.url.path}")
             return await call_next(request)
             
