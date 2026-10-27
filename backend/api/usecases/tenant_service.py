@@ -1,7 +1,7 @@
 from typing import List
 from beanie import PydanticObjectId
 
-from api.common.utils import get_logger, validate_password
+from api.common.utils import get_logger, get_utc_now, validate_password
 from api.core.exceptions import TenantNotFoundException
 from api.domain.dtos.tenant_dto import CreateTenantDto, FeatureDto, TenantListDto, UpdateTenantDto
 from api.domain.entities.tenant import Feature, Tenant
@@ -88,7 +88,10 @@ class TenantService:
         if not feature_found:
             tenant.features.append(Feature(name=feature.name, enabled=feature.enabled))
         
-        # Save the updated tenant.. 
+        # Direct .save() bypasses BaseRepository.update()'s central
+        # updated_at stamp, so stamp it here to move it off creation time.
+        tenant.updated_at = get_utc_now()
+        # Save the updated tenant..
         await tenant.save()
         logger.debug(f"Feature '{feature.name}' updated to '{feature.enabled}' for tenant '{tenant_id}'")
 
