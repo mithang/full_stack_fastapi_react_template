@@ -486,6 +486,28 @@ def _normalize_cors_origin(origin: str) -> str:
             else:
                 bare = "[" + host_only + "]" + bare[len(host_only) :]
                 host = "[" + host_only + "]"
+        # The same re-bracketing applies to an expanded IPv6 host
+        # with a port ("0:0:0:0:0:0:0:1:3000"): nine colon-separated
+        # segments cannot be a bare address (an address has at most
+        # eight groups), so the only reading is address + port, and
+        # without brackets it never matches the bracketed Origin
+        # browsers send. Compressed forms with a port (e.g. "::1:3000")
+        # stay ambiguous — they could also be an address — and are
+        # left alone, as before; a non-digit or unparseable tail is
+        # likewise left alone.
+        if host_only.count(":") == 8 and "%" not in host_only:
+            _segs = host_only.split(":")
+            try:
+                ipaddress.IPv6Address(":".join(_segs[:8]))
+            except ValueError:
+                pass
+            else:
+                if _segs[8].isdigit():
+                    bare = (
+                        "[" + ":".join(_segs[:8]) + "]:" + _segs[8]
+                        + bare[len(host_only) :]
+                    )
+                    host = "[" + ":".join(_segs[:8]) + "]"
         # A trailing dot must not hide a loopback host from the http
         # assumption above (e.g. "localhost.:3000"); the dot itself is
         # stripped from the rebuilt origin by the scheme branch below.
@@ -682,6 +704,33 @@ def _normalize_cors_origin(origin: str) -> str:
                     ipaddress.IPv6Address(rest.rsplit(":", 1)[0])
                 except ValueError:
                     o = o[: scheme_end + 3] + "[" + rest + "]"
+                    rest = o[scheme_end + 3 :]
+        # An expanded IPv6 host with a port ("0:0:0:0:0:0:0:1:3000")
+        # likewise never matches: nine colon-separated segments
+        # cannot be a bare address, so the only reading is address +
+        # port, and the whole-host parse above fails on it. Re-bracket
+        # it here so the compression step below applies (and, for a
+        # scheme-less entry rebuilt above, this branch is reached with
+        # the scheme-less re-bracketing already applied, so it is a
+        # no-op there). Compressed forms with a port stay ambiguous
+        # and are left alone, as above.
+        if (
+            ":" in rest
+            and not rest.startswith("[")
+            and "%" not in rest
+            and rest.count(":") == 8
+        ):
+            _segs = rest.split(":")
+            try:
+                ipaddress.IPv6Address(":".join(_segs[:8]))
+            except ValueError:
+                pass
+            else:
+                if _segs[8].isdigit():
+                    o = (
+                        o[: scheme_end + 3]
+                        + "[" + ":".join(_segs[:8]) + "]:" + _segs[8]
+                    )
                     rest = o[scheme_end + 3 :]
         # Browsers send IPv6 Origin hosts in compressed lowercase form
         # (WHATWG URL serialization), so an expanded configured host
