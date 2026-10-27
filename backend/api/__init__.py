@@ -1271,6 +1271,15 @@ def _encode_idna(host: str) -> str | None:
             return _idna.encode(host, uts46=True).decode("ascii")
         except (UnicodeError, ValueError):
             pass
+    # The as-is symbol map, shared by the U+FB29 branch below (a
+    # symbol mixed with U+FB29 must be mapped before qualifying)
+    # and by the fallback branch further down.
+    _asis_map = {
+        0x2103: "°c", 0x2109: "°f", 0x2132: "ⅎ", 0x2140: "∑",
+        0x33A7: "m∕s", 0x33A8: "m∕s2", 0x33AE: "rad∕s",
+        0x33AF: "rad∕s2", 0x33C6: "c∕kg", 0x33DE: "v∕m",
+        0x33DF: "a∕m",
+    }
     # U+FB29 (HEBREW LETTER ALTERNATE PLUS SIGN): UTS46 maps it
     # to "+" before IDNA processing, but the `idna` package
     # rejects "+" itself under both strict and UTS46 processing,
@@ -1366,27 +1375,48 @@ def _encode_idna(host: str) -> str | None:
             elif all(c in _fb29_label_chars for c in _fb29_mapped):
                 _fb29_mixed_labels.append(_fb29_mapped)
             else:
+                # As-is symbols mixed with U+FB29 (e.g. "℃﬩"):
+                # UTS46 maps the symbol first (℃ -> "°c"), so
+                # translate through the as-is map before
+                # qualifying, and allow the map's non-letter
+                # outputs (°, ∑, ∕) alongside letters, marks
+                # and numbers — but only outputs actually
+                # introduced by a mapped symbol in this label.
+                # A literal ° ("°﬩") or © ("©﬩") introduces
+                # no mapped output, so it still fails, as
+                # before.
+                _fb29_mapped_t = _fb29_mapped.translate(_asis_map)
+                _fb29_asis_outputs = frozenset(
+                    c
+                    for _k, _v in _asis_map.items()
+                    if chr(_k) in _fb29_mapped
+                    for c in _v
+                    if ord(c) > 127
+                )
                 try:
                     _fb29_mapped_ok = (
-                        _fb29_unicodedata.category(_fb29_mapped[0])[0]
+                        _fb29_unicodedata.category(_fb29_mapped_t[0])[0]
                         != "M"
                         and all(
                             c in _fb29_label_chars
                             or (
                                 ord(c) > 127
-                                and _fb29_unicodedata.category(c)[0]
-                                in "LMN"
+                                and (
+                                    _fb29_unicodedata.category(c)[0]
+                                    in "LMN"
+                                    or c in _fb29_asis_outputs
+                                )
                                 and _fb29_unicodedata.bidirectional(c)
                                 not in ("R", "AL", "AN")
                             )
-                            for c in _fb29_mapped
+                            for c in _fb29_mapped_t
                         )
                         and _idna.uts46_remap(
-                            _fb29_mapped,
+                            _fb29_mapped_t,
                             std3_rules=False,
                             transitional=False,
                         )
-                        == _fb29_mapped
+                        == _fb29_mapped_t
                     )
                 except (UnicodeError, ValueError):
                     _fb29_mapped_ok = False
@@ -1395,7 +1425,7 @@ def _encode_idna(host: str) -> str | None:
                     break
                 _fb29_mixed_labels.append(
                     "xn--"
-                    + _fb29_mapped.encode("punycode").decode("ascii")
+                    + _fb29_mapped_t.encode("punycode").decode("ascii")
                 )
         if _fb29_mixed_ok:
             return ".".join(_fb29_mixed_labels)
@@ -1445,12 +1475,6 @@ def _encode_idna(host: str) -> str | None:
             0x33C6, 0x33DE, 0x33DF,
         ]
     )
-    _asis_map = {
-        0x2103: "°c", 0x2109: "°f", 0x2132: "ⅎ", 0x2140: "∑",
-        0x33A7: "m∕s", 0x33A8: "m∕s2", 0x33AE: "rad∕s",
-        0x33AF: "rad∕s2", 0x33C6: "c∕kg", 0x33DE: "v∕m",
-        0x33DF: "a∕m",
-    }
     try:
         encoded_labels = []
         for label in host.split("."):
