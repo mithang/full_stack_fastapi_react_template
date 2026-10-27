@@ -157,6 +157,28 @@ def _canonical_ipv4(host: str) -> str | None:
     return canonical
 
 
+def _encode_idna(host: str) -> str | None:
+    # Browsers serialize Origin hosts per WHATWG URL / UTS46 (IDNA2008),
+    # but the stdlib "idna" codec is IDNA2003: it maps ß to "ss" and
+    # "ﬀ" to "ff", so "https://faß.de" became "https://fass.de" and
+    # never matched the browser's "https://xn--fa-hia.de". Prefer the
+    # `idna` package (already a transitive backend dependency via
+    # httpx/requests) which follows IDNA2008; fall back to the stdlib
+    # codec if it is unavailable, and to None (leave the host alone)
+    # if encoding fails. IDNAError subclasses UnicodeError.
+    try:
+        import idna as _idna
+    except ImportError:
+        try:
+            return host.encode("idna").decode("ascii")
+        except (UnicodeError, ValueError):
+            return None
+    try:
+        return _idna.encode(host).decode("ascii")
+    except (UnicodeError, ValueError):
+        return None
+
+
 # Browser Origin headers never carry a path or trailing slash, and
 # Starlette matches allow_origins exactly, so a configured origin like
 # "https://app.example.com/" would silently never match and the
@@ -397,10 +419,10 @@ def _normalize_cors_origin(origin: str) -> str:
                 rest.rsplit(":", 1) if ":" in rest else (rest, None)
             )
             if any(ord(c) > 127 for c in idn_host):
-                try:
-                    idn_encoded = idn_host.encode("idna").decode("ascii")
-                except (UnicodeError, ValueError):
-                    idn_encoded = None
+                # UTS46 via _encode_idna (see its comment): the stdlib
+                # IDNA2003 codec alone would map ß to "ss", which
+                # browsers never send.
+                idn_encoded = _encode_idna(idn_host)
                 if idn_encoded is not None and idn_encoded != idn_host:
                     o = o[: scheme_end + 3] + idn_encoded
                     if idn_port is not None:
