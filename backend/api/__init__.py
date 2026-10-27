@@ -1020,6 +1020,22 @@ def _encode_idna(host: str) -> str | None:
     # handled by a translate table (U+A7F2-U+A7F4 map to plain
     # letters and need no retry entry).
     _punycode_latin_modifiers = frozenset([0xA770, 0xA7F8, 0xA7F9])
+    # The same class covers the Phonetic Extensions Supplement
+    # modifier letters U+1D9B-U+1DBF (ᶛ-ᶿ): the strict IDNA2008
+    # path rejects them all, while UTS46 handles them (ᶛ ->
+    # "xn--a-w0a" as-is, and ᶜ/ᶠ/ᶻ map to plain "c"/"f"/"z"
+    # first, e.g. ᶜ -> "ca"), matching Node's WHATWG parser. A
+    # translate table cannot express the as-is members (there is
+    # no plain-letter target), so the whole range joins the UTS46
+    # retry here — the retry's uts46=True encoding reproduces
+    # both the mapped and the as-is forms. The pipeline's lower()
+    # leaves them unchanged, so the forms above are what the retry
+    # sees in practice. A full scan of U+1D00-U+1DFF confirmed
+    # this range is the block's only remaining strict-reject/
+    # UTS46-ok run after lower() not already handled (the
+    # U+1D00-U+1D7F modifiers map via translate tables above,
+    # and U+1D78 already has its own retry entry).
+    _punycode_phonetic_supplement = frozenset(range(0x1D9B, 0x1DC0))
     if any(
         ord(c) in _punycode_modifiers or ord(c) in _punycode_letterlike
         or ord(c) in _punycode_digraphs or ord(c) in _punycode_cherokee
@@ -1038,6 +1054,7 @@ def _encode_idna(host: str) -> str | None:
         or ord(c) in _punycode_ethiopic
         or ord(c) in _punycode_japanese_digraphs
         or ord(c) in _punycode_latin_modifiers
+        or ord(c) in _punycode_phonetic_supplement
         for c in host
     ):
         try:
