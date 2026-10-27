@@ -79,7 +79,9 @@ class EmailMagicLinkService:
             # magic-link user_id escaping as a raw 500 instead of the
             # caller's invalid-link error.
             return False
-        print("Record:", record)
+        # No logging of the record here: it carries the magic-link token
+        # itself, so printing it would leak a still-valid login token
+        # into server stdout/logs.
         if record is None:
             return False
         
