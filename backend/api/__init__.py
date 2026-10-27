@@ -255,6 +255,13 @@ def _normalize_cors_origin(origin: str) -> str:
             stripped_port = port.rstrip(".")
             if stripped and stripped_port:
                 o = o[: scheme_end + 3] + stripped + ":" + stripped_port
+            elif stripped and port == "":
+                # A trailing colon with no port (e.g.
+                # "https://app.example.com:", or with a path already
+                # stripped above) likewise never matches: browsers
+                # send Origin without the colon. Drop it; a port of
+                # only dots is left alone by the branch above.
+                o = o[: scheme_end + 3] + stripped
         elif rest.endswith("."):
             stripped = rest.rstrip(".")
             if stripped:
