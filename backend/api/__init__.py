@@ -342,6 +342,23 @@ def _encode_idna(host: str) -> str | None:
             0x017F: "s",
         }
     )
+    # UTS46 likewise maps the circled letters U+24B6-U+24CF (capitals)
+    # and U+24D0-U+24E9 (small letters) to their plain letters (ⓐ ->
+    # "a", Ⓐ -> "a"), which the strict IDNA2008 path likewise
+    # rejects, so they are mapped here too. Both ranges map to
+    # lowercase plain letters, matching the browser-serialized form;
+    # the pipeline's lower() already folds capitals to smalls before
+    # this helper runs, so mapping both ranges also keeps the helper
+    # correct if called directly. Circled digits (① -> "1") are the
+    # same class but a separate range, left for a later iteration.
+    host = host.translate(
+        {
+            cp: chr(ord("a") + cp - 0x24B6)
+            if cp < 0x24D0
+            else chr(ord("a") + cp - 0x24D0)
+            for cp in range(0x24B6, 0x24EA)
+        }
+    )
     # UTS46 likewise maps the fullwidth ASCII forms U+FF01-U+FF5E to
     # their ASCII equivalents (ｅｘａｍｐｌｅ -> "example", including
     # the fullwidth full stop U+FF0E -> ".") before IDNA processing,
