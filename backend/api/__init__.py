@@ -1516,6 +1516,21 @@ def _encode_idna(host: str) -> str | None:
     # as the browser does ("a_℃" -> "xn--a_c-tfa").
     _punycode_asis = frozenset(
         [
+            # Latin-1 symbols the browser punycodes as-is (© ->
+            # "xn--gba", ° -> "xn--nba") while the package's
+            # UTS46 processing rejects them: the FB29-mixed forms
+            # ("©﬩" -> "xn--+-mca") already qualified through
+            # the FB29 branch, but a standalone label ("©.example")
+            # fell through every path above and never matched.
+            # The as-is punycode form matches the browser for
+            # mixed and underscore labels too ("a©" -> "xn--a-nca",
+            # "a_©" -> "xn--a_-uda"), so no separate branch is
+            # needed. Other Latin-1 symbols (¡, ¢, £, ®, ±, …)
+            # are the same class and are left for separate
+            # assessment; the soft hyphen U+00AD is deliberately
+            # excluded, since browsers strip it rather than
+            # punycode it.
+            0x00A9, 0x00B0,
             0x2103, 0x2104, 0x2108, 0x2109, 0x2114, 0x2117,
             0x2118, 0x211E, 0x211F, 0x2123, 0x2125, 0x2127,
             0x2129, 0x212E, 0x2132, 0x213A, 0x2140, 0x2141,
