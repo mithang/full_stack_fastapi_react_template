@@ -71,17 +71,26 @@ class AuditLogsReadMiddleware(BaseHTTPMiddleware):
             # tenant's audit file.
             effective_tenant_id = getattr(request.state, "tenant_id", None)
             tenant_id = str(effective_tenant_id) if effective_tenant_id else (str(current_user.tenant_id) if current_user and current_user.tenant_id else None)
-            try:
-                await capture_audit_log(AuditLogDto(
-                    action="read",
-                    entity=entity,
-                    user_id=str(current_user.id) if current_user else "Anonymous",
-                    changes={"info": f"Read access to {request.url.path}"},
-                    tenant_id=tenant_id
-                ))
-            except Exception as e:
-                logger.warning(f"Audit log write failed, continuing without it: {e}")
-    
-        
+            # Run the handler first and only then record the read: the
+            # entry was previously written before call_next, so a denied
+            # or failed read (401/403/404/500) was still recorded as a
+            # successful "read" — misleading for an audit trail — and a
+            # listing read logged itself into the page it just returned.
+            # A handler exception still propagates as before; it simply
+            # leaves no "read" entry behind.
+            response = await call_next(request)
+            if 200 <= response.status_code < 300:
+                try:
+                    await capture_audit_log(AuditLogDto(
+                        action="read",
+                        entity=entity,
+                        user_id=str(current_user.id) if current_user else "Anonymous",
+                        changes={"info": f"Read access to {request.url.path}"},
+                        tenant_id=tenant_id
+                    ))
+                except Exception as e:
+                    logger.warning(f"Audit log write failed, continuing without it: {e}")
+            return response
+
         return await call_next(request)
         
