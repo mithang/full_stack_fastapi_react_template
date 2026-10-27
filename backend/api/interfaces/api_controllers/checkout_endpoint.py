@@ -57,7 +57,18 @@ async def create_tenant_checkout_session(
         if checkout_req.tenant_id != current_user.tenant_id:
             logger.error(f"Tenant ID mismatch for the current user. And current user's tenant id is: {current_user.tenant_id} and requested tenant id is: {checkout_req.tenant_id}")
             raise InvalidOperationException(f"Tenant ID mismatch for the current user. {checkout_req.tenant_id}")
-    
+
+    # A tenant checkout session is created for the caller's tenant, so a
+    # caller without a tenant — a host user, whose tenant_id is None —
+    # previously skipped the mismatch check above and fell through to
+    # get_tenant_by_id(None), surfacing as a misleading "Tenant None
+    # not found" 404 instead of a clear error. Fail fast with the same
+    # InvalidOperationException the host checkout fix (previous
+    # iteration) uses; tenant callers are unchanged, and no Stripe
+    # call is made for the rejected caller.
+    if current_user.tenant_id is None:
+        raise InvalidOperationException("A tenant is required to create a tenant checkout session.")
+
     if current_user.email != checkout_req.email:
         logger.error(f"Email mismatch for the current user. And current user's email is: {current_user.email} and requested email is: {checkout_req.email}")
         raise InvalidOperationException(f"Email mismatch for the current user. {checkout_req.email}")
