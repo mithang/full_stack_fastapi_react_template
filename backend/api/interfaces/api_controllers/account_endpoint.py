@@ -414,7 +414,7 @@ async def sso_provider_login(
 ):
     return await sso_auth_provider.login(provider_name)
     
-@router.get("/sso/{provider_name}/callback", status_code=status.HTTP_308_PERMANENT_REDIRECT)
+@router.get("/sso/{provider_name}/callback", status_code=status.HTTP_307_TEMPORARY_REDIRECT)
 async def sso_provider_callback(
     provider_name: SSOProvider,
     req: Request,
@@ -425,13 +425,17 @@ async def sso_provider_callback(
 ):
     user = await sso_auth_provider.callback(provider_name, req)
     token_set = await auth_service.login_with_sso(provider_name=provider_name, user_info=user , tenant_id=tenant_id)
-    response = RedirectResponse(url=f"{sso_auth_provider.get_redirect_uri_to_app()}/dashboard", status_code=status.HTTP_308_PERMANENT_REDIRECT)
-    # This callback sets the refresh cookie, and a 308 Permanent Redirect
-    # is cacheable by default: a cached redirect would replay the
-    # one-time provider code URL straight to /dashboard without
-    # re-validating it and without the handler's Set-Cookie below
-    # (same class as the magic-link GET hardened in the previous
-    # iteration). Never cache it.
+    response = RedirectResponse(url=f"{sso_auth_provider.get_redirect_uri_to_app()}/dashboard", status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+    # This callback exchanges a one-time provider code and sets the
+    # refresh cookie, so it must not be a permanent redirect: a 308
+    # tells browsers/proxies the mapping is permanent and cacheable,
+    # so a cached redirect would replay the one-time code URL straight
+    # to /dashboard without re-validating it and without the handler's
+    # Set-Cookie below (same class as the magic-link GET hardened in
+    # the previous iteration). 307 preserves the GET method exactly
+    # like 308 but carries no permanence, matching the SSO login
+    # endpoint above; the no-store headers below stay as defence in
+    # depth. Never cache it.
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
     response.set_cookie(
