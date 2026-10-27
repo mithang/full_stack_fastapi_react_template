@@ -1048,7 +1048,22 @@ def _encode_idna(host: str) -> str | None:
     # fourteen are strict-reject/UTS46-ok after lower()
     # (U+3190/U+3191 fail under both strict and UTS46 and are
     # deliberately left alone).
+    # U+FF66-U+FF9D (ｦ-ﾝ): the strict IDNA2008 path rejects
+    # them all, while UTS46 maps them to their fullwidth katakana
+    # forms (ｦ -> ヲ, ｱ -> ア, ﾝ -> ン) and punycodes the result
+    # (ｱ -> "xn--cck", ﾝ -> "xn--nek"), matching Node's WHATWG
+    # parser. A translate table could express the mapping, but the
+    # retry's uts46=True encoding reproduces it directly, as it
+    # already does for the mapped members of the phonetic
+    # supplement range; the pipeline's lower() leaves them
+    # unchanged, so the forms above are what the retry sees in
+    # practice. A full scan of U+FF66-U+FF9D confirmed exactly
+    # these fifty-six are strict-reject/UTS46-ok after lower()
+    # (the halfwidth voiced/semi-voiced marks U+FF9E/U+FF9F
+    # combine with a preceding kana rather than standing alone,
+    # so they are a separate case and are left alone here).
     _punycode_kanbun = frozenset(range(0x3192, 0x31A0))
+    _punycode_halfwidth_katakana = frozenset(range(0xFF66, 0xFF9E))
     if any(
         ord(c) in _punycode_modifiers or ord(c) in _punycode_letterlike
         or ord(c) in _punycode_digraphs or ord(c) in _punycode_cherokee
@@ -1069,6 +1084,7 @@ def _encode_idna(host: str) -> str | None:
         or ord(c) in _punycode_latin_modifiers
         or ord(c) in _punycode_phonetic_supplement
         or ord(c) in _punycode_kanbun
+        or ord(c) in _punycode_halfwidth_katakana
         for c in host
     ):
         try:
