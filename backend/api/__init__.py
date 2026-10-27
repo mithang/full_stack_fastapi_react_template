@@ -1939,26 +1939,58 @@ def _encode_idna(host: str) -> str | None:
                     # through to the as-is branch and punycoded
                     # the raw fraction ("¼᫏" -> "xn--zba464k"
                     # instead of the browser's "xn--14-mrq114a").
-                    # UTS46 mapping is per codepoint, so remap
-                    # each character on its own, keeping the
-                    # as-is marks verbatim, and accept the result
-                    # only under the same gate as the normal path
-                    # (it must equal the label with exactly the
-                    # fractions and double exclamation marks
-                    # expanded): any other remapped
-                    # character (e.g. MICRO SIGN -> mu, or a
-                    # remap that raises, e.g. an ellipsis or a
-                    # browser-rejected U+1ADE/U+1ADF mark) fails
+                    # The same class covers a label mixing a
+                    # fraction with an Arabic presentation form
+                    # the package rejects (e.g. U+FBC3-U+FBD2,
+                    # U+FD90/U+FD91, U+FDC8-U+FDCE): the
+                    # whole-label remap raises on the form, so
+                    # such a label fell through to None and never
+                    # matched ("¼﯃" -> None instead of the
+                    # browser's "xn--14-c6t7249i"), and a mix
+                    # with an as-is mark fell through to the
+                    # raw-fraction punycode instead ("¼﯃᫏" ->
+                    # "xn--zba464kdh3n" instead of
+                    # "xn--14-mrq114alt22a"). UTS46 mapping is
+                    # per codepoint, so remap each character on
+                    # its own, keeping the as-is marks and the
+                    # Arabic presentation forms verbatim, and
+                    # accept the result only under the same gate
+                    # as the normal path (it must equal the label
+                    # with exactly the fractions and double
+                    # exclamation marks expanded): any other
+                    # remapped character (e.g. MICRO SIGN -> mu,
+                    # or a remap that raises, e.g. an ellipsis or
+                    # a browser-rejected U+1ADE/U+1ADF mark) fails
                     # the gate or the remap and falls through
                     # unchanged. ZERO WIDTH JOINER / NON-JOINER
                     # are passed through unchanged by the
                     # single-character remap yet rejected by
                     # browsers, so they abort the recovery too.
-                    if any(ord(c) in _punycode_asis for c in label):
+                    # For a label with an Arabic presentation
+                    # form, two further gates mirror the
+                    # as-is branch below: a leading combining
+                    # mark and any strong-RTL character outside
+                    # the form set (or a space, which the
+                    # allowed-character check excludes) are
+                    # browser-rejected, so such a label falls
+                    # through to None as before instead of
+                    # emitting a form no browser origin could
+                    # carry; a label with only as-is marks keeps
+                    # its previous acceptance unchanged.
+                    if any(
+                        ord(c) in _punycode_asis
+                        or ord(c)
+                        in _punycode_arabic_presentation_as_is
+                        for c in label
+                    ):
                         try:
                             _frac_parts = []
                             for _c in label:
-                                if ord(_c) in _punycode_asis:
+                                if (
+                                    ord(_c) in _punycode_asis
+                                    or ord(_c)
+                                    in _punycode_arabic_presentation_as_is
+                                ):
                                     _frac_parts.append(_c)
                                 elif ord(_c) in (0x200C, 0x200D):
                                     raise ValueError("joiner")
@@ -1973,9 +2005,44 @@ def _encode_idna(host: str) -> str | None:
                             _frac_recovered = "".join(_frac_parts)
                         except (UnicodeError, ValueError):
                             _frac_recovered = None
-                        if _frac_recovered == label.translate(
-                            _fraction_excl_map
+                        _frac_recovered_ok = (
+                            _frac_recovered
+                            == label.translate(_fraction_excl_map)
+                        )
+                        if any(
+                            ord(c)
+                            in _punycode_arabic_presentation_as_is
+                            for c in label
                         ):
+                            _frac_recovered_ok = (
+                                _frac_recovered_ok
+                                and _arb_unicodedata.category(label[0])[
+                                    0
+                                ]
+                                != "M"
+                                and all(
+                                    ord(c) in _fraction_map
+                                    or ord(c) in _double_excl_map
+                                    or ord(c) in _punycode_asis
+                                    or ord(c)
+                                    in _punycode_arabic_presentation_as_is
+                                    or c
+                                    in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"
+                                    or (
+                                        ord(c) > 127
+                                        and _arb_unicodedata.category(c)[
+                                            0
+                                        ]
+                                        in "LMNSP"
+                                        and _arb_unicodedata.bidirectional(
+                                            c
+                                        )
+                                        not in ("R", "AL", "AN")
+                                    )
+                                    for c in label
+                                )
+                            )
+                        if _frac_recovered_ok:
                             _frac_remapped = _frac_recovered
                 if (
                     _frac_remapped is not None
