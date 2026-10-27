@@ -408,7 +408,10 @@ def _encode_idna(host: str) -> str | None:
     # U+2080-U+2089. SUPERSCRIPT LATIN SMALL LETTER I U+2071 likewise
     # maps under UTS46 to "i", which the strict IDNA2008 path likewise
     # rejects, so it is mapped here too. It survives the pipeline's
-    # lower() unchanged, which is why it is the gap. The plain-letter
+    # lower() unchanged, which is why it is the gap. SUPERSCRIPT
+    # LATIN SMALL LETTER N U+207F is the same class (UTS46 maps it
+    # to "n", strict IDNA2008 rejects it, lower() leaves it alone),
+    # so it is mapped here too. The plain-letter
     # modifier letters in U+1D2C-U+1D6A are mapped in the next table
     # below; the remaining modifier letters (the punycode-valid
     # members of that range, and the U+02B0-U+02BF modifier
@@ -422,6 +425,7 @@ def _encode_idna(host: str) -> str | None:
         {0x00B9: "1", 0x00B2: "2", 0x00B3: "3"}
         | {0x2070: "0"}
         | {0x2071: "i"}
+        | {0x207F: "n"}
         | {cp: str(cp - 0x2070) for cp in range(0x2074, 0x207A)}
         | {cp: str(cp - 0x2080) for cp in range(0x2080, 0x208A)}
     )
