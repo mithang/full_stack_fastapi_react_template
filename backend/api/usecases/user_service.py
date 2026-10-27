@@ -2,7 +2,7 @@ from typing import Any
 from beanie import PydanticObjectId
 from pydantic import EmailStr
 from api.common.exceptions import InvalidOperationException
-from api.common.utils import get_logger, get_utc_now
+from api.common.utils import get_logger, get_utc_now, validate_password
 from api.core.exceptions import EmailAlreadyExistsException, RoleNotFoundException, UserNotFoundException
 from api.domain.dtos.dashboard_dto import TimeSeriesDto
 from api.domain.entities.user import User
@@ -114,6 +114,11 @@ class UserService:
         existing = await self.user_repository.get(id=user_id)
         if existing is None:
             raise UserNotFoundException(user_id)
+        # Same password policy as tenant creation (iteration 427): without
+        # this, a reset password bypassed validate_password entirely, so a
+        # weak password could replace a strong one. Validated after the
+        # existence check so unknown users still get the 404 as before.
+        validate_password(new_password)
         hashed_password = hash_it(new_password)
         existing.password = hashed_password
         # Direct .save() bypasses BaseRepository.update()'s central
