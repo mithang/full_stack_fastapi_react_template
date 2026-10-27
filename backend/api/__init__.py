@@ -402,8 +402,9 @@ def _encode_idna(host: str) -> str | None:
     # lower() unchanged, which is why it is the gap. The plain-letter
     # modifier letters in U+1D2C-U+1D6A are mapped in the next table
     # below; the remaining modifier letters (the punycode-valid
-    # members of that range, and U+02B0-U+02BF) are left for a
-    # separate assessment, since they are not the same fix class.
+    # members of that range, and the U+02B0-U+02BF modifier
+    # letters) are assessed in the tables below, since they are
+    # not the same fix class.
     # The superscript/subscript signs
     # U+207A-U+207C and U+208A-U+208C, which UTS46 does not map to a
     # valid domain form (they fail under both strict and UTS46
@@ -424,7 +425,8 @@ def _encode_idna(host: str) -> str | None:
     # the range (e.g. ᴭ, ᵄ) are valid as-is under UTS46 and
     # serialize as punycode, not as plain letters, so they are a
     # separate fix class and are left alone here, as are the
-    # U+02B0-U+02BF modifier letters.
+    # plain-letter U+02B0-U+02BF members (mapped in the next
+    # table below).
     host = host.translate(
         {
             0x1D2C: "a", 0x1D2E: "b", 0x1D30: "d", 0x1D31: "e",
@@ -437,6 +439,20 @@ def _encode_idna(host: str) -> str | None:
             0x1D58: "u", 0x1D5B: "v", 0x1D62: "i", 0x1D63: "r",
             0x1D64: "u", 0x1D65: "v",
         }
+    )
+    # UTS46 likewise maps five of the U+02B0-U+02BF modifier letters
+    # to plain letters (ʰ -> "h", ʲ -> "j", ʳ -> "r", ʷ -> "w",
+    # ʸ -> "y"), which the strict IDNA2008 path likewise rejects,
+    # so they are mapped here too. They survive the pipeline's
+    # lower() unchanged, which is why they are the gap. The other
+    # members of the range are a different fix class and are left
+    # alone: ʱ/ʴ/ʵ/ʶ serialize as punycode under UTS46 (ʱ ->
+    # "xn--5na", etc.) but are rejected by the strict IDNA2008
+    # path, so this helper still returns None for them — the same
+    # separate class as ᴭ/ᵄ — while U+02B9-U+02BF already pass the
+    # strict path and serialize as punycode, matching the browser.
+    host = host.translate(
+        {0x02B0: "h", 0x02B2: "j", 0x02B3: "r", 0x02B7: "w", 0x02B8: "y"}
     )
     # UTS46 likewise maps the fullwidth ASCII forms U+FF01-U+FF5E to
     # their ASCII equivalents (ｅｘａｍｐｌｅ -> "example", including
