@@ -467,8 +467,10 @@ def _encode_idna(host: str) -> str | None:
     # and never matched. Map them up front; they survive the
     # pipeline's lower() unchanged, which is why they are the gap.
     # The other members of the range are a different fix class and
-    # are left alone here: punycode forms (℃, ℇ, ℈, ℉, ℏ, and
-    # the like), and codepoints the browser itself rejects
+    # are left alone here: the punycode forms handled by the UTS46
+    # retry below (ℇ, ℏ and the like), the punycode-as-is forms
+    # the package's UTS46 processing rejects (℃, ℈, ℉ and the
+    # like), and codepoints the browser itself rejects
     # (℀, ℁, ℅, ℆). The multi-letter mappings of the range
     # (№ -> "no", ℠ -> "sm", ℡ -> "tel", ™ -> "tm", ℻ -> "fax")
     # are the same class as the single-letter mappings above —
@@ -539,6 +541,20 @@ def _encode_idna(host: str) -> str | None:
     # and a failure here still falls through to the underscore
     # fallback below (e.g. a host with both a modifier letter and
     # "_", which UTS46 rejects) and then to None, as before.
+    # The same class covers the punycode-valid letterlike symbols
+    # in U+2100-U+214F (ℇ -> "xn--una", ℏ -> "xn--1ea",
+    # ℵ/ℶ/ℷ/ℸ -> "xn--4db"/"xn--5db"/"xn--6db"/"xn--7db",
+    # ℼ/ℿ -> "xn--1xa", ℽ/ℾ -> "xn--oxa", plus Ω -> "xn--bya"
+    # and Å -> "xn--5ca", which the pipeline's lower() already
+    # folds to ω/å before this helper runs, so they matter only
+    # for direct calls — the same reason the circled and Roman
+    # capital ranges are listed). They are kept in a separate
+    # set so the two fix classes stay distinct. The remaining
+    # letterlike members are a different fix class and are left
+    # alone here: symbols the browser punycodes as-is but the
+    # package's UTS46 processing rejects (℃ -> "°c", ℈, ℉ ->
+    # "°f", ℄, ℔ and the like), and codepoints the browser
+    # itself rejects (℀, ℁, ℅, ℆).
     _punycode_modifiers = frozenset(
         [
             0x02B1, 0x02B4, 0x02B5, 0x02B6,
@@ -549,7 +565,17 @@ def _encode_idna(host: str) -> str | None:
             0x1D69, 0x1D6A,
         ]
     )
-    if any(ord(c) in _punycode_modifiers for c in host):
+    _punycode_letterlike = frozenset(
+        [
+            0x2107, 0x210F, 0x2126, 0x212B,
+            0x2135, 0x2136, 0x2137, 0x2138,
+            0x213C, 0x213D, 0x213E, 0x213F,
+        ]
+    )
+    if any(
+        ord(c) in _punycode_modifiers or ord(c) in _punycode_letterlike
+        for c in host
+    ):
         try:
             return _idna.encode(host, uts46=True).decode("ascii")
         except (UnicodeError, ValueError):
