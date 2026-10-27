@@ -3427,6 +3427,33 @@ def _encode_idna(host: str) -> str | None:
                     encoded_labels.append(
                         _idna.encode(label).decode("ascii")
                     )
+                elif any(
+                    _hyph_unicodedata.bidirectional(c)
+                    in ("R", "AL", "AN")
+                    for c in label
+                ):
+                    # A hyphen-edge underscore label containing
+                    # a strong-RTL or Arabic-Indic character:
+                    # UTS46's RTL-label rules require the first
+                    # character to be strong RTL and the last
+                    # to be strong RTL or a digit, so a label
+                    # starting or ending with a hyphen (or a
+                    # hyphen hidden behind _hyph_punct) is
+                    # browser-rejected ("م_م-" / "-م_م" /
+                    # "م_م-!" / "٣_٣-" all fail in the WHATWG
+                    # parser), yet this fallback punycoded it
+                    # raw, bypassing the underscore fallback's
+                    # RTL-edge gate (which this branch never
+                    # reaches). Non-underscore labels are
+                    # unaffected: they take the strict branch
+                    # above and already return None. Raise, so
+                    # the outer handler returns None for the
+                    # whole host, as for other rejected labels.
+                    # Mid-label hyphens ("م_م-م") never enter
+                    # this branch, and non-RTL hyphen-edge
+                    # underscore labels ("mün_chen-") keep
+                    # their existing forms.
+                    raise ValueError("rtl hyphen-edge underscore")
                 elif any(ord(c) > 127 for c in label):
                     encoded_labels.append(
                         "xn--" + label.encode("punycode").decode("ascii")
