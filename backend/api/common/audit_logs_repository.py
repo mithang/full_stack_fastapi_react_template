@@ -2,6 +2,7 @@ from collections import deque
 import glob
 import json
 from typing import List, Optional
+from pydantic import ValidationError
 from api.common.utils import capture_audit_log, get_logger
 from api.domain.dtos.audit_logs_dto import AuditActionType, AuditLogDto, AuditLogListDto
 
@@ -52,10 +53,28 @@ class AuditLogRepository:
                             # skip it and keep the parseable entries.
                             logger.warning(f"Skipping unparseable audit log line in {file_path}")
                             continue
+                        if not isinstance(obj, dict):
+                            # A JSON value that is not an object (e.g. a bare
+                            # list or number) has no fields to validate;
+                            # skip it like an unparseable line.
+                            logger.warning(f"Skipping non-object audit log line in {file_path}")
+                            continue
                         if action and obj.get("action") != action:
                             continue
+                        try:
+                            dto = AuditLogDto(**obj)
+                        except ValidationError:
+                            # A line that parses as JSON but fails DTO
+                            # validation (missing required field, unknown
+                            # action value, wrong field type — e.g. written
+                            # under an older schema) must not abort the
+                            # whole listing; skip it and keep the valid
+                            # entries. It is not counted in total, so total
+                            # and has_next stay consistent with what is shown.
+                            logger.warning(f"Skipping audit log line failing validation in {file_path}")
+                            continue
                         total += 1
-                        ring.append(obj)  # older ones drop automatically when full
+                        ring.append(dto)  # older ones drop automatically when full
             except FileNotFoundError:
                 continue
 
@@ -66,8 +85,8 @@ class AuditLogRepository:
         # Slice for pagination
         sliced = newest_first[skip:skip + limit]
 
-        # Parse JSON and map to DTOs
-        logs: List[AuditLogDto] = [AuditLogDto(**o) for o in sliced]
+        # sliced already holds validated DTOs (constructed in the loop above)
+        logs: List[AuditLogDto] = sliced
 
         return AuditLogListDto(
             total=total,
@@ -92,9 +111,19 @@ class AuditLogRepository:
                             # one unparseable line must not abort the report.
                             logger.warning(f"Skipping unparseable audit log line in {file_path}")
                             continue
+                        if not isinstance(obj, dict):
+                            # Same non-object reasoning as list_audit_logs.
+                            logger.warning(f"Skipping non-object audit log line in {file_path}")
+                            continue
                         if action and obj.get("action") != action:
                             continue
-                        results.append(AuditLogDto(**obj))
+                        try:
+                            results.append(AuditLogDto(**obj))
+                        except ValidationError:
+                            # Same schema-drift reasoning as list_audit_logs:
+                            # one invalid entry must not abort the report.
+                            logger.warning(f"Skipping audit log line failing validation in {file_path}")
+                            continue
             except FileNotFoundError:
                 continue
     
