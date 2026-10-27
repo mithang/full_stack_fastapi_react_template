@@ -1755,13 +1755,13 @@ def _encode_idna(host: str) -> str | None:
     # the browser form; labels without a Greek Extended member
     # are unchanged, and the table's outputs are plain Greek
     # letters that need no further remap (translate does not
-    # recurse, matching UTS46's single mapping pass). This covers
-    # only the standalone as-is branch: fraction labels claim
-    # their branch first, and FB29 labels claim theirs, so mixes
-    # with those classes keep their existing behaviour for
-    # separate assessment, as do as-is mixes with other
-    # UTS46-remapped classes (enclosed CJK, Kangxi, and the
-    # like), which are a broader class than this one.
+    # recurse, matching UTS46's single mapping pass). The
+    # standalone as-is branch below applies it, as does the
+    # fraction branch's gate; FB29 labels claim theirs, so mixes
+    # with that class keep their existing behaviour for separate
+    # assessment, as do as-is mixes with other UTS46-remapped
+    # classes (enclosed CJK, Kangxi, and the like), which are a
+    # broader class than this one.
     _greek_extended_remap = {
         0x1F71: "ά", 0x1F73: "έ", 0x1F75: "ή", 0x1F77: "ί",
         0x1F79: "ό", 0x1F7B: "ύ", 0x1F7D: "ώ",
@@ -1963,7 +1963,17 @@ def _encode_idna(host: str) -> str | None:
                 # the up-front translate table has already folded
                 # such characters, so the gate passes there. A
                 # remap failure likewise falls through, so no
-                # label gains a new failure mode.
+                # label gains a new failure mode. The gate also
+                # accepts the Greek-Extended-remapped form (the
+                # fraction-expanded label translated through
+                # _greek_extended_remap): UTS46 remaps a Greek
+                # Extended member first, so a label mixing one
+                # with a fraction ("ά¼" -> browser
+                # "xn--14-v8b5930a") failed the exact gate above
+                # and fell through to None, the same class as
+                # the as-is branch's Greek remap; labels without
+                # a Greek Extended member are unchanged, since
+                # that translate is identity for them.
                 try:
                     _frac_remapped = _idna.uts46_remap(
                         label, std3_rules=False, transitional=False
@@ -2046,6 +2056,10 @@ def _encode_idna(host: str) -> str | None:
                         _frac_recovered_ok = (
                             _frac_recovered
                             == label.translate(_fraction_excl_map)
+                            or _frac_recovered
+                            == label.translate(_fraction_excl_map).translate(
+                                _greek_extended_remap
+                            )
                         )
                         if any(
                             ord(c)
@@ -2084,8 +2098,14 @@ def _encode_idna(host: str) -> str | None:
                             _frac_remapped = _frac_recovered
                 if (
                     _frac_remapped is not None
-                    and _frac_remapped
-                    == label.translate(_fraction_excl_map)
+                    and (
+                        _frac_remapped
+                        == label.translate(_fraction_excl_map)
+                        or _frac_remapped
+                        == label.translate(_fraction_excl_map).translate(
+                            _greek_extended_remap
+                        )
+                    )
                 ):
                     if any(ord(c) > 127 for c in _frac_remapped):
                         encoded_labels.append(
