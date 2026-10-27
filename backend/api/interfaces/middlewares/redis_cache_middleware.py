@@ -54,6 +54,19 @@ not_allowed_cache_paths = [
     # would hand the same session_id to every new chat within the
     # TTL, merging distinct conversations into one history.
     "/api/v1/ai/new_session",
+    # Append-only chat history: get_history reads the user's sessions
+    # fresh on every call, and the frontend refetches it when a stream
+    # ends (ai-chat.tsx, new_session case). But the exchange itself is
+    # saved by a post-response background task (OllamaChat.
+    # generate_response adds save_user_query after the stream), and
+    # the middleware's non-GET cache clear for POST /ask runs before
+    # that save lands — so a history GET landing between stream end
+    # and the background save would cache the pre-save list for the
+    # rest of the TTL, hiding the just-finished exchange from the
+    # history panel. Same stale-viewer class as the audit-log/
+    # checkout bypasses above, not an enforcement fix: ask/delete
+    # handlers read/write fresh.
+    "/api/v1/ai/history",
     # Side-effect GET: check_dns dispatches a DNS-update task when the
     # custom-domain status is "activation-progress" or "failed", and its
     # message reports the live status. The path carries a tenant id, so
@@ -320,7 +333,14 @@ class RedisCacheMiddleware(BaseHTTPMiddleware):
         # to its previous tenant (including a stale is_active/custom-domain
         # state) for the rest of the TTL. The trailing-slash segment keeps
         # this from matching /roles/search_by_name, which takes no variable.
-        if any(request.url.path.endswith(path) for path in not_allowed_cache_paths) or "/check_subdomain/" in request.url.path or "/search_by_subdomain/" in request.url.path or "/search_by_name/" in request.url.path or token is None:
+        # Single-session history: /api/v1/ai/sessions/{session_id}
+        # has the same post-response-background-save staleness as
+        # /api/v1/ai/history above (a GET landing before the save
+        # caches pre-save histories for the TTL), but it cannot go in
+        # not_allowed_cache_paths: matching there is endswith, and
+        # the variable session id is the trailing segment — the same
+        # reason "/check_subdomain/" is matched this way.
+        if any(request.url.path.endswith(path) for path in not_allowed_cache_paths) or "/check_subdomain/" in request.url.path or "/search_by_subdomain/" in request.url.path or "/search_by_name/" in request.url.path or "/ai/sessions/" in request.url.path or token is None:
             logger.debug(f"Bypassing cache for path: {request.url.path}")
             return await call_next(request)
             
