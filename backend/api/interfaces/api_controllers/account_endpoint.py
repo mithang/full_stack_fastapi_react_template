@@ -426,6 +426,14 @@ async def sso_provider_callback(
     user = await sso_auth_provider.callback(provider_name, req)
     token_set = await auth_service.login_with_sso(provider_name=provider_name, user_info=user , tenant_id=tenant_id)
     response = RedirectResponse(url=f"{sso_auth_provider.get_redirect_uri_to_app()}/dashboard", status_code=status.HTTP_308_PERMANENT_REDIRECT)
+    # This callback sets the refresh cookie, and a 308 Permanent Redirect
+    # is cacheable by default: a cached redirect would replay the
+    # one-time provider code URL straight to /dashboard without
+    # re-validating it and without the handler's Set-Cookie below
+    # (same class as the magic-link GET hardened in the previous
+    # iteration). Never cache it.
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
     response.set_cookie(
         key="refresh_token",
         value=token_set.refresh_token,
