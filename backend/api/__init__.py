@@ -873,6 +873,17 @@ def _encode_idna(host: str) -> str | None:
     # scan of U+1E00-U+1EFF confirmed exactly these two are
     # strict-reject/UTS46-ok after lower().
     _punycode_latin = frozenset([0x1E9A, 0x1E9B])
+    # The same class covers MODIFIER LETTER CYRILLIC EN U+1D78
+    # (ᵸ): the strict IDNA2008 path rejects it, while UTS46
+    # punycodes it as-is (ᵸ -> "xn--m1a"), matching Node's
+    # WHATWG parser. A translate table cannot express this
+    # class (there is no plain-letter target), so it joins the
+    # UTS46 retry here; the pipeline's lower() leaves it
+    # unchanged, so the form above is what the retry sees in
+    # practice. A full scan of U+1D00-U+1D7F confirmed it is
+    # the only strict-reject/UTS46-ok member of the block
+    # after lower() not already handled.
+    _punycode_cyrillic = frozenset([0x1D78])
     if any(
         ord(c) in _punycode_modifiers or ord(c) in _punycode_letterlike
         or ord(c) in _punycode_digraphs or ord(c) in _punycode_cherokee
@@ -882,7 +893,7 @@ def _encode_idna(host: str) -> str | None:
         or ord(c) in _punycode_subschwa or ord(c) in _punycode_greek
         or ord(c) in _punycode_armenian or ord(c) in _punycode_arabic
         or ord(c) in _punycode_lao or ord(c) in _punycode_georgian
-        or ord(c) in _punycode_latin
+        or ord(c) in _punycode_latin or ord(c) in _punycode_cyrillic
         for c in host
     ):
         try:
