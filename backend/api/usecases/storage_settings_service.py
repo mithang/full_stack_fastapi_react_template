@@ -36,7 +36,9 @@ class StorageSettingsService:
 
     async def reset_storage(self, storage_id: str, updated_by_user_id: str, tenant_id: Optional[PydanticObjectId] = None) -> None:
         storage_setting: StorageSettings | None = await self.storage_settings_repository.get(id=storage_id)
-        logger.debug(f"Resetting storage setting: {storage_setting}")
+        # Do not log the full document: at this point it still carries the live
+        # aws_secret_key / azure_connection_string (cleared only below).
+        logger.debug(f"Resetting storage setting: id={storage_id}, provider={storage_setting.provider if storage_setting else None}")
         if storage_setting is None:
             raise NotFoundException("StorageSetting", storage_id)
         
