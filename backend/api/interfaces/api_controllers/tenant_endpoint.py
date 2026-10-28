@@ -290,9 +290,20 @@ async def check_dns_status(
 async def update_tenant(
     tenant_id: str,
     data: UpdateTenantDto,
+    current_user: CurrentUser,
     tenant_service: TenantService = Depends(get_tenant_service),
     _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.HOST_MANAGE_TENANTS]))
 ):
+    # The HOST_MANAGE_TENANTS gate also admits FULL_ACCESS holders (see
+    # UserAccessManagement), and every tenant's seeded ADMIN role holds
+    # FULL_ACCESS, so without this a tenant admin could pass any
+    # tenant_id and overwrite another tenant's is_active, custom_domain
+    # or subscription_id. Host callers (tenant_id None) keep the global
+    # view. Compared after fetch, so id forms normalize, mirroring the
+    # check_dns/update_dns scoping; the check runs before any write.
+    tenant = await tenant_service.get_tenant_by_id(tenant_id)
+    if current_user.tenant_id is not None and str(tenant.id) != current_user.tenant_id:
+        raise TenantNotFoundException(tenant_id)
     await tenant_service.update_tenant(tenant_id, data)
     return None
 
