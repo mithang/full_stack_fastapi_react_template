@@ -4492,6 +4492,27 @@ def _encode_idna(host: str) -> str | None:
                 # without a Greek Extended member are
                 # unchanged and the bidi gate above sees the
                 # same classes either way.
+                # ONE DOT LEADER U+2024 and DOUBLE LOW LINE
+                # U+2017 are not dot separators under WHATWG
+                # (unlike U+3002/U+FF0E/U+FF61, mapped to "."
+                # up front) and UTS46 disallows them outright,
+                # so browsers reject every label containing
+                # one — yet this branch punycoded a ‼ mix raw
+                # ("a‼․b" -> "xn--a!!b-ic7a", "‼․",
+                # "a‼‗b" likewise), a form no browser origin
+                # could carry. Reject here, before the bidi
+                # gate, mirroring the as-is branch's fix
+                # (iteration 704): no translation in this
+                # branch introduces either codepoint (none
+                # appears as a value in the ‼, enclosed,
+                # parenthesized, square, FB29 or Greek
+                # Extended tables above), so checking the raw
+                # label is complete, and raising returns None
+                # for the whole host, as for other rejected
+                # labels. Labels without either codepoint are
+                # unchanged.
+                if any(ord(c) in (0x2017, 0x2024) for c in label):
+                    raise ValueError("dot-leader or double-low-line double-exclamation")
                 _excl_remapped = (
                     label.translate(_double_excl_map)
                     .translate(_enclosed_cjk_remap)
