@@ -33,6 +33,18 @@ async def get_dashboard_metrics(
     if start:
         match_stage = {"created_at": {"$gte": start, "$lte": end}}
 
+    # Scope to the caller's tenant: this endpoint has no permission
+    # gate (it backs the landing page for every role), so without this
+    # any authenticated tenant user saw global user counts and the
+    # cross-tenant signup timeseries. Host users (tenant_id None) keep
+    # the global view — the same scope rule as the /invoices and
+    # /products lists. Merged into match_stage so it scopes the
+    # timeseries, the joined count, and (via tenant_filter) the total.
+    tenant_filter = {}
+    if current_user.tenant_id:
+        tenant_filter = {"tenant_id": current_user.tenant_id}
+        match_stage = {**match_stage, **tenant_filter}
+
      # Aggregation pipeline for time series
     pipeline = [
         {"$match": match_stage} if match_stage else {"$match": {}},
@@ -53,7 +65,7 @@ async def get_dashboard_metrics(
     ]
 
     timeseries =  await user_service.aggregate(pipeline)
-    total_users = await user_service.total_count()
+    total_users = await user_service.total_count(tenant_filter) if tenant_filter else await user_service.total_count()
     joined_users = await user_service.total_count(match_stage) if match_stage else total_users
 
     data = {
