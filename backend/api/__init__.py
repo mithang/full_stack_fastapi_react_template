@@ -8847,7 +8847,16 @@ def _encode_idna(host: str) -> str | None:
                 # a Latin/RTL mix, a mark-first label, a
                 # space mix, a European/Arabic-Indic digit
                 # mix) still falls through to None exactly
-                # as before.
+                # as before. A joiner mix of this arm
+                # whose first joiner is virama-preceded
+                # ("क\u094d\u200d᠆b" ->
+                # "xn--b-tud2ow39ctoj", verified against
+                # Node's WHATWG parser) is carried too:
+                # _hyph_1806_joiner is set on acceptance,
+                # and the first-joiner gate below admits
+                # it, so a bad-first-joiner mix still
+                # returns None as before.
+                _hyph_1806_joiner = False
                 if (
                     _hyph_form is None
                     and _hyph_remapped is None
@@ -8866,6 +8875,7 @@ def _encode_idna(host: str) -> str | None:
                         _hyph_1806_sub_remapped = None
                     if _hyph_1806_sub_remapped == _hyph_1806_sub:
                         _hyph_form = label
+                        _hyph_1806_joiner = True
                     elif _hyph_1806_sub_remapped is not None:
                         # The NFC-normalizing variant of the
                         # U+1806 exception, mirroring the NFC
@@ -8923,6 +8933,7 @@ def _encode_idna(host: str) -> str | None:
                                 == _hyph_1806_sub_nfc
                             ):
                                 _hyph_form = _hyph_1806_nfc
+                                _hyph_1806_joiner = True
                 # The RTL-label alternative to the character
                 # gate below, mirroring the underscore
                 # fallback's UTS46 bidi gate: a label whose
@@ -9056,24 +9067,27 @@ def _encode_idna(host: str) -> str | None:
                     )
                 )
                 # The first-joiner gate for the
-                # mapped-dash+small-form arm above and
-                # for the mapped-dash arms above (via
-                # _hyph_dash_joiner), mirroring
-                # the small-form gate: a joiner is admitted
-                # in that arm's form only when the FIRST
-                # joiner is preceded by a virama (combining
-                # class 9, excluding U+1715/U+11070/
-                # U+11F41/U+11F42) that is itself preceded
-                # by another character; later joiners ride
-                # along once the first is valid. False for
-                # every other arm, so their joiner handling
-                # is unchanged, and the RTL gate below
-                # (which has no joiner clause) is unchanged
-                # too, so an RTL joiner mix keeps its
-                # existing behaviour.
+                # mapped-dash+small-form arm above, for
+                # the mapped-dash arms above (via
+                # _hyph_dash_joiner) and for the U+1806
+                # arm above (via _hyph_1806_joiner),
+                # mirroring the small-form gate: a joiner
+                # is admitted in that arm's form only when
+                # the FIRST joiner is preceded by a virama
+                # (combining class 9, excluding U+1715/
+                # U+11070/U+11F41/U+11F42) that is itself
+                # preceded by another character; later
+                # joiners ride along once the first is
+                # valid. False for every other arm, so
+                # their joiner handling is unchanged, and
+                # the RTL gate above (which has no joiner
+                # clause) is unchanged too, so an RTL
+                # joiner mix keeps its existing behaviour.
                 _hyph_joiner_ok = False
                 if (
-                    _hyph_dash_sf or _hyph_dash_joiner
+                    _hyph_dash_sf
+                    or _hyph_dash_joiner
+                    or _hyph_1806_joiner
                 ) and _hyph_form is not None:
                     _hyph_first_joiner = next(
                         (
