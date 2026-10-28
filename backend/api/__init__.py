@@ -4947,7 +4947,83 @@ def _encode_idna(host: str) -> str | None:
                 # browser-rejected forms keep returning None.
                 encoded_labels.append(label)
             elif "_" not in label:
-                encoded_labels.append(_idna.encode(label).decode("ascii"))
+                # An emoji / symbol label: WHATWG URL
+                # serialization punycodes emoji and miscellaneous
+                # symbols as-is ("😀" -> "xn--e28h", "a😀" ->
+                # "xn--a-jv3s", "🇺🇸" -> "xn--w77hd", "👍🏽" ->
+                # "xn--on8h5e", verified against Node's WHATWG
+                # parser), but the `idna` package rejects them
+                # under both strict and UTS46 processing, so
+                # such a label fell through to the strict path
+                # below, raised, and returned None for the whole
+                # host — including multi-label hosts ("😀.example",
+                # "‼﬩.😀", where the other label already encodes).
+                # Punycode the label directly when every character
+                # is an ASCII letter, digit or hyphen, or a
+                # non-ASCII symbol (general categories So/Sk, which
+                # covers emoji, dingbats and miscellaneous symbols
+                # including skin-tone modifiers), the UTS46 remap
+                # leaves the label unchanged (this rejects
+                # characters browsers map elsewhere, e.g. a
+                # parenthesized letter -> "(a)", or a UTS46-mapped
+                # letter mixed with an emoji, e.g. "😀K" -> "😀k",
+                # which keeps its existing behaviour for separate
+                # assessment), and no character is strong-RTL or
+                # Arabic-Indic (so an emoji/RTL mix such as "😀م",
+                # which browsers reject, still falls through to
+                # None, as do joiner sequences, whose Cf characters
+                # fail the character gate, and mark-first labels,
+                # whose marks fail it too) — except ARABIC RAISED
+                # ROUND DOT U+0888, the one strong-RTL symbol
+                # browsers carry in every position (verified
+                # against Node's WHATWG parser: standalone,
+                # letter mixes and emoji mixes all punycode,
+                # unlike the other two AL symbols of this class,
+                # U+06FD/U+06FE, which browsers carry standalone
+                # but reject in any mix). Labels without an
+                # emoji/symbol character keep the strict path
+                # exactly as before, so no correctly-matching
+                # host changes.
+                import unicodedata as _emoji_unicodedata
+
+                try:
+                    _emoji_remapped = _idna.uts46_remap(
+                        label, std3_rules=False, transitional=False
+                    )
+                except (UnicodeError, ValueError):
+                    _emoji_remapped = None
+                if (
+                    _emoji_remapped == label
+                    and any(
+                        ord(c) > 127
+                        and _emoji_unicodedata.category(c)
+                        in ("So", "Sk")
+                        for c in label
+                    )
+                    and all(
+                        c
+                        in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-"
+                        or (
+                            ord(c) > 127
+                            and _emoji_unicodedata.category(c)
+                            in ("So", "Sk")
+                            and (
+                                _emoji_unicodedata.bidirectional(c)
+                                not in ("R", "AL", "AN")
+                                or ord(c) == 0x0888
+                            )
+                        )
+                        for c in label
+                    )
+                ):
+                    encoded_labels.append(
+                        "xn--"
+                        + label.encode("punycode").decode("ascii")
+                    )
+                else:
+                    encoded_labels.append(
+                        _idna.encode(label).decode("ascii")
+                    )
             elif any(ord(c) > 127 for c in label):
                 # An underscore label with a UTS46-remapped
                 # character: the whole-host UTS46 retry above
