@@ -19,6 +19,7 @@ router = APIRouter(prefix="/users", tags=["Users"])
 
 @router.get("/", response_model=UserListDto)
 async def list_users(
+    response: Response,
     # The frontend only ever requests limit 10, but a direct API call
     # passed limit/skip straight into the DB query unbounded, so a
     # single request could dump the whole user table (limit=1000000)
@@ -29,6 +30,14 @@ async def list_users(
     service: UserService = Depends(get_user_service),
     _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.USER_VIEW_ONLY]))
 ):
+    # This GET returns the tenant's user list (names, emails, roles), so
+    # it must never be served from a browser or proxy cache: a cached
+    # 200 could serve one tenant's list to another admin after an
+    # account switch on a shared machine, or hide freshly created or
+    # deleted users — the same no-store hardening as the single-user
+    # GET below.
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
     return await service.list_users(skip=skip, limit=limit)
 
 
