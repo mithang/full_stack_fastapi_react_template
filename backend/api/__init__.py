@@ -5137,6 +5137,73 @@ def _encode_idna(host: str) -> str | None:
                     )
                 except (UnicodeError, ValueError):
                     _emoji_gap_remap_ok = False
+                # A gap label with a UTS46-mapped symbol: RIAL
+                # SIGN U+FDFC maps to "ریال" (and U+FDF2 to
+                # "الله"), so a gap label containing one fell
+                # through even though browsers carry the mapped
+                # form ("م؈﷼م" -> "م؈ریالم" ->
+                # "xn--qfb6d3a7ebe65g", verified against
+                # Node's WHATWG parser). The identity check
+                # above bars exactly these labels, so build
+                # the mapped label alongside it: gap symbols
+                # stay verbatim, and every other character
+                # must remap to itself or to strong-RTL
+                # letters only (this bars mapped Latin
+                # letters such as "K" -> "k", digit or
+                # space expansions such as the "ﷺ" form,
+                # whose space makes browsers reject the
+                # mix, and the remap-rejected U+0888 /
+                # U+FBC2, which browsers reject in RTL
+                # mixes); a single-character remap that
+                # raises (e.g. a joiner) fails the arm, so
+                # ZWNJ mixes stay for a later iteration.
+                # The arm below gates on the raw label, and
+                # the raw gates imply the mapped gates here:
+                # an expansion adds only strong-RTL letters,
+                # so first/last bidi, the digit-mix bar and
+                # the per-char classes all carry over to the
+                # mapped label, which is what the arm
+                # punycodes when this check holds.
+                try:
+                    _emoji_gap_mapped_parts = [
+                        c
+                        if ord(c) in _emoji_al_gap
+                        else _idna.uts46_remap(
+                            c, std3_rules=False, transitional=False
+                        )
+                        for c in label
+                    ]
+                    _emoji_gap_mapped_label = "".join(
+                        _emoji_gap_mapped_parts
+                    )
+                    _emoji_gap_mapped_ok = (
+                        _emoji_gap_mapped_label != label
+                        and any(
+                            ord(c) in _emoji_al_gap for c in label
+                        )
+                        and all(
+                            ord(c) in _emoji_al_gap
+                            or _part == c
+                            or (
+                                _part != ""
+                                and all(
+                                    _emoji_unicodedata.category(mc)[0]
+                                    == "L"
+                                    and _emoji_unicodedata.bidirectional(mc)
+                                    in ("R", "AL")
+                                    and ord(mc)
+                                    not in (0x0888, 0xFBC2)
+                                    for mc in _part
+                                )
+                            )
+                            for c, _part in zip(
+                                label, _emoji_gap_mapped_parts
+                            )
+                        )
+                    )
+                except (UnicodeError, ValueError):
+                    _emoji_gap_mapped_label = label
+                    _emoji_gap_mapped_ok = False
                 if (
                     _emoji_remapped == label
                     # A mark at the label start is barred here:
@@ -5324,7 +5391,12 @@ def _encode_idna(host: str) -> str | None:
                         # later iterations, as are non-ASCII
                         # European digits, which browsers
                         # reject in this class.
-                        _emoji_gap_remap_ok
+                        # Either the raw label is remap-stable
+                        # (the iteration-684 case) or it carries
+                        # a UTS46-mapped symbol handled by the
+                        # mapped check above, in which case the
+                        # arm punycodes the mapped label below.
+                        (_emoji_gap_remap_ok or _emoji_gap_mapped_ok)
                         and any(
                             ord(c) in _emoji_al_gap for c in label
                         )
@@ -5405,7 +5477,13 @@ def _encode_idna(host: str) -> str | None:
                 ):
                     encoded_labels.append(
                         "xn--"
-                        + label.encode("punycode").decode("ascii")
+                        + (
+                            _emoji_gap_mapped_label
+                            if _emoji_gap_mapped_ok
+                            else label
+                        )
+                        .encode("punycode")
+                        .decode("ascii")
                     )
                 else:
                     encoded_labels.append(
