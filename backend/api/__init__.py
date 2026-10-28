@@ -2763,9 +2763,92 @@ def _encode_idna(host: str) -> str | None:
                         for c in _frac_remapped
                     )
                 )
+                # The main gate above accepts the remapped
+                # fraction form unconditionally, so a
+                # fraction label in an RTL context that
+                # fails the UTS46 bidi rule was punycoded
+                # into a form no browser origin could
+                # carry ("ا¼©" -> "ا1⁄4©", "¼ا" ->
+                # "1⁄4ا", "ا¼٣" -> "ا1⁄4٣", "٣¼" ->
+                # "٣1⁄4", "ا¼㊣" -> "ا1⁄4正"), while the
+                # browser rejects every one of them. Gate
+                # the main acceptance on the remapped form,
+                # mirroring the Hebrew and RTL gates above
+                # and below: when it contains a strong-RTL
+                # character or an Arabic-Indic digit, the
+                # first character must be strong RTL, the
+                # last non-mark character must be strong
+                # RTL or a digit, European and Arabic-Indic
+                # digits must not mix, and every character
+                # must be strong RTL, a digit, a neutral,
+                # a mark or an underscore — so a Latin- or
+                # CJK-trailing ("ا¼a", "ا¼㊣"), neutral- or
+                # punctuation-trailing ("ا¼©", "ا¼!",
+                # "ا¼_", "ا¼-"), digit-led ("¼ا") or
+                # mixed-digit ("ا¼٣", "٣¼") label falls
+                # through to None as the browser rejects
+                # it. Labels without a strong-RTL or
+                # Arabic-Indic character are unaffected
+                # (the gate is vacuous for them), and
+                # matching RTL fraction labels ("ا¼",
+                # "م¼", "ا¼1", mid-underscore "ا¼_م")
+                # pass every condition; the Hebrew gate
+                # above already imposes the same rules on
+                # its own candidates, so those labels pass
+                # this gate too.
+                _frac_main_bidi_end = None
+                if _frac_remapped is not None:
+                    for _c in reversed(_frac_remapped):
+                        if _arb_unicodedata.bidirectional(_c) != "NSM":
+                            _frac_main_bidi_end = (
+                                _arb_unicodedata.bidirectional(_c)
+                            )
+                            break
+                _frac_main_bidi_ok = (
+                    _frac_remapped is None
+                    or not any(
+                        _arb_unicodedata.bidirectional(c)
+                        in ("R", "AL", "AN")
+                        for c in _frac_remapped
+                    )
+                    or (
+                        _arb_unicodedata.bidirectional(
+                            _frac_remapped[0]
+                        )
+                        in ("R", "AL")
+                        and _frac_main_bidi_end
+                        in ("R", "AL", "EN", "AN")
+                        and not (
+                            any(
+                                _arb_unicodedata.bidirectional(c) == "EN"
+                                for c in _frac_remapped
+                            )
+                            and any(
+                                _arb_unicodedata.bidirectional(c) == "AN"
+                                for c in _frac_remapped
+                            )
+                        )
+                        and all(
+                            c == "_"
+                            or _arb_unicodedata.bidirectional(c)
+                            in (
+                                "R",
+                                "AL",
+                                "EN",
+                                "AN",
+                                "ON",
+                                "ET",
+                                "CS",
+                                "NSM",
+                            )
+                            for c in _frac_remapped
+                        )
+                    )
+                )
                 if (
                     _frac_remapped is not None
                     and " " not in label
+                    and _frac_main_bidi_ok
                     and (
                         _frac_remapped
                         == label.translate(_fraction_excl_map)
@@ -3088,7 +3171,19 @@ def _encode_idna(host: str) -> str | None:
                     ord(c) in _punycode_arabic_presentation_b
                     or ord(c) in _punycode_arabic_presentation_a
                     for c in label
-                ):
+                ) and _frac_main_bidi_ok:
+                    # The bidi gate above also bars this
+                    # raw fallback: without it a label the
+                    # main gate just rejected ("ا¼©") fell
+                    # through here and was emitted as the
+                    # raw-fraction punycode, a form no
+                    # browser origin could carry either.
+                    # Gated out, such a label reaches the
+                    # strict arm below, which rejects the
+                    # fraction and returns None for the
+                    # host, as the browser's rejection
+                    # requires. Labels passing the gate
+                    # behave as before.
                     # An as-is label mixed with an Arabic
                     # Presentation Form is excluded here: the
                     # browser either rejects the mix under the
@@ -3108,12 +3203,36 @@ def _encode_idna(host: str) -> str | None:
                     )
                 elif "_" not in label:
                     encoded_labels.append(_idna.encode(label).decode("ascii"))
-                elif any(ord(c) > 127 for c in label):
+                elif any(ord(c) > 127 for c in label) and _frac_main_bidi_ok:
+                    # The bidi gate above also bars this
+                    # raw fallback, for the same reason as
+                    # the as-is arm above: a label the main
+                    # gate rejected ("ا¼_") otherwise fell
+                    # through here as the raw-fraction
+                    # punycode. Gated out, such an
+                    # underscore label reaches the else
+                    # arm below, which raises so the outer
+                    # handler returns None, as the
+                    # browser's rejection requires; labels
+                    # passing the gate behave as before.
                     encoded_labels.append(
                         "xn--" + label.encode("punycode").decode("ascii")
                     )
                 else:
-                    encoded_labels.append(label)
+                    # Only reachable when the bidi gate
+                    # barred the raw fallback above: every
+                    # fraction label is non-ASCII, so this
+                    # arm otherwise never runs. Raise so
+                    # the outer handler returns None for
+                    # the whole host, as for other
+                    # browser-rejected labels, instead of
+                    # appending the raw label (which no
+                    # browser origin could carry either,
+                    # but would differ from the None every
+                    # other rejected label yields).
+                    raise ValueError(
+                        "fraction label fails the UTS46 bidi rule"
+                    )
             elif any(ord(c) in _punycode_asis for c in label) and any(
                 ord(c) in _punycode_arabic_presentation_b
                 or ord(c) in _punycode_arabic_presentation_a
