@@ -8450,6 +8450,76 @@ def _encode_idna(host: str) -> str | None:
                                 == _hyph_mapped_nfc
                             ):
                                 _hyph_form = _hyph_mapped_nfc
+                # The mapped-dash+small-form exception,
+                # mirroring the mapped-dash exception
+                # above: a label mixing a UTS46-mapped
+                # dash with a carried small form (\"a︱b﹐c\"
+                # -> \"a—b,c\" -> \"xn--ab,c-586a\",
+                # \"a﹣b﹐c\" -> \"a-b,c\", \"a︲b﹑c\" ->
+                # \"a–b、c\", verified against Node's
+                # WHATWG parser) fell through to None
+                # (or, for an underscore mix, to a wrong
+                # raw punycode) because its remap equals
+                # neither the label, its NFC form, nor
+                # the mapped-dash-only translation. Accept
+                # the doubly-translated form only when it
+                # is exactly the remap (so a label mixing
+                # a mapped dash and a small form with any
+                # other UTS46-mapped character — a case
+                # fold, a decomposed form needing NFC, a
+                # browser-rejected small form — keeps its
+                # existing behaviour) and it is itself
+                # remap-stable; every gate below then
+                # runs against the form actually
+                # punycoded. Gated on both a mapped-dash
+                # member and a small-form member, so a
+                # plain mapped-dash label keeps its
+                # existing arm and a plain small-form
+                # label keeps the small-form branch.
+                # A joiner mix of this arm whose first
+                # joiner is virama-preceded (\"क\\u094d\\u200d︱b﹐c\"
+                # -> \"xn--b,c-dgh4z281joba\",
+                # verified against Node's WHATWG parser)
+                # is carried too: _hyph_dash_sf is set
+                # here, and the character gate below
+                # admits a joiner only for this arm and
+                # only under the browser's first-joiner
+                # rule (mirrored from the small-form
+                # gate), so a bad-first-joiner mix still
+                # returns None as before, and a plain
+                # mapped-dash joiner label keeps its
+                # existing behaviour.
+                _hyph_dash_sf = False
+                if _hyph_form is None and _hyph_remapped is not None:
+                    _hyph_dash_sf_form = label.translate(
+                        _mapped_dash
+                    ).translate(_small_form_map)
+                    if (
+                        _hyph_dash_sf_form != label
+                        and any(
+                            ord(c) in _mapped_dash for c in label
+                        )
+                        and any(
+                            ord(c) in _small_form_map for c in label
+                        )
+                        and _hyph_dash_sf_form == _hyph_remapped
+                    ):
+                        try:
+                            _hyph_dash_sf_stable = (
+                                _idna.uts46_remap(
+                                    _hyph_dash_sf_form,
+                                    std3_rules=False,
+                                    transitional=False,
+                                )
+                            )
+                        except (UnicodeError, ValueError):
+                            _hyph_dash_sf_stable = None
+                        if (
+                            _hyph_dash_sf_stable
+                            == _hyph_dash_sf_form
+                        ):
+                            _hyph_form = _hyph_dash_sf_form
+                            _hyph_dash_sf = True
                 # The U+1806 exception, mirroring the
                 # mapped-dash exception above: MONGOLIAN TODO
                 # SOFT HYPHEN U+1806 is category Pd, but its
@@ -8680,6 +8750,47 @@ def _encode_idna(host: str) -> str | None:
                         if ord(c) not in (0x0888, 0xFBC2)
                     )
                 )
+                # The first-joiner gate for the
+                # mapped-dash+small-form arm above, mirroring
+                # the small-form gate: a joiner is admitted
+                # in that arm's form only when the FIRST
+                # joiner is preceded by a virama (combining
+                # class 9, excluding U+1715/U+11070/
+                # U+11F41/U+11F42) that is itself preceded
+                # by another character; later joiners ride
+                # along once the first is valid. False for
+                # every other arm, so their joiner handling
+                # is unchanged, and the RTL gate below
+                # (which has no joiner clause) is unchanged
+                # too, so an RTL joiner mix keeps its
+                # existing behaviour.
+                _hyph_joiner_ok = False
+                if _hyph_dash_sf and _hyph_form is not None:
+                    _hyph_first_joiner = next(
+                        (
+                            _i
+                            for _i, _c in enumerate(_hyph_form)
+                            if _c in ("\u200c", "\u200d")
+                        ),
+                        None,
+                    )
+                    if _hyph_first_joiner is not None:
+                        _hyph_joiner_ok = (
+                            _hyph_first_joiner >= 2
+                            and _hyph_unicodedata.combining(
+                                _hyph_form[_hyph_first_joiner - 1]
+                            )
+                            == 9
+                            and ord(
+                                _hyph_form[_hyph_first_joiner - 1]
+                            )
+                            not in (
+                                0x1715,
+                                0x11070,
+                                0x11F41,
+                                0x11F42,
+                            )
+                        )
                 if (
                     _hyph_form is not None
                     and (
@@ -8715,6 +8826,10 @@ def _encode_idna(host: str) -> str | None:
                             or (
                                 ord(c) == 0xFBC2
                                 and _hyph_fbc2_latin_ok
+                            )
+                            or (
+                                c in ("\u200c", "\u200d")
+                                and _hyph_joiner_ok
                             )
                             for c in _hyph_form
                         )
