@@ -2635,10 +2635,22 @@ def _encode_idna(host: str) -> str | None:
         # form starts with no mark, and it contains no
         # R/AL/AN bidi character (an RTL mix such as "م﹐b"
         # is browser-rejected and keeps returning None).
-        # A symbol mix such as "a﹐b©" likewise fails this
-        # gate's character check and keeps its existing
-        # behaviour in the branches below (the as-is branch
-        # already carries it). ASCII _hyph_punct members are
+        # Other symbols (category So, e.g. ©, ☀, ★) are
+        # admitted alongside letters, marks and numbers:
+        # a mix such as "münchen﹐b©" is carried by
+        # browsers ("xn--mnchen,b-1ka63f"), and the
+        # exact-remap check below still excludes any
+        # symbol UTS46 maps or rejects, so only
+        # pass-through symbols ride along; a symbol mix
+        # with no non-ASCII letter, mark or number (e.g.
+        # "a﹐b©") still fails the presence check below
+        # and keeps its existing behaviour in the
+        # branches below (the as-is branch already
+        # carries it). Other S categories (Sm, Sc, Sk)
+        # stay excluded: Sk holds CONTEXTO symbols such
+        # as U+0375, whose browser handling needs
+        # real-browser verification before any
+        # replication. ASCII _hyph_punct members are
         # admitted alongside letters, digits, hyphen and
         # underscore: WHATWG domain parsing carries them through
         # a label, so a small-form mix such as "münchen﹐b!" is
@@ -2665,7 +2677,10 @@ def _encode_idna(host: str) -> str | None:
                 or c in _hyph_punct
                 or (
                     ord(c) > 127
-                    and _sf_unicodedata.category(c)[0] in "LMN"
+                    and (
+                        _sf_unicodedata.category(c)[0] in "LMN"
+                        or _sf_unicodedata.category(c) == "So"
+                    )
                 )
                 for c in _lab
             ):
@@ -2776,7 +2791,10 @@ def _encode_idna(host: str) -> str | None:
                 or c in _hyph_punct
                 or (
                     ord(c) > 127
-                    and _case_unicodedata.category(c)[0] in "LMN"
+                    and (
+                        _case_unicodedata.category(c)[0] in "LMN"
+                        or _case_unicodedata.category(c) == "So"
+                    )
                 )
                 for c in _folded
             ):
@@ -2863,7 +2881,9 @@ def _encode_idna(host: str) -> str | None:
                 # non-ASCII character keeps its existing
                 # behaviour below unless it passes the
                 # _sf_mix_ok gate above (e.g. "münchen﹐b"
-                # is now carried, while "a﹐b©" and "م﹐b"
+                # is now carried, as are pass-through
+                # So-symbol mixes such as "münchen﹐b☀",
+                # while "a﹐b©" and "م﹐b"
                 # are unchanged), or the _sf_nfc_ok arm
                 # above (a decomposed "mu\u0308nchen﹐b"
                 # is now carried in its NFC form, matching
