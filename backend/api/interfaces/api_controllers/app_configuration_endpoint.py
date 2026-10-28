@@ -1,6 +1,6 @@
 
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Response, status
 
 from api.common.dtos.app_configuration_dto import AppConfigurationDto
 from api.common.utils import get_host_main_domain_name, get_logger, get_tenancy_strategy, is_tenancy_enabled
@@ -40,6 +40,7 @@ async def get_tenant(service: TenantService, tenant_id: str | None) -> Tenant | 
 
 @router.get("/", response_model=AppConfigurationDto, status_code=status.HTTP_200_OK)
 async def get_app_configuration(
+    response: Response,
     current_user: CurrentUserOptional,
     tenant_id =  Depends(get_tenant_id),
     user_pref_service: UserPreferenceService = Depends(get_user_preference_service),
@@ -48,6 +49,14 @@ async def get_app_configuration(
     sso_settings_service: SSOSettingsService = Depends(get_sso_settings_service),
     branding_service: BrandingService = Depends(get_deps(BrandingService))
 ):
+    # This GET returns per-user preferences (including passkey status)
+    # and the current tenant's branding, so it must never be served
+    # from a browser or proxy cache: a cached 200 could leak one
+    # user's preferences to another user after an account switch, or
+    # hide freshly updated branding — the same no-store hardening as
+    # the /me and /invoices GETs.
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
     user_pref_doc = None
     current_tenant = None
     is_user_logged_in = False
