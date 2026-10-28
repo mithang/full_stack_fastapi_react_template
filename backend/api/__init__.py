@@ -3566,6 +3566,20 @@ def _encode_idna(host: str) -> str | None:
                 # presentation forms through
                 # _hebrew_presentation_remap; labels without one
                 # are unchanged by them.
+                # Square CJK members are likewise expanded
+                # through _square_cjk_remap (see there): the
+                # as-is branch punycoded the raw square form,
+                # so an as-is mix never matched ("℃㌀" ->
+                # helper "xn--c-0ca5579a", browser
+                # "xn--c-0ca7397ameatb8q"; "℃㍱" -> helper
+                # "xn--c-0ca4900b", browser "xn--chpa-4ga").
+                # The seven as-is square members (U+33A7,
+                # U+33A8, U+33AE, U+33AF, U+33C6, U+33DE,
+                # U+33DF) are not in that table and keep
+                # their _asis_map expansions, and
+                # browser-rejected U+321F (in neither table)
+                # keeps its existing behaviour for separate
+                # assessment.
                 # A UTS46 bidi violation in an as-is label: this
                 # branch punycoded without any bidi gate, while
                 # the underscore fallback below already raises
@@ -3606,6 +3620,7 @@ def _encode_idna(host: str) -> str | None:
                     .translate(_kangxi_remap)
                     .translate(_parenthesized_cjk_remap)
                     .translate(_cjk_compat_remap)
+                    .translate(_square_cjk_remap)
                     .translate(_hebrew_presentation_remap)
                 )
                 # An Arabic presentation form carried as-is
