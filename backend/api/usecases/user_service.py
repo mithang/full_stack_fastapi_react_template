@@ -153,8 +153,20 @@ class UserService:
         return await self.user_repository.update(user_id=user_id, data=UpdateUserDto(**doc))
      
 
-    async def delete_user(self, user_id: str) -> None:
+    async def delete_user(self, user_id: str, tenant_id: str | PydanticObjectId | None = None) -> None:
         """Delete user by ID. Returns None otherwise, Raises UserNotFoundException if user does not exist."""
+        # Scope to the caller's tenant, mirroring get_user_by_id():
+        # the detail read and the list were already scoped, but this
+        # delete was not, so a tenant admin with USER_DELETE_ONLY
+        # could delete any other tenant's user by id. A cross-tenant
+        # id now answers with the same 404 as an unknown id; host
+        # callers (tenant_id None) and callers that omit tenant_id
+        # keep the unscoped behaviour, and the endpoint's own
+        # self-delete guard still runs first, so self-access
+        # semantics are unchanged.
+        existing = await self.user_repository.get(id=user_id)
+        if existing is None or not _caller_may_access(existing.tenant_id, tenant_id):
+            raise UserNotFoundException(user_id)
         if await self.user_repository.delete(user_id=user_id) is False:
             raise UserNotFoundException(user_id)
         

@@ -182,7 +182,12 @@ async def delete_user(
 ):
     if str(current_user.id) == user_id:
         raise ForbiddenException("Users cannot delete their own account.")
-    await service.delete_user(user_id)
+    # Scope the delete to the caller's tenant, mirroring get_user():
+    # without this a tenant admin with USER_DELETE_ONLY could delete
+    # any other tenant's user by id. Cross-tenant ids answer with the
+    # same 404 as unknown ids (raised inside the service); host
+    # callers (tenant_id None) keep the global view.
+    await service.delete_user(user_id, tenant_id=current_user.tenant_id)
     return status.HTTP_202_ACCEPTED
 
 
