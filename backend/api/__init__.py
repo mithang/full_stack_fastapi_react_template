@@ -8356,6 +8356,7 @@ def _encode_idna(host: str) -> str | None:
                 # remap leaves _hyph_form None and falls through
                 # exactly as before.
                 _hyph_form = None
+                _hyph_dash_joiner = False
                 if _hyph_remapped == label:
                     _hyph_form = label
                 elif _hyph_remapped is not None:
@@ -8385,7 +8386,17 @@ def _encode_idna(host: str) -> str | None:
                 # UTS46-mapped character keeps its existing
                 # behaviour) and the mapped form is itself
                 # remap-stable; every gate below then runs
-                # against the form actually punycoded.
+                # against the form actually punycoded. A
+                # joiner mix of this arm (and of its NFC
+                # and case+NFC variants below) whose first
+                # joiner is virama-preceded
+                # ("क\u094d\u200d\ufe31b" ->
+                # "xn--b-tud2o090g9a", verified against
+                # Node's WHATWG parser) is carried too:
+                # _hyph_dash_joiner is set on acceptance,
+                # and the first-joiner gate below admits
+                # it, so a bad-first-joiner mix still
+                # returns None as before.
                 if _hyph_form is None and _hyph_remapped is not None:
                     _hyph_mapped = label.translate(_mapped_dash)
                     if (
@@ -8404,6 +8415,7 @@ def _encode_idna(host: str) -> str | None:
                             _hyph_mapped_stable = None
                         if _hyph_mapped_stable == _hyph_mapped:
                             _hyph_form = _hyph_mapped
+                            _hyph_dash_joiner = True
                     # The NFC-normalizing variant of the
                     # mapped-dash exception, mirroring the
                     # NFC exception above and the NFC arm
@@ -8450,6 +8462,7 @@ def _encode_idna(host: str) -> str | None:
                                 == _hyph_mapped_nfc
                             ):
                                 _hyph_form = _hyph_mapped_nfc
+                                _hyph_dash_joiner = True
                     # The case-folding + NFC-normalizing
                     # variant of the mapped-dash exception,
                     # composing the case handling of the
@@ -8487,10 +8500,12 @@ def _encode_idna(host: str) -> str | None:
                     # check already excludes that class
                     # (it keeps the dash+small-form
                     # case+NFC arm below). _hyph_dash_sf
-                    # is not set here, so a joiner mix
-                    # of this arm keeps its existing
-                    # behaviour under the character gate
-                    # below.
+                    # is not set here, but
+                    # _hyph_dash_joiner is, so a joiner
+                    # mix of this arm is carried under
+                    # the first-joiner gate below, while
+                    # a bad-first-joiner mix still returns
+                    # None as before.
                     if _hyph_form is None:
                         _hyph_mapped_case_nfc = (
                             _hyph_unicodedata.normalize(
@@ -8524,6 +8539,7 @@ def _encode_idna(host: str) -> str | None:
                                 == _hyph_mapped_case_nfc
                             ):
                                 _hyph_form = _hyph_mapped_case_nfc
+                                _hyph_dash_joiner = True
                 # The mapped-dash+small-form exception,
                 # mirroring the mapped-dash exception
                 # above: a label mixing a UTS46-mapped
@@ -9040,7 +9056,9 @@ def _encode_idna(host: str) -> str | None:
                     )
                 )
                 # The first-joiner gate for the
-                # mapped-dash+small-form arm above, mirroring
+                # mapped-dash+small-form arm above and
+                # for the mapped-dash arms above (via
+                # _hyph_dash_joiner), mirroring
                 # the small-form gate: a joiner is admitted
                 # in that arm's form only when the FIRST
                 # joiner is preceded by a virama (combining
@@ -9054,7 +9072,9 @@ def _encode_idna(host: str) -> str | None:
                 # too, so an RTL joiner mix keeps its
                 # existing behaviour.
                 _hyph_joiner_ok = False
-                if _hyph_dash_sf and _hyph_form is not None:
+                if (
+                    _hyph_dash_sf or _hyph_dash_joiner
+                ) and _hyph_form is not None:
                     _hyph_first_joiner = next(
                         (
                             _i
