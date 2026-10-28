@@ -14,9 +14,14 @@ class RoleRepository(BaseRepository[Role], AuditLogRepository):
     def __init__(self):
         super().__init__(Role)
 
-    async def list (self, skip: int = 0, limit: int = 10) -> RoleListDto:
-        docs = await self.model.find_all().skip(skip).limit(limit).to_list()
-        total = await self.model.count()
+    async def list (self, skip: int = 0, limit: int = 10, tenant_id: PydanticObjectId | None = None) -> RoleListDto:
+        # Tenant-scoped listing: the filter applies to both the page
+        # and the total, so pagination metadata (total/has_next) does
+        # not leak another tenant's role count. No filter means the
+        # historic global view (host callers).
+        query = {"tenant_id": tenant_id} if tenant_id is not None else {}
+        docs = await self.model.find(query).skip(skip).limit(limit).to_list()
+        total = await self.model.find(query).count()
         result = RoleListDto(
             roles=[await doc.to_serializable_dict() for doc in docs],
             skip=skip,

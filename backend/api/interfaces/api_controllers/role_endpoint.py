@@ -6,6 +6,7 @@ from api.common.utils import get_logger
 from api.domain.dtos.role_dto import CreateRoleDto, CreateRoleResponseDto, RoleDto, RoleListDto, UpdateRoleDto
 from api.core.container import get_role_service, get_user_service
 from api.domain.enum.permission import Permission
+from api.infrastructure.security.current_user import CurrentUser
 from api.interfaces.security.role_checker import check_permissions_for_current_role
 from api.usecases.role_service import RoleService
 from api.usecases.user_service import UserService
@@ -19,6 +20,7 @@ router = APIRouter(prefix="/roles", tags=["Roles"])
 @router.get("/", response_model=RoleListDto)
 async def list_roles(
     response: Response,
+    current_user: CurrentUser,
     # Same unbounded-pagination gap as GET /users/ (iteration 237):
     # a direct API call could pass limit=1000000 or negative values
     # straight into the DB query. Cap server-side; out-of-range
@@ -38,7 +40,14 @@ async def list_roles(
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
     logger.info(f"Listing roles with skip={skip}, limit={limit}")
-    return await service.list_roles(skip=skip, limit=limit)
+    # Scope to the caller's tenant: tenant requests normally hit the
+    # tenant database (TenantMiddleware), but a tenant user calling
+    # without a tenant DB selected (no X-Tenant-ID/subdomain) would
+    # otherwise read the host database's full role table — names and
+    # permissions of every tenant's roles. Host callers (tenant_id None)
+    # keep the global view, the same scope rule as the GET /users/
+    # list and the dashboard metrics.
+    return await service.list_roles(skip=skip, limit=limit, tenant_id=current_user.tenant_id)
 
 @router.get("/search_by_name", response_model=List[RoleDto])
 async def search_role_by_name(

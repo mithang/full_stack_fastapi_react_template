@@ -14,8 +14,18 @@ class RoleService:
         self.role_repository = role_repository
         logger.info("Initialized.")
 
-    async def list_roles(self, skip: int = 0, limit: int = 10) -> RoleListDto:
-        return await self.role_repository.list(skip=skip, limit=limit)
+    async def list_roles(self, skip: int = 0, limit: int = 10, tenant_id: str | PydanticObjectId | None = None) -> RoleListDto:
+        # Tenant callers see only their tenant's roles; host callers
+        # (tenant_id None) keep the global view. A malformed tenant id
+        # cannot match any role, so fail closed with an empty page
+        # rather than falling back to the unscoped list.
+        tenant_oid = None
+        if tenant_id:
+            try:
+                tenant_oid = PydanticObjectId(tenant_id)
+            except Exception:
+                return RoleListDto(roles=[], skip=skip, limit=limit, total=0, has_previous=skip > 0, has_next=False)
+        return await self.role_repository.list(skip=skip, limit=limit, tenant_id=tenant_oid)
     
     async def find_by_name(self, name: str) -> Role:
         """Find a role by its name. Raises RoleNotFoundException if not found."""
