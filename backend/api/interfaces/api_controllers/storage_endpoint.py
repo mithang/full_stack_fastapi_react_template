@@ -37,7 +37,14 @@ async def get_storage_settings(
     return [s.model_dump(exclude_none=True) for s in res]
 
 @router.get("/available", response_model=List[dict[str, str]])
-async def get_available_providers():
+async def get_available_providers(response: Response):
+    # Static provider catalogue, but completing the no-store
+    # coverage of this file: a browser/proxy-cached 200 could
+    # otherwise hide a newly added provider from the storage
+    # settings UI after a deploy — same class as the
+    # /ssos/available-providers fix.
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
     providers = [{"name": p.value} for p in StorageProvider]
     return providers
 
