@@ -21,8 +21,14 @@ router.tags = ["AI"]
 
 @router.get("/models", response_model=List[AIModelInfoDto])
 async def get_models(
+    response: Response,
     # current_user: CurrentUser
 ):
+    # Live Ollama model list, feature-gated at the router level: a cached
+    # 200 could show a stale list after models change, or serve the list
+    # to a different user after an account switch on a shared machine.
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
     return OllamaModels().list_models()
 
 @router.get("/history", response_model=List[AISessionByUserIdDto])
