@@ -4899,9 +4899,9 @@ def _encode_idna(host: str) -> str | None:
                 # regress them; only the never-valid
                 # space separators are gated here, and
                 # the Latin-ZWNJ over-emission ("a‼‌b")
-                # keeps its existing behaviour for a
-                # ContextJ-aware assessment; the ZWJ
-                # over-emission is gated just below.
+                # is gated by the ZWNJ gate below;
+                # the ZWJ over-emission is gated just
+                # below.
                 if any(
                     _excl_unicodedata.category(c) == "Zs"
                     for c in _excl_remapped
@@ -4942,11 +4942,13 @@ def _encode_idna(host: str) -> str | None:
                 # ("क्‍‼b", "क्‍b‍c", "क्‌‍‼b" all
                 # carried; "a‼‍b", "a‌‍‼b", "م‌‍‼b"
                 # all rejected). ZERO WIDTH NON-JOINER
-                # U+200C keeps its existing behaviour:
-                # its ContextJ rule depends on
-                # Joining_Type data the stdlib does not
-                # expose, and the browser carries some
-                # ZWNJ ‼ mixes ("م‼‌م"), so it stays
+                # U+200C is gated just below: its full
+                # ContextJ rule depends on Joining_Type
+                # data the stdlib does not expose, and
+                # the browser carries some ZWNJ ‼ mixes
+                # ("م‼‌م"), so the gate below only
+                # rejects the no-joining-letter-on-a-
+                # side cases and the finer rule stays
                 # for a separate assessment.
                 _excl_zwj = _excl_remapped.find("\u200d")
                 if _excl_zwj != -1:
@@ -4966,6 +4968,99 @@ def _encode_idna(host: str) -> str | None:
                     ):
                         raise ValueError(
                             "joiner without virama double-exclamation"
+                        )
+                # ZERO WIDTH NON-JOINER U+200C in a
+                # double-exclamation label is
+                # browser-rejected under WHATWG/UTS46
+                # unless its ContextJ rule holds — and
+                # this branch emitted a ‼ mix raw
+                # ("a‼‌b" -> "xn--a!!b-276a",
+                # "a‼‌" -> "xn--a!!-cn0a",
+                # "م‼م‌٣" likewise), a form no browser
+                # origin could carry. The browser's
+                # rule, verified against Node's WHATWG
+                # parser, checks only the label's first
+                # joiner (a ZWNJ here is unchecked when
+                # a ZWJ precedes it, as in "क्‍‼‌b",
+                # and later ZWNJs are unchecked, as in
+                # "م‼‌م‌٣"), and the first ZWNJ needs a
+                # joining letter on both sides: scanning
+                # out from it past every non-joining
+                # character (digits, punctuation, the
+                # "!!" the ‼ maps to, marks, and other
+                # joiners) must reach a letter of a
+                # joining script on each side, or the
+                # label is rejected ("a‼‌b" has no
+                # joining letter before it, "a‼‌" and
+                # "م‼م‌٣" none after it). Checked on the
+                # remapped form actually punycoded, so
+                # the check is complete, and raising
+                # returns None for the whole host, as
+                # for other rejected labels. A joining
+                # letter on both sides is unchanged
+                # ("م‼‌م", "م‼٣‌م", "م‼م‌٣‌م" all still
+                # emit). The finer rule — a
+                # right-joining-only letter before the
+                # ZWNJ ("ا‌م", "ܐ‼‌ܐ") is
+                # browser-rejected unless it is itself
+                # joined from the left ("م‌و‌م") — needs
+                # Joining_Type data the stdlib does not
+                # expose, so those mixes keep their
+                # existing behaviour for a separate
+                # assessment; this gate only rejects
+                # the no-joining-letter-on-a-side cases.
+                def _excl_zwnj_joining(_c: str) -> bool:
+                    # A letter of a joining script:
+                    # Arabic (including Supplement,
+                    # Extended-A/B and the presentation
+                    # forms), Syriac (including
+                    # Supplement), NKo, Mongolian,
+                    # Adlam, Manichaean, Psalter
+                    # Pahlavi and Hanifi Rohingya.
+                    # Deliberately broad: a letter
+                    # counted here can only keep a label
+                    # emitting, never newly reject one,
+                    # so an over-broad block is safe
+                    # while a missed joining letter
+                    # would be a false reject.
+                    return _excl_unicodedata.category(_c)[0] == "L" and (
+                        0x0600 <= ord(_c) <= 0x06FF
+                        or 0x0700 <= ord(_c) <= 0x074F
+                        or 0x0750 <= ord(_c) <= 0x077F
+                        or 0x07C0 <= ord(_c) <= 0x07FF
+                        or 0x0860 <= ord(_c) <= 0x086F
+                        or 0x0870 <= ord(_c) <= 0x089F
+                        or 0x08A0 <= ord(_c) <= 0x08FF
+                        or 0x1800 <= ord(_c) <= 0x18AF
+                        or 0x1E900 <= ord(_c) <= 0x1E95F
+                        or 0x10AC0 <= ord(_c) <= 0x10AFF
+                        or 0x10B80 <= ord(_c) <= 0x10BAF
+                        or 0x10D00 <= ord(_c) <= 0x10D8F
+                        or 0xFB50 <= ord(_c) <= 0xFDFF
+                        or 0xFE70 <= ord(_c) <= 0xFEFF
+                    )
+
+                _excl_zwnj = _excl_remapped.find("\u200c")
+                if (
+                    _excl_zwnj != -1
+                    and "\u200d" not in _excl_remapped[:_excl_zwnj]
+                ):
+                    _excl_zwnj_prev = _excl_zwnj - 1
+                    while _excl_zwnj_prev >= 0 and not _excl_zwnj_joining(
+                        _excl_remapped[_excl_zwnj_prev]
+                    ):
+                        _excl_zwnj_prev -= 1
+                    _excl_zwnj_next = _excl_zwnj + 1
+                    while _excl_zwnj_next < len(
+                        _excl_remapped
+                    ) and not _excl_zwnj_joining(_excl_remapped[_excl_zwnj_next]):
+                        _excl_zwnj_next += 1
+                    if (
+                        _excl_zwnj_prev < 0
+                        or _excl_zwnj_next >= len(_excl_remapped)
+                    ):
+                        raise ValueError(
+                            "joiner without joining letters double-exclamation"
                         )
                 _excl_bidi = [
                     (
