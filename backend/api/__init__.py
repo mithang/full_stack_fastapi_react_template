@@ -4156,8 +4156,37 @@ def _encode_idna(host: str) -> str | None:
                 # browser-rejected mixes ("©︱م", "م︱©")
                 # still fall through to None. A remap
                 # failure likewise keeps the existing form.
+                # The same exception covers the UTS46 small
+                # forms that browsers carry in as-is labels
+                # (U+FE50 -> ",", U+FE51 -> U+3001, U+FE54
+                # -> ";", U+FE57 -> "!", U+FE59 -> "(",
+                # U+FE5A -> ")", U+FE5B -> "{", U+FE5C ->
+                # "}", U+FE5D -> U+3014, U+FE5E -> U+3015):
+                # they previously punycoded raw here too
+                # ("©﹔b" -> helper "xn--b-mca1395q",
+                # browser "xn--;b-sda"). The exact-remap
+                # and remap-stability gates below are
+                # unchanged, so a mix with any other
+                # UTS46-mapped character keeps its existing
+                # behaviour, and the browser-rejected small
+                # forms (U+FE52, U+FE53, U+FE55, U+FE56,
+                # U+FE5F — URL delimiters/dot forms) are
+                # deliberately not mapped here.
                 _asis_mapped = _asis_translated.translate(
                     _mapped_dash
+                ).translate(
+                    {
+                        0xFE50: ",",
+                        0xFE51: "\u3001",
+                        0xFE54: ";",
+                        0xFE57: "!",
+                        0xFE59: "(",
+                        0xFE5A: ")",
+                        0xFE5B: "{",
+                        0xFE5C: "}",
+                        0xFE5D: "\u3014",
+                        0xFE5E: "\u3015",
+                    }
                 )
                 if _asis_mapped != _asis_translated:
                     try:
