@@ -5228,8 +5228,22 @@ def _encode_idna(host: str) -> str | None:
                         # small-form-member and bidi gates
                         # as the case candidate above
                         # (which now relies on the outer
-                        # main gate for joiners) plus this
-                        # arm's own no-joiner gate; a label
+                        # main gate for joiners, as this
+                        # arm now does too). A small-form
+                        # NFC joiner mix whose first
+                        # joiner is virama-preceded
+                        # ("क\u094d\u200dmu\u0308nchen¼﹐b" ->
+                        # "xn--mnchen14,b-9db889v2ua616w2xa",
+                        # verified against Node's WHATWG
+                        # parser) is now carried too:
+                        # this candidate no longer has
+                        # its own no-joiner check, since
+                        # the outer main gate above
+                        # already bars a label whose
+                        # first joiner is not
+                        # virama-preceded, so a
+                        # bad-first-joiner mix still
+                        # returns None as before; a label
                         # that is also
                         # uppercase ("A\u0308¼﹐b", combined
                         # case+NFC) needs its own arm and
@@ -5246,8 +5260,6 @@ def _encode_idna(host: str) -> str | None:
                                     _fraction_excl_map
                                 ).translate(_small_form_map),
                             )
-                            and "\u200c" not in label
-                            and "\u200d" not in label
                         )
                         # A label mixing a fraction with a
                         # carried small form that is BOTH
