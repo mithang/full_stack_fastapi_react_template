@@ -143,7 +143,16 @@ class AuthService:
 
 
     async def login(self, req: LoginRequestDto) -> TokenSetDto:
-        user = await self.user_service.find_by_email(email=req.email)
+        try:
+            user = await self.user_service.find_by_email(email=req.email)
+        except UserNotFoundException:
+            # Same generic 401 as a wrong password: previously an unknown
+            # email raised UserNotFoundException, which the exception
+            # handler maps to 404 "User with identifier <email> not
+            # found.", letting anyone probe whether an email has an
+            # account. Timing still differs (no password check runs for
+            # an unknown email); that is a separate, smaller channel.
+            raise UnauthorizedException("Authentication failed. Please check your credentials.")
         if verify_password(req.password, user.password) is False:
             raise UnauthorizedException("Authentication failed. Please check your credentials.")
 
