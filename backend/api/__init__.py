@@ -2502,6 +2502,43 @@ def _encode_idna(host: str) -> str | None:
         # testing for a hyphen edge and admits them in its
         # character gate.
         _hyph_punct = "!\"$&'()*+,;=`{}~"
+        # Dash punctuation (category Pd) that UTS46 leaves
+        # unchanged but the `idna` package rejects under both
+        # strict and UTS46 processing, so a label carrying one
+        # fell through to None while browsers punycode it raw
+        # ("م⸗م" -> "xn--hhba5961a", "a⸗b" ->
+        # "xn--ab-ou2a", verified against Node's WHATWG parser
+        # over the whole Pd range). The hyphen-edge branch
+        # below admits these in its trigger, and its existing
+        # character / RTL gates still decide each label, so a
+        # browser-rejected mix (a Latin mix with a
+        # right-to-left dash such as U+05BE or U+10EAD, a
+        # digit-mixed RTL label, an edge dash on an RTL
+        # label) still falls through to None exactly as
+        # before. Excluded here: U+002D and U+2010-U+2015
+        # and U+FF0D, which already match; U+FE31, U+FE32,
+        # U+FE58 and U+FE63, which UTS46 maps to another dash
+        # (a separate, mapped class); U+1806, whose UTS46
+        # remap raises (a separate class); and U+2E5D,
+        # which browsers reject in an RTL label even though
+        # the gates below would otherwise admit it.
+        _dash_punct = frozenset(
+            chr(cp)
+            for cp in (
+                0x058A,
+                0x05BE,
+                0x1400,
+                0x2E17,
+                0x2E1A,
+                0x2E3A,
+                0x2E3B,
+                0x2E40,
+                0x301C,
+                0x3030,
+                0x30A0,
+                0x10EAD,
+            )
+        )
         encoded_labels = []
         for label in host.split("."):
             if not label:
@@ -4801,6 +4838,7 @@ def _encode_idna(host: str) -> str | None:
                 label.strip(_hyph_punct).startswith("-")
                 or label.strip(_hyph_punct).endswith("-")
                 or any(c in _hyph_punct for c in label)
+                or any(c in _dash_punct for c in label)
             ) and any(ord(c) > 127 for c in label):
                 # A non-ASCII label with a leading or trailing
                 # hyphen: WHATWG URL serialization punycodes it
@@ -4963,6 +5001,7 @@ def _encode_idna(host: str) -> str | None:
                         _hyph_form.strip(_hyph_punct).startswith("-")
                         or _hyph_form.strip(_hyph_punct).endswith("-")
                         or any(c in _hyph_punct for c in _hyph_form)
+                        or any(c in _dash_punct for c in _hyph_form)
                     )
                     and _hyph_unicodedata.category(_hyph_form[0])[0]
                     != "M"
