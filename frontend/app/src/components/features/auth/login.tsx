@@ -30,11 +30,15 @@ import { SSOLoginDialog } from "./sso-login-dialog";
 
 const loginSchema = z.object({
     email: z.email({ message: "Invalid email address" }),
+    // Login must NOT enforce the signup password policy: the backend
+    // login endpoint only verifies the stored hash and never runs
+    // validate_password, so an account whose password predates the
+    // policy (or was set on a path that skipped validation) is valid
+    // server-side but was blocked by this form's policy checks, with
+    // no way to log in. Only non-empty is required here; wrong
+    // credentials still get the backend's generic 401.
     password: z.string()
-        .min(8, { message: "Password must be at least 8 characters" })
-        .regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/, {
-            message: "Password must contain at least 1 lowercase letter, 1 uppercase letter, 1 number, and 1 symbol"
-        })
+        .min(1, { message: "Password cannot be empty" })
 });
 
 type LoginFormInputs = z.infer<typeof loginSchema>;
