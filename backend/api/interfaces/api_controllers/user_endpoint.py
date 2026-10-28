@@ -137,6 +137,20 @@ async def update_user(
             )
             if not can_assign_roles:
                 raise ForbiddenException("Only users with role assignment permission can change a user's role.")
+            # The target user is scoped to the caller's tenant above, but
+            # the role itself was not: the service stores any role_id
+            # verbatim, and permission checks resolve a user's role by id
+            # with no tenant scope, so a tenant admin could PUT another
+            # tenant's ADMIN role (FULL_ACCESS) onto their own user — the
+            # same escalation closed on assign_role in iteration 879.
+            # Verify the role belongs to the caller's tenant; a foreign
+            # or unknown id answers with the same 404 as an unknown role,
+            # and host callers (tenant_id None) keep the global view.
+            # The check runs after the permission check so an unauthorized
+            # caller still sees Forbidden, not a role-existence signal,
+            # and a no-op echo of the target's current role (already
+            # tenant-scoped via get_user_by_id above) needs no check.
+            await role_service.get_role_by_id(role_id=data.role_id, tenant_id=current_user.tenant_id)
     user_doc = await service.update_user(user_id=user_id, user_data=data, tenant_id=current_user.tenant_id)
     serialized_user = await user_doc.to_serializable_dict()
     return UserDto(**serialized_user)
