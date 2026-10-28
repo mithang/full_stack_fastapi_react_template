@@ -3394,6 +3394,84 @@ def _encode_idna(host: str) -> str | None:
                                     "NFC", _frac_recovered
                                 )
                             )
+                        # A label mixing a fraction with a
+                        # decomposed mark plus an as-is mark
+                        # but no small form
+                        # ("mu\u0308nchen¼b᫏" ->
+                        # "münchen1⁄4b᫏", verified against
+                        # Node's WHATWG parser): the same
+                        # gap as the small-form arm above,
+                        # without a small form to gate on —
+                        # the per-character recovery expands
+                        # the fraction but does not
+                        # normalize, so its recovered form
+                        # stays decomposed and the label
+                        # fell through to a decomposed raw
+                        # punycode instead of the browser's
+                        # composed form. Accept the NFC of
+                        # the recovered form when it equals
+                        # the NFC of the plain
+                        # fraction-expanded candidate or
+                        # of its per-character-folded form,
+                        # mirroring the arm above; the main
+                        # gate's NFC and case+NFC arms below
+                        # then accept the normalized form
+                        # (and its bidi and space gates still
+                        # apply to it). The arm is gated on
+                        # no small-form member (that class
+                        # keeps the arm above), on the
+                        # recovered form actually being
+                        # decomposed, on no space or joiner,
+                        # and on a non-mark first character,
+                        # so composed, joiner, space and
+                        # mark-first labels keep their
+                        # existing handling.
+                        if (
+                            _frac_recovered is not None
+                            and " " not in label
+                            and not any(
+                                ord(c) in _small_form_map
+                                for c in label
+                            )
+                            and "\u200c" not in label
+                            and "\u200d" not in label
+                            and _frac_rec_unicodedata.category(
+                                label[0]
+                            )[0]
+                            != "M"
+                            and _frac_recovered
+                            != _frac_rec_unicodedata.normalize(
+                                "NFC", _frac_recovered
+                            )
+                            and (
+                                _frac_rec_unicodedata.normalize(
+                                    "NFC", _frac_recovered
+                                )
+                                == _frac_rec_unicodedata.normalize(
+                                    "NFC",
+                                    label.translate(
+                                        _fraction_excl_map
+                                    ),
+                                )
+                                or _frac_rec_unicodedata.normalize(
+                                    "NFC", _frac_recovered
+                                )
+                                == _frac_rec_unicodedata.normalize(
+                                    "NFC",
+                                    "".join(
+                                        c.lower()
+                                        for c in label.translate(
+                                            _fraction_excl_map
+                                        )
+                                    ),
+                                )
+                            )
+                        ):
+                            _frac_remapped = (
+                                _frac_rec_unicodedata.normalize(
+                                    "NFC", _frac_recovered
+                                )
+                            )
                 # A label mixing a fraction with an as-is
                 # expansion form (DEGREE CELSIUS U+2103 ->
                 # "°c", DEGREE FAHRENHEIT U+2109 -> "°f"):
