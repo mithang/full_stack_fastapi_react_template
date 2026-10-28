@@ -1360,12 +1360,23 @@ def _encode_idna(host: str) -> str | None:
                     else c
                     for c in _fb29_plain_label
                 )
+                # "!" joins the kept-verbatim set: UTS46 maps
+                # DOUBLE EXCLAMATION MARK U+203C to "!!" and
+                # FULLWIDTH EXCLAMATION MARK U+FF01 to "!", and
+                # WHATWG keeps a literal "!" verbatim in a host
+                # ("‼﬩" -> "!!+", "a!﬩" -> "a!+", verified
+                # against Node's WHATWG parser), so without it
+                # a double-exclamation + U+FB29 label failed
+                # this check and fell through to the punycode
+                # retry ("xn--!!-jf1n"). "?" stays excluded, so
+                # the browser-rejected U+2048/U+2049 expansions
+                # ("?!", "!?") still fail this check as before.
                 _fb29_plain_flags.append(
                     (not _fb29_plain_label or _fb29_plain_remapped)
                     and all(
                         c in "abcdefghijklmnopqrstuvwxyz"
                         "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-                        "0123456789_+-"
+                        "0123456789_+-!"
                         for c in _fb29_plain_remapped
                     )
                 )
