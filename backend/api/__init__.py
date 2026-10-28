@@ -2057,6 +2057,82 @@ def _encode_idna(host: str) -> str | None:
         0xFAD0: "𢡄", 0xFAD1: "𣏕", 0xFAD2: "㮝", 0xFAD3: "䀘", 0xFAD4: "䀹",
         0xFAD5: "𥉉", 0xFAD6: "𥳐", 0xFAD7: "𧻓", 0xFAD8: "齃", 0xFAD9: "龎",
     }
+    # CJK Compatibility square forms the fraction branch must
+    # remap first: every member of _punycode_square_cjk above
+    # (U+3300-U+33FF, 246 members) remaps under UTS46 to a
+    # katakana phrase, an ASCII unit, or a digit-plus-day form
+    # (e.g. U+3300 -> "アパート", U+3371 -> "hpa",
+    # U+33FB -> "28日"), verified against the package's
+    # uts46_remap for all 246, with no identity members and no
+    # raises. The standalone square members already reproduce
+    # via the UTS46 retry above, but a label mixing one with a
+    # fraction is claimed by the fraction branch first, whose
+    # gate lacked a square candidate, so it fell through to
+    # None even though the browser carries the remapped form
+    # ("¼" + U+3371 -> "1⁄4hpa" -> "xn--14hpa-d33b"). This
+    # table is disjoint from _asis_map's seven square entries
+    # (U+33A7/U+33A8/U+33AE/U+33AF/U+33C6/U+33DE/U+33DF, whose
+    # expansions contain the fraction slash and are already
+    # covered by the as-is candidate), so the chained form is
+    # identity for labels without a square member, and its
+    # outputs need no further remap (translate does not
+    # recurse, matching UTS46's single mapping pass). The
+    # fraction branch below applies it; mixes with other
+    # UTS46-remapped classes keep their existing behaviour
+    # for separate assessment.
+    _square_cjk_remap = {
+        0x3300: "アパート", 0x3301: "アルファ", 0x3302: "アンペア", 0x3303: "アール", 0x3304: "イニング",
+        0x3305: "インチ", 0x3306: "ウォン", 0x3307: "エスクード", 0x3308: "エーカー", 0x3309: "オンス",
+        0x330A: "オーム", 0x330B: "カイリ", 0x330C: "カラット", 0x330D: "カロリー", 0x330E: "ガロン",
+        0x330F: "ガンマ", 0x3310: "ギガ", 0x3311: "ギニー", 0x3312: "キュリー", 0x3313: "ギルダー",
+        0x3314: "キロ", 0x3315: "キログラム", 0x3316: "キロメートル", 0x3317: "キロワット", 0x3318: "グラム",
+        0x3319: "グラムトン", 0x331A: "クルゼイロ", 0x331B: "クローネ", 0x331C: "ケース", 0x331D: "コルナ",
+        0x331E: "コーポ", 0x331F: "サイクル", 0x3320: "サンチーム", 0x3321: "シリング", 0x3322: "センチ",
+        0x3323: "セント", 0x3324: "ダース", 0x3325: "デシ", 0x3326: "ドル", 0x3327: "トン",
+        0x3328: "ナノ", 0x3329: "ノット", 0x332A: "ハイツ", 0x332B: "パーセント", 0x332C: "パーツ",
+        0x332D: "バーレル", 0x332E: "ピアストル", 0x332F: "ピクル", 0x3330: "ピコ", 0x3331: "ビル",
+        0x3332: "ファラッド", 0x3333: "フィート", 0x3334: "ブッシェル", 0x3335: "フラン", 0x3336: "ヘクタール",
+        0x3337: "ペソ", 0x3338: "ペニヒ", 0x3339: "ヘルツ", 0x333A: "ペンス", 0x333B: "ページ",
+        0x333C: "ベータ", 0x333D: "ポイント", 0x333E: "ボルト", 0x333F: "ホン", 0x3340: "ポンド",
+        0x3341: "ホール", 0x3342: "ホーン", 0x3343: "マイクロ", 0x3344: "マイル", 0x3345: "マッハ",
+        0x3346: "マルク", 0x3347: "マンション", 0x3348: "ミクロン", 0x3349: "ミリ", 0x334A: "ミリバール",
+        0x334B: "メガ", 0x334C: "メガトン", 0x334D: "メートル", 0x334E: "ヤード", 0x334F: "ヤール",
+        0x3350: "ユアン", 0x3351: "リットル", 0x3352: "リラ", 0x3353: "ルピー", 0x3354: "ルーブル",
+        0x3355: "レム", 0x3356: "レントゲン", 0x3357: "ワット", 0x3358: "0点", 0x3359: "1点",
+        0x335A: "2点", 0x335B: "3点", 0x335C: "4点", 0x335D: "5点", 0x335E: "6点",
+        0x335F: "7点", 0x3360: "8点", 0x3361: "9点", 0x3362: "10点", 0x3363: "11点",
+        0x3364: "12点", 0x3365: "13点", 0x3366: "14点", 0x3367: "15点", 0x3368: "16点",
+        0x3369: "17点", 0x336A: "18点", 0x336B: "19点", 0x336C: "20点", 0x336D: "21点",
+        0x336E: "22点", 0x336F: "23点", 0x3370: "24点", 0x3371: "hpa", 0x3372: "da",
+        0x3373: "au", 0x3374: "bar", 0x3375: "ov", 0x3376: "pc", 0x3377: "dm",
+        0x3378: "dm2", 0x3379: "dm3", 0x337A: "iu", 0x337B: "平成", 0x337C: "昭和",
+        0x337D: "大正", 0x337E: "明治", 0x337F: "株式会社", 0x3380: "pa", 0x3381: "na",
+        0x3382: "μa", 0x3383: "ma", 0x3384: "ka", 0x3385: "kb", 0x3386: "mb",
+        0x3387: "gb", 0x3388: "cal", 0x3389: "kcal", 0x338A: "pf", 0x338B: "nf",
+        0x338C: "μf", 0x338D: "μg", 0x338E: "mg", 0x338F: "kg", 0x3390: "hz",
+        0x3391: "khz", 0x3392: "mhz", 0x3393: "ghz", 0x3394: "thz", 0x3395: "μl",
+        0x3396: "ml", 0x3397: "dl", 0x3398: "kl", 0x3399: "fm", 0x339A: "nm",
+        0x339B: "μm", 0x339C: "mm", 0x339D: "cm", 0x339E: "km", 0x339F: "mm2",
+        0x33A0: "cm2", 0x33A1: "m2", 0x33A2: "km2", 0x33A3: "mm3", 0x33A4: "cm3",
+        0x33A5: "m3", 0x33A6: "km3", 0x33A9: "pa", 0x33AA: "kpa", 0x33AB: "mpa",
+        0x33AC: "gpa", 0x33AD: "rad", 0x33B0: "ps", 0x33B1: "ns", 0x33B2: "μs",
+        0x33B3: "ms", 0x33B4: "pv", 0x33B5: "nv", 0x33B6: "μv", 0x33B7: "mv",
+        0x33B8: "kv", 0x33B9: "mv", 0x33BA: "pw", 0x33BB: "nw", 0x33BC: "μw",
+        0x33BD: "mw", 0x33BE: "kw", 0x33BF: "mw", 0x33C0: "kω", 0x33C1: "mω",
+        0x33C3: "bq", 0x33C4: "cc", 0x33C5: "cd", 0x33C8: "db", 0x33C9: "gy",
+        0x33CA: "ha", 0x33CB: "hp", 0x33CC: "in", 0x33CD: "kk", 0x33CE: "km",
+        0x33CF: "kt", 0x33D0: "lm", 0x33D1: "ln", 0x33D2: "log", 0x33D3: "lx",
+        0x33D4: "mb", 0x33D5: "mil", 0x33D6: "mol", 0x33D7: "ph", 0x33D9: "ppm",
+        0x33DA: "pr", 0x33DB: "sr", 0x33DC: "sv", 0x33DD: "wb", 0x33E0: "1日",
+        0x33E1: "2日", 0x33E2: "3日", 0x33E3: "4日", 0x33E4: "5日", 0x33E5: "6日",
+        0x33E6: "7日", 0x33E7: "8日", 0x33E8: "9日", 0x33E9: "10日", 0x33EA: "11日",
+        0x33EB: "12日", 0x33EC: "13日", 0x33ED: "14日", 0x33EE: "15日", 0x33EF: "16日",
+        0x33F0: "17日", 0x33F1: "18日", 0x33F2: "19日", 0x33F3: "20日", 0x33F4: "21日",
+        0x33F5: "22日", 0x33F6: "23日", 0x33F7: "24日", 0x33F8: "25日", 0x33F9: "26日",
+        0x33FA: "27日", 0x33FB: "28日", 0x33FC: "29日", 0x33FD: "30日", 0x33FE: "31日",
+        0x33FF: "gal",
+    }
+
     # Hebrew Alphabetic Presentation Forms the as-is branch must
     # remap first: every member of _punycode_hebrew_presentation
     # above (U+FB1D, U+FB1F-U+FB28, U+FB2A-U+FB36, U+FB38-U+FB3C,
@@ -2710,6 +2786,42 @@ def _encode_idna(host: str) -> str | None:
                         .translate(_enclosed_cjk_remap)
                         .translate(_parenthesized_cjk_remap)
                         .translate(_cjk_compat_remap)
+                        # A label mixing a fraction with a
+                        # square CJK member (fraction plus
+                        # U+3371 -> "1⁄4hpa"): the whole-label
+                        # remap expands both, so it equals
+                        # none of the candidates above, and
+                        # the label fell through to None even
+                        # though the browser carries the
+                        # remapped form. Accept the
+                        # fraction-expanded form further
+                        # translated through the square CJK
+                        # remap table; its key domain is
+                        # disjoint from the fraction, as-is,
+                        # Greek and enclosed tables, so the
+                        # chained form covers single-square
+                        # labels and mixes of squares alike,
+                        # and is identity for labels without
+                        # such a member. The Greek and as-is
+                        # variants below cover the same
+                        # combinations the enclosed
+                        # candidates above already cover, for
+                        # the same reason. It is still
+                        # anchored to the real UTS46 remap: any
+                        # other remapped character fails every
+                        # candidate and falls through
+                        # unchanged, as before.
+                        or _frac_remapped
+                        == label.translate(_fraction_excl_map)
+                        .translate(_square_cjk_remap)
+                        or _frac_remapped
+                        == label.translate(_fraction_excl_map)
+                        .translate(_greek_extended_remap)
+                        .translate(_square_cjk_remap)
+                        or _frac_remapped
+                        == label.translate(_fraction_excl_map)
+                        .translate(_asis_map)
+                        .translate(_square_cjk_remap)
                         or _frac_hebrew_ok
                     )
                 ):
