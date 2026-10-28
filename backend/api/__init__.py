@@ -1325,11 +1325,33 @@ def _encode_idna(host: str) -> str | None:
     # through too. A genuinely empty label stays empty, as in
     # the U+FB29 branch, but a label that would remap to empty
     # does not qualify, so no character is silently dropped.
+    # The same gap exists per label in a multi-label host whose
+    # other label stays non-ASCII ("㉐﬩.münchen" -> browser
+    # "pte+.xn--mnchen-3ya", verified against Node's WHATWG
+    # parser): the enclosed/square member triggers the retry
+    # below, and when the sibling is UTS46-valid the retry
+    # succeeds and punycodes the plain label too
+    # ("xn--pte+-.xn--mnchen-3ya"), so the entry never matched.
+    # (When the sibling is UTS46-invalid the retry fails and the
+    # later U+FB29 branch already gives the mixed form, so this
+    # only changes hosts the retry currently gets wrong.) The
+    # mixed form is built label by label, because WHATWG/UTS46
+    # processing is per label: a plain label keeps its remapped
+    # form, and each non-plain label is encoded on its own by
+    # this same function (a single label has no dots, so it
+    # cannot re-enter this mixed branch). The mixed form is
+    # only used when at least one plain label actually contains
+    # U+FB29 — the flagged class — and when every non-plain
+    # label encodes to a single non-empty label on its own; any
+    # failure, empty result, or dot in a delegated result falls
+    # through to the retry and the later branches exactly as
+    # before, so no host is newly dropped or silently altered.
     if "\uFB29" in host:
         try:
             _fb29_plain_labels = []
-            _fb29_plain_ok = True
-            for _fb29_plain_label in host.split("."):
+            _fb29_plain_flags = []
+            _fb29_plain_origs = host.split(".")
+            for _fb29_plain_label in _fb29_plain_origs:
                 _fb29_plain_remapped = "".join(
                     _idna.uts46_remap(
                         c, std3_rules=False, transitional=False
@@ -1338,7 +1360,7 @@ def _encode_idna(host: str) -> str | None:
                     else c
                     for c in _fb29_plain_label
                 )
-                if (
+                _fb29_plain_flags.append(
                     (not _fb29_plain_label or _fb29_plain_remapped)
                     and all(
                         c in "abcdefghijklmnopqrstuvwxyz"
@@ -1346,13 +1368,42 @@ def _encode_idna(host: str) -> str | None:
                         "0123456789_+-"
                         for c in _fb29_plain_remapped
                     )
-                ):
-                    _fb29_plain_labels.append(_fb29_plain_remapped)
-                else:
-                    _fb29_plain_ok = False
-                    break
-            if _fb29_plain_ok:
+                )
+                _fb29_plain_labels.append(_fb29_plain_remapped)
+            if all(_fb29_plain_flags):
                 return ".".join(_fb29_plain_labels)
+            if (
+                any(_fb29_plain_flags)
+                and not all(_fb29_plain_flags)
+                and any(
+                    flag and "\uFB29" in orig
+                    for flag, orig in zip(
+                        _fb29_plain_flags, _fb29_plain_origs
+                    )
+                )
+            ):
+                _fb29_mixed_labels = []
+                _fb29_mixed_ok = True
+                for _fb29_orig, _fb29_remapped, _fb29_flag in zip(
+                    _fb29_plain_origs,
+                    _fb29_plain_labels,
+                    _fb29_plain_flags,
+                ):
+                    if _fb29_flag:
+                        _fb29_mixed_labels.append(_fb29_remapped)
+                    elif not _fb29_orig:
+                        _fb29_mixed_labels.append("")
+                    else:
+                        _fb29_delegated = _encode_idna(_fb29_orig)
+                        if (
+                            not _fb29_delegated
+                            or "." in _fb29_delegated
+                        ):
+                            _fb29_mixed_ok = False
+                            break
+                        _fb29_mixed_labels.append(_fb29_delegated)
+                if _fb29_mixed_ok:
+                    return ".".join(_fb29_mixed_labels)
         except (UnicodeError, ValueError):
             pass
     if any(
