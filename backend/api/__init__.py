@@ -3994,6 +3994,22 @@ def _encode_idna(host: str) -> str | None:
                 # helper "xn--c-0ca5579a", browser
                 # "xn--c-0ca7397ameatb8q"; "℃㍱" -> helper
                 # "xn--c-0ca4900b", browser "xn--chpa-4ga").
+                # U+FB29 is likewise expanded to "+" here:
+                # UTS46 maps it to "+" before IDNA
+                # processing, but this branch never expanded
+                # it, so an as-is mix with U+FB29 and a
+                # double exclamation mark punycoded the raw
+                # form ("©‼﬩" -> helper "xn--!!-sda8267w",
+                # browser "xn--!!+-yea"); labels with U+FB29
+                # but no double exclamation mark already
+                # matched via the U+FB29 branch above, and
+                # labels without U+FB29 are unchanged, since
+                # the translate is identity for them. The
+                # bidi gate below runs on the translated
+                # form, so a trailing "+" still fails it
+                # ("م©‼﬩" stays None, as browsers reject
+                # it) while a medial "+" passes it
+                # ("م©‼﬩م" -> browser "xn--!!+-yea392eea").
                 # The seven as-is square members (U+33A7,
                 # U+33A8, U+33AE, U+33AF, U+33C6, U+33DE,
                 # U+33DF) are not in that table and keep
@@ -4036,6 +4052,7 @@ def _encode_idna(host: str) -> str | None:
                 _asis_translated = (
                     label.translate(_asis_map)
                     .translate(_double_excl_map)
+                    .translate({0xFB29: "+"})
                     .translate(_greek_extended_remap)
                     .translate(_enclosed_cjk_remap)
                     .translate(_kangxi_remap)
