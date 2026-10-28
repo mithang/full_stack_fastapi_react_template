@@ -4722,9 +4722,73 @@ def _encode_idna(host: str) -> str | None:
                 # via the fallback below; this branch produces the
                 # identical form for them, so their behaviour is
                 # unchanged.
-                encoded_labels.append(
-                    "xn--" + label.encode("punycode").decode("ascii")
-                )
+                # A mapped dash in such a label is punycoded
+                # here in its mapped form, not raw: browsers
+                # apply UTS46 mapping before punycoding, so a
+                # Latin label mixing an as-is form with a
+                # mapped dash emitted the raw dash ("a︱﯂b"
+                # -> "xn--ab-ms1n11f") while browsers carry
+                # the mapped form ("xn--ab-71t4259i",
+                # verified against Node's WHATWG parser).
+                # The mapped form is accepted only when
+                # translating the label through _mapped_dash
+                # reproduces the UTS46 remap exactly (or its
+                # NFC form does, mirroring the hyphen-edge
+                # branch's NFC arm) and that form is itself
+                # remap-stable, so a label mixing a mapped
+                # dash with any other UTS46-mapped character
+                # keeps its existing raw behaviour; labels
+                # without a mapped dash are unchanged, since
+                # the translate is identity for them, and the
+                # branch's own gates above already ran on the
+                # raw label (a mapped dash is neutral and NFC
+                # composition only turns a base letter plus a
+                # mark into a letter, so neither can newly
+                # violate them).
+                _arb_form = label
+                _arb_mapped = label.translate(_mapped_dash)
+                if _arb_mapped != label:
+                    try:
+                        _arb_remapped = _idna.uts46_remap(
+                            label, std3_rules=False,
+                            transitional=False,
+                        )
+                    except (UnicodeError, ValueError):
+                        _arb_remapped = None
+                    if _arb_remapped is not None:
+                        _arb_mapped_nfc = (
+                            _arb_unicodedata.normalize(
+                                "NFC", _arb_mapped
+                            )
+                        )
+                        _arb_candidate = None
+                        if _arb_mapped == _arb_remapped:
+                            _arb_candidate = _arb_mapped
+                        elif _arb_mapped_nfc == _arb_remapped:
+                            _arb_candidate = _arb_mapped_nfc
+                        if _arb_candidate is not None:
+                            try:
+                                _arb_candidate_stable = (
+                                    _idna.uts46_remap(
+                                        _arb_candidate,
+                                        std3_rules=False,
+                                        transitional=False,
+                                    )
+                                )
+                            except (UnicodeError, ValueError):
+                                _arb_candidate_stable = None
+                            if (
+                                _arb_candidate_stable
+                                == _arb_candidate
+                            ):
+                                _arb_form = _arb_candidate
+                if any(ord(c) > 127 for c in _arb_form):
+                    encoded_labels.append(
+                        "xn--"
+                        + _arb_form.encode("punycode").decode("ascii")
+                    )
+                else:
+                    encoded_labels.append(_arb_form)
             elif any(
                 0x3200 <= ord(c) <= 0x321E
                 or 0x3220 <= ord(c) <= 0x3243
@@ -5234,12 +5298,14 @@ def _encode_idna(host: str) -> str | None:
                 # "xn--ab-jbf3589a", verified against Node's
                 # WHATWG parser). Admit it only in a Latin
                 # label: the form must contain no other
-                # R/AL/AN-bidi character, so an RTL mix
-                # ("م︱࢈م") or a Latin/RTL mix ("a︱࢈م"),
-                # which browsers reject, still fails the
-                # gate exactly as before; the RTL gate's
-                # explicit U+0888 bar is unchanged, so an
-                # RTL-led label keeps its existing behaviour.
+                # R/AL/AN-bidi character apart from itself
+                # and the fellow admitted symbol U+FBC2 (see
+                # below), so an RTL mix ("م︱࢈م") or a
+                # Latin/RTL mix ("a︱࢈م"), which browsers
+                # reject, still fails the gate exactly as
+                # before; the RTL gate's explicit U+0888 bar
+                # is unchanged, so an RTL-led label keeps
+                # its existing behaviour.
                 _hyph_0888_latin_ok = (
                     _hyph_form is not None
                     and "\u0888" in _hyph_form
@@ -5247,7 +5313,42 @@ def _encode_idna(host: str) -> str | None:
                         _hyph_unicodedata.bidirectional(c)
                         in ("R", "AL", "AN")
                         for c in _hyph_form
-                        if ord(c) != 0x0888
+                        if ord(c) not in (0x0888, 0xFBC2)
+                    )
+                )
+                # The U+FBC2 exception to the character gate
+                # below, mirroring the U+0888 exception
+                # above: ARABIC PRESENTATION FORM U+FBC2 is
+                # likewise a strong-RTL symbol (bidi class
+                # AL, category Sk), so the non-RTL gate
+                # barred it and the RTL gate bars it
+                # explicitly, and a Latin label mixing it
+                # with a mapped dash fell through to the
+                # fallback, which punycoded the raw label
+                # ("a︱﯂b" -> "xn--ab-ms1n11f") while
+                # browsers carry the mapped-dash form
+                # ("xn--ab-71t4259i", verified against
+                # Node's WHATWG parser). Admit it only in a
+                # Latin label, on the same terms as U+0888:
+                # the form must contain no other R/AL/AN
+                # bidi character apart from itself and
+                # U+0888, so an RTL mix ("م︱﯂م") or a
+                # Latin/RTL mix ("a︱﯂م"), which browsers
+                # reject, still falls through to None
+                # exactly as before; the RTL gate's explicit
+                # U+FBC2 bar is unchanged, so an RTL-led
+                # label keeps its existing behaviour. The
+                # gate runs on the mapped form, so the
+                # mapped dash (or its NFC form) is what
+                # gets punycoded, not the raw dash.
+                _hyph_fbc2_latin_ok = (
+                    _hyph_form is not None
+                    and "\ufbc2" in _hyph_form
+                    and not any(
+                        _hyph_unicodedata.bidirectional(c)
+                        in ("R", "AL", "AN")
+                        for c in _hyph_form
+                        if ord(c) not in (0x0888, 0xFBC2)
                     )
                 )
                 if (
@@ -5281,6 +5382,10 @@ def _encode_idna(host: str) -> str | None:
                             or (
                                 ord(c) == 0x0888
                                 and _hyph_0888_latin_ok
+                            )
+                            or (
+                                ord(c) == 0xFBC2
+                                and _hyph_fbc2_latin_ok
                             )
                             for c in _hyph_form
                         )
