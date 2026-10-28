@@ -3516,6 +3516,75 @@ def _encode_idna(host: str) -> str | None:
                                     "NFC", _frac_recovered
                                 )
                             )
+                            # A label mixing a fraction with
+                            # an uppercase letter plus an
+                            # as-is mark but no mapped dash
+                            # and no carried small form
+                            # ("Ω¼b᫏" -> "ω1⁄4b᫏",
+                            # "a¼bΣ᫏" -> "a1⁄4bσ᫏",
+                            # "K¼b᫏" -> "k1⁄4b᫏", verified
+                            # against Node's WHATWG parser):
+                            # the whole-label remap raises
+                            # on the as-is mark, so the
+                            # per-character recovery above
+                            # expands the fraction and
+                            # case-folds as well
+                            # (single-character remap folds
+                            # Ω -> ω and a trailing Σ -> σ,
+                            # as the main gate's
+                            # per-character lower does, and
+                            # folds KELVIN SIGN -> k), but
+                            # this gate lacked the plain
+                            # case candidate the main gate
+                            # already has, so it fell
+                            # through to the raw-fraction
+                            # punycode instead of the
+                            # browser's form. Accept the
+                            # fraction-expanded form folded
+                            # per character, gated on no
+                            # small-form member so the
+                            # small-form arms above keep
+                            # their own handling (a
+                            # mapped-dash mix does not
+                            # match this candidate, since
+                            # its recovered form also
+                            # carries the dash translation),
+                            # on a non-mark first character
+                            # so the plain fraction branch's
+                            # mark-first over-emission is
+                            # not extended to this class,
+                            # and on the recovered form
+                            # already being NFC, so a
+                            # decomposed mix is left
+                            # unchanged and keeps its own
+                            # normalizing arm; joiner labels
+                            # never reach it because the
+                            # recovery above already raises
+                            # on a joiner, and the main
+                            # gate's bidi and space gates
+                            # still reject an RTL or space
+                            # mix below.
+                            or (
+                                not any(
+                                    ord(c) in _small_form_map
+                                    for c in label
+                                )
+                                and _frac_rec_unicodedata.category(
+                                    label[0]
+                                )[0]
+                                != "M"
+                                and _frac_recovered
+                                == "".join(
+                                    c.lower()
+                                    for c in label.translate(
+                                        _fraction_excl_map
+                                    )
+                                )
+                                and _frac_recovered
+                                == _frac_rec_unicodedata.normalize(
+                                    "NFC", _frac_recovered
+                                )
+                            )
                         )
                         if any(
                             ord(c)
