@@ -2688,9 +2688,9 @@ def _encode_idna(host: str) -> str | None:
         # such a label only when its NFC form passes the
         # _sf_mix_ok gate (which re-checks the mark-first,
         # bidi and character conditions and the exact
-        # remap on the NFC form, so an uppercase mix such
-        # as "Ω﹐b" — whose NFC form still needs a case
-        # fold — keeps its existing behaviour) and the
+        # remap on the NFC form; an uppercase mix such as
+        # "Ω﹐b" fails here and is handled by the
+        # case-fold arm below instead) and the
         # NFC of the translated form equals the
         # translation of the NFC form, so the body below
         # punycodes exactly the gated form. A label
@@ -2712,6 +2712,76 @@ def _encode_idna(host: str) -> str | None:
                 == _nfc.translate(_small_form_map)
             )
 
+        # The case-fold small-form mix arm: UTS46 case-folds an
+        # uppercase mix to its lowercase form ("Ω﹐b" ->
+        # "ω,b"), so the exact-remap check above rejects it
+        # and it fell through to None, while browsers
+        # case-fold and carry it ("Ω﹐b" -> "xn--,b-dcc",
+        # verified against Node's WHATWG parser). Admit
+        # such a label only when its case-folded form
+        # passes the _sf_mix_ok gate (which re-checks the
+        # mark-first, bidi and character conditions and
+        # the exact remap on the folded form). The fold
+        # is per character, not str.lower() on the whole
+        # label: the whole-string fold is context-sensitive
+        # for SIGMA (a trailing Σ becomes ς, e.g. "a﹐bΣ"
+        # -> "a,bς"), while browsers emit σ in that
+        # position ("a﹐bΣ" -> "xn--a,b-szc", i.e.
+        # "a,bσ"); per-character folding gives σ there
+        # and leaves a genuine ς untouched. A KELVIN-style
+        # fold (U+212A -> "k") removes the label's only
+        # non-ASCII letter, so _sf_mix_ok on the folded
+        # form fails only its LMN-presence check; that
+        # case is admitted when the original label does
+        # contain a non-ASCII letter/mark/number and the
+        # folded form passes every other gate check
+        # (mark-first, bidi, characters, exact remap), so
+        # the body below punycodes exactly the gated
+        # form. A label failing any part keeps its
+        # existing behaviour below, since this arm only
+        # widens the small-form branch's condition and
+        # never raises.
+        def _sf_case_ok(_lab: str) -> bool:
+            import unicodedata as _case_unicodedata
+
+            _folded = "".join(c.lower() for c in _lab)
+            if _folded == _lab:
+                return False
+            if _sf_mix_ok(_folded):
+                return True
+            if not any(
+                ord(c) > 127
+                and _case_unicodedata.category(c)[0] in "LMN"
+                for c in _lab
+            ):
+                return False
+            _case_translated = _folded.translate(_small_form_map)
+            if _case_unicodedata.category(_case_translated[0])[0] == "M":
+                return False
+            if any(
+                _case_unicodedata.bidirectional(c) in ("R", "AL", "AN")
+                for c in _case_translated
+            ):
+                return False
+            if not all(
+                c
+                in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
+                or ord(c) in _small_form_map
+                or (
+                    ord(c) > 127
+                    and _case_unicodedata.category(c)[0] in "LMN"
+                )
+                for c in _folded
+            ):
+                return False
+            try:
+                _case_remapped = _idna.uts46_remap(
+                    _folded, std3_rules=False, transitional=False
+                )
+            except (UnicodeError, ValueError):
+                return False
+            return _case_remapped == _case_translated
+
         encoded_labels = []
         for label in host.split("."):
             if not label:
@@ -2727,6 +2797,7 @@ def _encode_idna(host: str) -> str | None:
                     )
                     or _sf_mix_ok(label)
                     or _sf_nfc_ok(label)
+                    or _sf_case_ok(label)
                 )
             ):
                 # A plain small-form label: every non-ASCII
@@ -2738,11 +2809,14 @@ def _encode_idna(host: str) -> str | None:
                 # non-ASCII character keeps its existing
                 # behaviour below unless it passes the
                 # _sf_mix_ok gate above (e.g. "münchen﹐b"
-                # is now carried, while "a﹐b©", "م﹐b",
-                # and an uppercase "Ω﹐b" are unchanged),
-                # or the _sf_nfc_ok arm above (a decomposed
-                # "mu\u0308nchen﹐b" is now carried in its
-                # NFC form, matching the browser).
+                # is now carried, while "a﹐b©" and "م﹐b"
+                # are unchanged), or the _sf_nfc_ok arm
+                # above (a decomposed "mu\u0308nchen﹐b"
+                # is now carried in its NFC form, matching
+                # the browser), or the _sf_case_ok arm
+                # above (an uppercase "Ω﹐b" is now
+                # carried in its case-folded form,
+                # matching the browser).
                 # Translate, then
                 # pass a pure-ASCII result through unchanged
                 # and punycode any other result directly, as
@@ -2762,6 +2836,10 @@ def _encode_idna(host: str) -> str | None:
                     _sf_mapped = _sf_nfc_unicodedata.normalize(
                         "NFC", _sf_mapped
                     )
+                elif _sf_case_ok(label):
+                    _sf_mapped = "".join(
+                        c.lower() for c in label
+                    ).translate(_small_form_map)
                 if any(ord(c) > 127 for c in _sf_mapped):
                     encoded_labels.append(
                         "xn--"
