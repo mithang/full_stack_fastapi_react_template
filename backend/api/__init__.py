@@ -4588,10 +4588,10 @@ def _encode_idna(host: str) -> str | None:
                         # as before. The plain mapped-dash
                         # candidate below follows the
                         # same pattern for joiners; its
-                        # case arm does too, while its
-                        # NFC and case+NFC arms keep
-                        # their own no-joiner checks
-                        # and are unchanged by this arm.
+                        # case and NFC arms do too, while
+                        # its case+NFC arm keeps its own
+                        # no-joiner check and is unchanged
+                        # by this arm.
                         or (
                             _frac_remapped
                             == label.translate(
@@ -4647,9 +4647,9 @@ def _encode_idna(host: str) -> str | None:
                         # small-form and as-is combinations
                         # with a mapped dash need their own
                         # arms and are unchanged by this
-                        # one, as are the NFC and
-                        # case+NFC mapped-dash arms'
-                        # own no-joiner checks.
+                        # one, as is the case+NFC
+                        # mapped-dash arm's own no-joiner
+                        # check.
                         or (
                             any(
                                 ord(c) in _mapped_dash
@@ -4715,9 +4715,8 @@ def _encode_idna(host: str) -> str | None:
                         # and as-is combinations with a
                         # mapped dash need their own arms
                         # and are unchanged by this one,
-                        # as are the NFC and case+NFC
-                        # mapped-dash arms' own no-joiner
-                        # checks.
+                        # as is the case+NFC mapped-dash
+                        # arm's own no-joiner check.
                         or (
                             any(
                                 ord(c) in _mapped_dash
@@ -4755,10 +4754,19 @@ def _encode_idna(host: str) -> str | None:
                         # though the browser carries the
                         # composed form. Accept the NFC of
                         # that chained form, under the same
-                        # mapped-dash-member, no-joiner,
-                        # non-mark-first and bidi gates as
-                        # the mapped-dash and case
-                        # candidates above; a label that is
+                        # mapped-dash-member, non-mark-first
+                        # and bidi gates as the mapped-dash
+                        # and case candidates above. A
+                        # mapped-dash NFC joiner mix whose
+                        # first joiner is virama-preceded
+                        # is now carried too: this
+                        # candidate no longer has its own
+                        # no-joiner check, since the outer
+                        # main gate above already bars a
+                        # label whose first joiner is not
+                        # virama-preceded, so a bad-first-
+                        # joiner mix still returns None
+                        # as before. A label that is
                         # also uppercase (combined
                         # case+NFC) needs its own arm and
                         # is unchanged by this one, and a
@@ -4779,8 +4787,6 @@ def _encode_idna(host: str) -> str | None:
                                     _fraction_excl_map
                                 ).translate(_mapped_dash),
                             )
-                            and chr(0x200C) not in label
-                            and chr(0x200D) not in label
                             and _frac_sf_unicodedata.category(
                                 label[0]
                             )[0]
