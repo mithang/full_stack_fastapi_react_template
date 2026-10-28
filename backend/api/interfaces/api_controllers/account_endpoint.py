@@ -87,6 +87,15 @@ async def logout(
     current_user: CurrentUser,
     auth_service: AuthService = Depends(get_auth_service)
 ):
+    # This GET deletes the refresh cookie and records a logout, so it
+    # must never be served from a browser or proxy cache: a cached 200
+    # would replay without running the handler, leaving the refresh
+    # cookie (and the session it backs) in place while the user believes
+    # they logged out. Same no-store hardening as the other
+    # state-changing GETs in this controller (magic-link validation and
+    # the SSO login/callback redirects).
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
     # Mirror the attributes used when the cookie was set (login/refresh):
     # a deletion Set-Cookie without Secure cannot clear a Secure cookie
     # in production, leaving a stale refresh token in the browser.
