@@ -2516,11 +2516,16 @@ def _encode_idna(host: str) -> str | None:
         # digit-mixed RTL label, an edge dash on an RTL
         # label) still falls through to None exactly as
         # before. Excluded here: U+002D and U+2010-U+2015
-        # and U+FF0D, which already match; U+1806, whose UTS46
-        # remap raises and which the hyphen-edge branch
-        # handles via its own exception below; and U+2E5D,
-        # which browsers reject in an RTL label even though
-        # the gates below would otherwise admit it.
+        # and U+FF0D, which already match; and U+1806, whose
+        # UTS46 remap raises and which the hyphen-edge
+        # branch handles via its own exception below.
+        # OBLIQUE HYPHEN U+2E5D is included here: browsers
+        # carry it in Latin labels ("a⹝b" -> "xn--ab-o02a",
+        # verified against Node's WHATWG parser) while
+        # rejecting it in RTL labels, and the hyphen-edge
+        # branch's RTL gate below bars it there, so the
+        # RTL rejection is preserved without excluding the
+        # Latin form.
         # UTS46-mapped dashes are a separate set, handled
         # in the hyphen-edge branch below rather than here:
         # PRESENTATION FORM FOR VERTICAL EM DASH U+FE31
@@ -2550,6 +2555,7 @@ def _encode_idna(host: str) -> str | None:
                 0x2E3A,
                 0x2E3B,
                 0x2E40,
+                0x2E5D,
                 0x301C,
                 0x3030,
                 0x30A0,
@@ -5069,12 +5075,12 @@ def _encode_idna(host: str) -> str | None:
                 # It also bars three codepoints browsers
                 # reject in every RTL mix even though the
                 # category gate above would admit them:
-                # OBLIQUE HYPHEN U+2E5D (excluded from
-                # _dash_punct for exactly this reason, but a
-                # label reaching the gate via another dash
-                # still admitted it, e.g. "م⸗⹝م" and, with
-                # the mapped-dash exception above,
-                # "م︱⹝م"), and the strong-RTL symbols
+                # OBLIQUE HYPHEN U+2E5D (admitted in
+                # _dash_punct for Latin labels, but barred
+                # here so an RTL mix still fails, e.g.
+                # "م⸗⹝م" and, with the mapped-dash
+                # exception above, "م︱⹝م"), and the
+                # strong-RTL symbols
                 # ARABIC RAISED ROUND DOT U+0888 and
                 # ARABIC PRESENTATION FORM U+FBC2 (barred
                 # in RTL mixes by the gap-symbol branch for
