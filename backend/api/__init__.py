@@ -2557,6 +2557,33 @@ def _encode_idna(host: str) -> str | None:
                             .translate(_enclosed_cjk_remap)
                             .translate(_parenthesized_cjk_remap)
                             .translate(_cjk_compat_remap)
+                            # A label mixing a fraction with a
+                            # square CJK member plus an as-is
+                            # mark ("¼㍱᫏" -> "1⁄4hpa᫏"): the
+                            # recovery above remaps the square
+                            # per character, but this gate
+                            # lacked the square-CJK candidate
+                            # the main gate already has, so it
+                            # fell through to the raw-fraction
+                            # punycode instead of the browser's
+                            # form. Accept the
+                            # fraction-expanded form further
+                            # translated through the square
+                            # CJK remap table, and the
+                            # as-is-expanded variant of it,
+                            # mirroring the enclosed-CJK
+                            # candidates above; the square
+                            # table's key domain is disjoint
+                            # from the fraction, as-is and
+                            # Greek tables, so other labels
+                            # are unchanged.
+                            or _frac_recovered
+                            == label.translate(_fraction_excl_map)
+                            .translate(_square_cjk_remap)
+                            or _frac_recovered
+                            == label.translate(_fraction_excl_map)
+                            .translate(_asis_map)
+                            .translate(_square_cjk_remap)
                         )
                         if any(
                             ord(c)
