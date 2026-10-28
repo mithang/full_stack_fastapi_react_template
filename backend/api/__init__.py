@@ -3447,6 +3447,75 @@ def _encode_idna(host: str) -> str | None:
                                     "NFC", _frac_recovered
                                 )
                             )
+                            # A label mixing a fraction with a
+                            # UTS46-mapped dash, a carried
+                            # small form and an uppercase
+                            # letter plus an as-is mark
+                            # ("a¼︱b﹐cΣ᫏" -> "a1⁄4—b,cσ᫏",
+                            # "Ω¼︱b﹐c᫏" -> "ω1⁄4—b,c᫏",
+                            # verified against Node's WHATWG
+                            # parser): the whole-label remap
+                            # raises on the as-is mark, so the
+                            # per-character recovery above
+                            # expands the fraction, maps the
+                            # dash, translates the small form
+                            # and case-folds as well (single-
+                            # character remap folds Ω -> ω and
+                            # a trailing Σ -> σ, as the main
+                            # gate's per-character lower
+                            # does), but this gate lacked the
+                            # case candidate for the
+                            # mapped-dash+small-form class, so
+                            # it fell through to the
+                            # raw-fraction punycode instead of
+                            # the browser's form. Accept the
+                            # fraction-expanded,
+                            # mapped-dash-translated,
+                            # small-form-translated form
+                            # folded per character, gated on
+                            # both a mapped-dash and a
+                            # small-form member so a plain
+                            # fraction-plus-dash-plus-case or
+                            # fraction-plus-small-form-plus-
+                            # case recovery label keeps its
+                            # existing handling (a plain
+                            # triple label also satisfies it,
+                            # but the accepted form is
+                            # identical, so its handling is
+                            # unchanged). As with the
+                            # candidates above, the candidate
+                            # is gated on the recovered form
+                            # already being NFC, so a
+                            # decomposed mix
+                            # ("mu\u0308nchen¼︱b﹐cΣ᫏") is left
+                            # unchanged and needs its own
+                            # normalizing arm, and joiner
+                            # labels never reach it because
+                            # the recovery above already
+                            # raises on a joiner.
+                            or (
+                                any(
+                                    ord(c) in _mapped_dash
+                                    for c in label
+                                )
+                                and any(
+                                    ord(c) in _small_form_map
+                                    for c in label
+                                )
+                                and _frac_recovered
+                                == "".join(
+                                    c.lower()
+                                    for c in label.translate(
+                                        _fraction_excl_map
+                                    ).translate(_mapped_dash).translate(
+                                        _small_form_map
+                                    )
+                                )
+                                and _frac_recovered
+                                == _frac_rec_unicodedata.normalize(
+                                    "NFC", _frac_recovered
+                                )
+                            )
                         )
                         if any(
                             ord(c)
