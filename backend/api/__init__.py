@@ -2540,9 +2540,14 @@ def _encode_idna(host: str) -> str | None:
                     # is unchanged (in particular the
                     # underscore-edge raw fallback below is
                     # preserved). Combining marks (NSM) are
-                    # not in the neutral set, so a label like
-                    # "ا¼©ﺚً" stays None for now, matching
-                    # the as-is branch's known NSM gap.
+                    # admitted, and the end check ignores
+                    # trailing marks, mirroring the
+                    # standalone as-is gate below: a label
+                    # like "ا¼©ﺚً" passes, as does one
+                    # whose Hebrew presentation form remaps
+                    # to a letter plus a mark ("ا¼©ﺚיִ"),
+                    # while "ا¼©ً" still fails — its last
+                    # non-mark is the neutral ©.
                     import unicodedata as _frac_rtl_unicodedata
 
                     try:
@@ -2561,16 +2566,31 @@ def _encode_idna(host: str) -> str | None:
                         if _frac_rtl_chars is not None
                         else None
                     )
+                    # The end of an RTL label is its last
+                    # non-mark character, mirroring the
+                    # standalone as-is gate below: a trailing
+                    # combining mark (NSM) is allowed after a
+                    # valid end, so "ا¼©ﺚً" passes, while
+                    # "ا¼©ً" still fails (its last non-mark
+                    # is the neutral ©).
+                    _frac_rtl_end = None
+                    if _frac_rtl_remapped is not None:
+                        for _c in reversed(_frac_rtl_remapped):
+                            if (
+                                _frac_rtl_unicodedata.bidirectional(_c)
+                                != "NSM"
+                            ):
+                                _frac_rtl_end = (
+                                    _frac_rtl_unicodedata.bidirectional(_c)
+                                )
+                                break
                     if (
                         _frac_rtl_remapped is not None
                         and _frac_rtl_unicodedata.bidirectional(
                             _frac_rtl_remapped[0]
                         )
                         in ("R", "AL")
-                        and _frac_rtl_unicodedata.bidirectional(
-                            _frac_rtl_remapped[-1]
-                        )
-                        in ("R", "AL", "EN", "AN")
+                        and _frac_rtl_end in ("R", "AL", "EN", "AN")
                         and not (
                             any(
                                 _frac_rtl_unicodedata.bidirectional(c)
@@ -2586,7 +2606,16 @@ def _encode_idna(host: str) -> str | None:
                         and all(
                             c == "_"
                             or _frac_rtl_unicodedata.bidirectional(c)
-                            in ("R", "AL", "EN", "AN", "ON", "ET", "CS")
+                            in (
+                                "R",
+                                "AL",
+                                "EN",
+                                "AN",
+                                "ON",
+                                "ET",
+                                "CS",
+                                "NSM",
+                            )
                             for c in _frac_rtl_remapped
                         )
                     ):
@@ -2657,11 +2686,14 @@ def _encode_idna(host: str) -> str | None:
                 # remapped form: the first character must be
                 # strong RTL (R/AL, which covers the
                 # presentation forms themselves), the last
-                # character strong RTL or a digit
+                # non-mark character strong RTL or a digit
                 # (R/AL/EN/AN), European and Arabic-Indic
                 # digits must not mix, and every character
                 # must be strong RTL, a digit, a neutral
-                # (ON/ET/CS) or an underscore. Checking the
+                # (ON/ET/CS), a combining mark (NSM) or an
+                # underscore, so "ا©ﺚً" and "ا©ﺚיִ" pass
+                # while a label whose last non-mark is a
+                # neutral still fails. Checking the
                 # remapped form matters: an as-is expansion
                 # to Latin letters (℃ -> "°c", a square
                 # form -> "m∕s") fails the neutral gate,
@@ -2693,12 +2725,24 @@ def _encode_idna(host: str) -> str | None:
                     if _rtl_remapped_chars is not None
                     else None
                 )
+                # The end of an RTL label is its last
+                # non-mark character, mirroring the
+                # standalone as-is gate below: a trailing
+                # combining mark (NSM) is allowed after a
+                # valid end, so "ا©ﺚً" passes, while a
+                # label ending in a neutral plus a mark
+                # still fails.
+                _rtl_end = None
+                if _rtl_remapped is not None:
+                    for _c in reversed(_rtl_remapped):
+                        if _rtl_unicodedata.bidirectional(_c) != "NSM":
+                            _rtl_end = _rtl_unicodedata.bidirectional(_c)
+                            break
                 if (
                     _rtl_remapped is not None
                     and _rtl_unicodedata.bidirectional(_rtl_remapped[0])
                     in ("R", "AL")
-                    and _rtl_unicodedata.bidirectional(_rtl_remapped[-1])
-                    in ("R", "AL", "EN", "AN")
+                    and _rtl_end in ("R", "AL", "EN", "AN")
                     and not (
                         any(
                             _rtl_unicodedata.bidirectional(c) == "EN"
@@ -2712,7 +2756,16 @@ def _encode_idna(host: str) -> str | None:
                     and all(
                         c == "_"
                         or _rtl_unicodedata.bidirectional(c)
-                        in ("R", "AL", "EN", "AN", "ON", "ET", "CS")
+                        in (
+                            "R",
+                            "AL",
+                            "EN",
+                            "AN",
+                            "ON",
+                            "ET",
+                            "CS",
+                            "NSM",
+                        )
                         for c in _rtl_remapped
                     )
                 ):
