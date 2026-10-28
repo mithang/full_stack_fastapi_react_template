@@ -2057,6 +2057,48 @@ def _encode_idna(host: str) -> str | None:
         0xFAD0: "𢡄", 0xFAD1: "𣏕", 0xFAD2: "㮝", 0xFAD3: "䀘", 0xFAD4: "䀹",
         0xFAD5: "𥉉", 0xFAD6: "𥳐", 0xFAD7: "𧻓", 0xFAD8: "齃", 0xFAD9: "龎",
     }
+    # Hebrew Alphabetic Presentation Forms the as-is branch must
+    # remap first: every member of _punycode_hebrew_presentation
+    # above (U+FB1D, U+FB1F-U+FB28, U+FB2A-U+FB36, U+FB38-U+FB3C,
+    # U+FB3E, U+FB40-U+FB41, U+FB43-U+FB44, U+FB46-U+FB4F)
+    # remaps under UTS46 to a Hebrew letter / letter-plus-point
+    # form (e.g. U+FB1D -> U+05D9 U+05B4, U+FB2C ->
+    # U+05E9 U+05BC U+05C1, U+FB4F -> U+05D0 U+05DC), verified
+    # against the package's uts46_remap for all 44, with no
+    # identity members and no raises. The as-is branch below
+    # punycodes its label directly, because the package rejects
+    # the as-is member under both strict and UTS46 processing --
+    # but browsers remap the presentation form first, so a label
+    # mixing one with an as-is member punycoded raw never
+    # matched ("ا©יִ" -> helper "xn--gba52zg37v", browser
+    # "xn--gba69wfd8m", which decodes to the remapped "ا©יִ").
+    # Translating through this table before punycoding
+    # reproduces the browser form; labels without a Hebrew
+    # presentation form are unchanged, and the table's outputs
+    # need no further remap (Hebrew letters and nonspacing
+    # marks; translate does not recurse, matching UTS46's
+    # single mapping pass, and the table is applied last so no
+    # earlier remap can rewrite its outputs). U+FB29 is
+    # excluded: UTS46 maps it to "+" (a different fix class,
+    # since the package rejects "+" itself), as in the set
+    # above. The standalone as-is branch below applies it, as
+    # does the underscore fallback; mixes with an Arabic
+    # presentation form already work via the RTL-context
+    # branch above, and fraction mixes keep their existing
+    # behaviour for separate assessment.
+    _hebrew_presentation_remap = {
+        0xFB1D: 'יִ', 0xFB1F: 'ײַ', 0xFB20: 'ע', 0xFB21: 'א',
+        0xFB22: 'ד', 0xFB23: 'ה', 0xFB24: 'כ', 0xFB25: 'ל',
+        0xFB26: 'ם', 0xFB27: 'ר', 0xFB28: 'ת', 0xFB2A: 'שׁ',
+        0xFB2B: 'שׂ', 0xFB2C: 'שּׁ', 0xFB2D: 'שּׂ', 0xFB2E: 'אַ',
+        0xFB2F: 'אָ', 0xFB30: 'אּ', 0xFB31: 'בּ', 0xFB32: 'גּ',
+        0xFB33: 'דּ', 0xFB34: 'הּ', 0xFB35: 'וּ', 0xFB36: 'זּ',
+        0xFB38: 'טּ', 0xFB39: 'יּ', 0xFB3A: 'ךּ', 0xFB3B: 'כּ',
+        0xFB3C: 'לּ', 0xFB3E: 'מּ', 0xFB40: 'נּ', 0xFB41: 'סּ',
+        0xFB43: 'ףּ', 0xFB44: 'פּ', 0xFB46: 'צּ', 0xFB47: 'קּ',
+        0xFB48: 'רּ', 0xFB49: 'שּ', 0xFB4A: 'תּ', 0xFB4B: 'וֹ',
+        0xFB4C: 'בֿ', 0xFB4D: 'כֿ', 0xFB4E: 'פֿ', 0xFB4F: 'אל',
+    }
     _punycode_asis = frozenset(
         [
             # Latin-1 symbols the browser punycodes as-is (© ->
@@ -2814,9 +2856,11 @@ def _encode_idna(host: str) -> str | None:
                 # above already handles fraction mixes itself.
                 # Enclosed CJK members are likewise expanded
                 # through _enclosed_cjk_remap (see there),
-                # kangxi radicals through _kangxi_remap, and
+                # kangxi radicals through _kangxi_remap,
                 # parenthesized enclosed forms through
-                # _parenthesized_cjk_remap; labels without one
+                # _parenthesized_cjk_remap, and Hebrew
+                # presentation forms through
+                # _hebrew_presentation_remap; labels without one
                 # are unchanged by them.
                 # A UTS46 bidi violation in an as-is label: this
                 # branch punycoded without any bidi gate, while
@@ -2858,6 +2902,7 @@ def _encode_idna(host: str) -> str | None:
                     .translate(_kangxi_remap)
                     .translate(_parenthesized_cjk_remap)
                     .translate(_cjk_compat_remap)
+                    .translate(_hebrew_presentation_remap)
                 )
                 _asis_bidi = [
                     _asis_rtl_unicodedata.bidirectional(c)
@@ -3674,9 +3719,10 @@ def _encode_idna(host: str) -> str | None:
                 # "a_ά" -> "xn--a_-x8b", "a_㊣" -> "a_正",
                 # "a_豈" -> "a_豈", "a_⼀" -> "a_一"), so the
                 # raw form never matched. Translate through
-                # the same five remap tables the as-is branch
+                # the same six remap tables the as-is branch
                 # uses (Greek Extended, enclosed CJK, kangxi,
-                # parenthesized CJK, CJK compat) before
+                # parenthesized CJK, CJK compat, Hebrew
+                # presentation) before
                 # punycoding; labels without one are unchanged,
                 # since every translate is identity for them.
                 # A remap that leaves the label pure ASCII
@@ -3691,6 +3737,7 @@ def _encode_idna(host: str) -> str | None:
                     .translate(_kangxi_remap)
                     .translate(_parenthesized_cjk_remap)
                     .translate(_cjk_compat_remap)
+                    .translate(_hebrew_presentation_remap)
                 )
                 # An underscore label at a right-to-left edge:
                 # UTS46's RTL-label rules require the first
