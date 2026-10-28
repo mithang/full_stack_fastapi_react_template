@@ -3997,6 +3997,76 @@ def _encode_idna(host: str) -> str | None:
                             != "M"
                         )
                         # A label mixing a fraction with a
+                        # UTS46-mapped dash, a carried small
+                        # form and an uppercase letter
+                        # ("a¼︱bΣ﹐c" -> "a1⁄4—bσ,c" ->
+                        # "xn--a14b,c-e1e4019ckma",
+                        # "a¼︱b﹐cΣ" -> "a1⁄4—b,cσ",
+                        # "Ω¼︱b﹐c" -> "ω1⁄4—b,c",
+                        # "A¼︱b﹐c" -> "a1⁄4—b,c",
+                        # verified against Node's WHATWG
+                        # parser): the whole-label remap
+                        # case-folds as well as expanding
+                        # all three, so it equals neither
+                        # the plain fraction candidate above
+                        # nor the mapped-dash, small-form or
+                        # triple candidates above, and the
+                        # label fell through to None (or,
+                        # for an underscore mix, to a wrong
+                        # raw-fraction punycode) even though
+                        # the browser carries the folded
+                        # form. Accept the fraction-expanded
+                        # form further translated through
+                        # the mapped-dash table and the
+                        # small-form map and then folded per
+                        # character (as the mapped-dash case
+                        # arm does, so a trailing Σ folds
+                        # to σ, not ς). It is still anchored
+                        # to the real UTS46 remap, and it is
+                        # gated on both a mapped-dash and a
+                        # small-form member so a plain
+                        # fraction-plus-dash-plus-case or
+                        # fraction-plus-small-form-plus-case
+                        # label keeps its existing handling,
+                        # on no joiner so the pre-existing
+                        # joiner behaviour is not extended,
+                        # and on a non-mark first character
+                        # so the plain fraction branch's
+                        # mark-first over-emission is not
+                        # extended to this class, as with
+                        # the triple arm above; the bidi
+                        # gate above still rejects an RTL
+                        # mix ("م¼︱﹐b"). NFC and as-is
+                        # combinations with a mapped dash
+                        # plus a small form plus case need
+                        # their own arms and are unchanged
+                        # by this one.
+                        or (
+                            any(
+                                ord(c) in _mapped_dash
+                                for c in label
+                            )
+                            and any(
+                                ord(c) in _small_form_map
+                                for c in label
+                            )
+                            and _frac_remapped
+                            == "".join(
+                                c.lower()
+                                for c in label.translate(
+                                    _fraction_excl_map
+                                ).translate(_mapped_dash).translate(
+                                    _small_form_map
+                                )
+                            )
+                            and "\u200c" not in label
+                            and "\u200d" not in label
+                            and _frac_sf_unicodedata.category(
+                                label[0]
+                            )[0]
+                            != "M"
+                        )
+                        # A label mixing a fraction with a
                         # carried small form and an uppercase
                         # letter ("Ω¼﹐b" -> "ω1⁄4,b" ->
                         # "xn--14,b-fpd1684b", "a¼﹐bΣ" ->
