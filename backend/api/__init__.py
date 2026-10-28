@@ -4424,6 +4424,123 @@ def _encode_idna(host: str) -> str | None:
                     for c in _asis_translated
                 ):
                     raise ValueError("space separator as-is")
+                # ZERO WIDTH NON-JOINER U+200C and ZERO WIDTH
+                # JOINER U+200D in an as-is label are
+                # browser-rejected under WHATWG/UTS46 unless
+                # their ContextJ rule holds — yet this branch
+                # punycoded an as-is mix raw ("a©‌b" ->
+                # "xn--ab-tda4523a", "a©‍b" ->
+                # "xn--ab-tda8523a", "a©‌", "م©‌٣", "©‍b",
+                # "©‌b" likewise), a form no browser origin
+                # could carry. Mirror the double-exclamation
+                # branch's first-joiner gates here, checked on
+                # the translated form actually punycoded: the
+                # browser checks only the label's first joiner,
+                # so a first ZWJ preceded by a ZWNJ is
+                # unchecked (the ZWNJ gate below is the only
+                # joiner check) and a first ZWNJ preceded by
+                # a ZWJ is likewise unchecked, and later
+                # joiners are unchecked ("م©‌م‌٣" still
+                # emits). A first ZWJ needs a virama
+                # (Canonical_Combining_Class Virama, value 9)
+                # immediately before it, past any joiners
+                # ("क्‍©b" still emits); a first ZWNJ needs
+                # either a virama immediately before it
+                # ("क्‌©b" still emits) or a letter of a
+                # joining script on both sides, scanning out
+                # past every non-joining character ("م©‌م"
+                # still emits). The finer rule — a
+                # right-joining-only letter before the ZWNJ —
+                # needs Joining_Type data the stdlib does
+                # not expose, so those mixes keep their
+                # existing behaviour for a separate
+                # assessment, as in the double-exclamation
+                # branch. Raise, so the outer handler returns
+                # None for the whole host, as for other
+                # rejected labels. Labels without a joiner
+                # are unchanged, and no translation in this
+                # branch introduces a joiner, so gating the
+                # translated form is complete.
+                def _asis_zwnj_joining(_c: str) -> bool:
+                    # A letter of a joining script:
+                    # Arabic (including Supplement,
+                    # Extended-A/B and the presentation
+                    # forms), Syriac (including
+                    # Supplement), NKo, Mongolian,
+                    # Adlam, Manichaean, Psalter
+                    # Pahlavi and Hanifi Rohingya.
+                    # Deliberately broad: a letter
+                    # counted here can only keep a label
+                    # emitting, never newly reject one,
+                    # so an over-broad block is safe
+                    # while a missed joining letter
+                    # would be a false reject.
+                    return _asis_rtl_unicodedata.category(_c)[0] == "L" and (
+                        0x0600 <= ord(_c) <= 0x06FF
+                        or 0x0700 <= ord(_c) <= 0x074F
+                        or 0x0750 <= ord(_c) <= 0x077F
+                        or 0x07C0 <= ord(_c) <= 0x07FF
+                        or 0x0860 <= ord(_c) <= 0x086F
+                        or 0x0870 <= ord(_c) <= 0x089F
+                        or 0x08A0 <= ord(_c) <= 0x08FF
+                        or 0x1800 <= ord(_c) <= 0x18AF
+                        or 0x1E900 <= ord(_c) <= 0x1E95F
+                        or 0x10AC0 <= ord(_c) <= 0x10AFF
+                        or 0x10B80 <= ord(_c) <= 0x10BAF
+                        or 0x10D00 <= ord(_c) <= 0x10D8F
+                        or 0xFB50 <= ord(_c) <= 0xFDFF
+                        or 0xFE70 <= ord(_c) <= 0xFEFF
+                    )
+
+                _asis_zwj = _asis_translated.find("\u200d")
+                if _asis_zwj != -1 and "\u200c" not in _asis_translated[:_asis_zwj]:
+                    _asis_zwj_prev = _asis_zwj - 1
+                    while (
+                        _asis_zwj_prev >= 0
+                        and _asis_translated[_asis_zwj_prev]
+                        in ("\u200c", "\u200d")
+                    ):
+                        _asis_zwj_prev -= 1
+                    if (
+                        _asis_zwj_prev < 0
+                        or _asis_rtl_unicodedata.combining(
+                            _asis_translated[_asis_zwj_prev]
+                        )
+                        != 9
+                    ):
+                        raise ValueError("joiner without virama as-is")
+                _asis_zwnj = _asis_translated.find("\u200c")
+                if _asis_zwnj != -1 and "\u200d" not in _asis_translated[:_asis_zwnj]:
+                    _asis_zwnj_prev = _asis_zwnj - 1
+                    while _asis_zwnj_prev >= 0 and not _asis_zwnj_joining(
+                        _asis_translated[_asis_zwnj_prev]
+                    ):
+                        _asis_zwnj_prev -= 1
+                    _asis_zwnj_next = _asis_zwnj + 1
+                    while _asis_zwnj_next < len(
+                        _asis_translated
+                    ) and not _asis_zwnj_joining(_asis_translated[_asis_zwnj_next]):
+                        _asis_zwnj_next += 1
+                    # Virama-preceded ZWNJ (ContextJ first
+                    # clause): admitted outright, so the
+                    # no-joining-letter reject below does
+                    # not apply to it.
+                    _asis_zwnj_virama = _asis_zwnj > 0 and (
+                        _asis_rtl_unicodedata.combining(
+                            _asis_translated[_asis_zwnj - 1]
+                        )
+                        == 9
+                    )
+                    if (
+                        not _asis_zwnj_virama
+                        and (
+                            _asis_zwnj_prev < 0
+                            or _asis_zwnj_next >= len(_asis_translated)
+                        )
+                    ):
+                        raise ValueError(
+                            "joiner without joining letters as-is"
+                        )
                 # An Arabic presentation form carried as-is
                 # (_punycode_arabic_presentation_as_is) in an
                 # as-is label is invisible to this gate as
