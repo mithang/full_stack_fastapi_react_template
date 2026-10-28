@@ -122,8 +122,16 @@ async def search_by_name(
 @router.get("/search_by_subdomain/{subdomain}", response_model=TenantDto, status_code=status.HTTP_200_OK)
 async def search_by_subdomain(
     subdomain: Subdomain,
+    response: Response,
     service: TenantService = Depends(get_tenant_service)
 ):
+    # This GET returns a full tenant record, so it must never be served
+    # from a browser or proxy cache: a cached 200 could serve one
+    # tenant's record to another admin after an account switch on a
+    # shared machine, or hide freshly updated tenant details — the
+    # same no-store hardening as the search_by_name GET above.
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
     tenant = await service.find_by_subdomain(subdomain)
     return TenantDto(**tenant.model_dump())
 
