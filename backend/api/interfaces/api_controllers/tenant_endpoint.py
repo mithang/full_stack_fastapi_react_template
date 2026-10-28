@@ -230,6 +230,15 @@ async def check_dns_status(
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
     tenant_doc = await tenant_service.get_tenant_by_id(tenant_id)
+    # Tenant callers may only check their own tenant's DNS status: the
+    # permission gate above also admits MANAGE_TENANT_SETTINGS, so without
+    # this a tenant admin could pass any tenant_id, enqueue DNS-update jobs
+    # for another tenant's custom domain and read its activation status.
+    # Host callers (tenant_id None) keep the global view. A cross-tenant id
+    # raises the same 404 as an unknown id, so a probe cannot distinguish
+    # the two — mirroring the users/roles/SSO single-record scoping.
+    if current_user.tenant_id is not None and str(tenant_doc.id) != current_user.tenant_id:
+        raise TenantNotFoundException(tenant_id)
     payload=WorkerPayloadDto[dict[str, str]](
         label="update-tenant-dns",
             data={
