@@ -4719,6 +4719,74 @@ def _encode_idna(host: str) -> str | None:
                             _excl_nfc_stable = None
                         if _excl_nfc_stable == _excl_nfc:
                             _excl_remapped = _excl_nfc
+                # The mapped-dash arm, mirroring the NFC
+                # arm above: a label mixing a double
+                # exclamation with a UTS46-mapped dash
+                # previously punycoded the presentation
+                # form raw here ("a\u203c\ufe31b" ->
+                # "xn--a!!b-7c9x"), while UTS46
+                # processing maps the dash first, so
+                # the browser form is the punycode of
+                # the mapped form ("xn--a!!b-786a",
+                # which decodes to "a!!\u2014b"). The
+                # candidate is the NFC form of the
+                # mapped-dash translation (so a
+                # decomposed mix such as
+                # "a\u0301\u203c\ufe31b" also lands on
+                # its browser form "xn--!!b-dla1501b"
+                # rather than only the dash being
+                # fixed). Accept it only when it is
+                # exactly the UTS46 remap of the
+                # remapped form (so a label mixing in
+                # any other UTS46-mapped character,
+                # e.g. "a\u203c\u212ab", keeps its
+                # existing behaviour) and it is itself
+                # remap-stable, and only when the
+                # remapped form contains no space,
+                # separator or format character (so
+                # the pre-existing space/joiner
+                # over-emissions keep their existing
+                # form for separate assessment). The
+                # bidi gate and the punycode below
+                # then run against the form actually
+                # punycoded, so a browser-rejected
+                # mix still falls through to None.
+                # Labels without a mapped dash are
+                # unchanged.
+                _excl_dash = _excl_unicodedata.normalize(
+                    "NFC",
+                    _excl_remapped.translate(_mapped_dash),
+                )
+                if (
+                    _excl_dash != _excl_remapped
+                    and _excl_unicodedata.category(
+                        _excl_remapped[0]
+                    )[0]
+                    != "M"
+                    and not any(
+                        _excl_unicodedata.category(c)[0] in "ZC"
+                        for c in _excl_remapped
+                    )
+                ):
+                    try:
+                        _excl_dash_remapped = _idna.uts46_remap(
+                            _excl_remapped,
+                            std3_rules=False,
+                            transitional=False,
+                        )
+                    except (UnicodeError, ValueError):
+                        _excl_dash_remapped = None
+                    if _excl_dash_remapped == _excl_dash:
+                        try:
+                            _excl_dash_stable = _idna.uts46_remap(
+                                _excl_dash,
+                                std3_rules=False,
+                                transitional=False,
+                            )
+                        except (UnicodeError, ValueError):
+                            _excl_dash_stable = None
+                        if _excl_dash_stable == _excl_dash:
+                            _excl_remapped = _excl_dash
                 _excl_bidi = [
                     (
                         "L"
