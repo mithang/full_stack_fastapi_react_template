@@ -2584,6 +2584,49 @@ def _encode_idna(host: str) -> str | None:
                             == label.translate(_fraction_excl_map)
                             .translate(_asis_map)
                             .translate(_square_cjk_remap)
+                            # A label mixing a fraction with
+                            # both a square CJK member and an
+                            # enclosed CJK member, a
+                            # parenthesized CJK member, or a
+                            # CJK Compatibility Ideograph,
+                            # plus an as-is mark
+                            # ("¼㍱㊣᫏" -> "1⁄4hpa正᫏"): the
+                            # recovery above remaps the square
+                            # and the enclosed members per
+                            # character, but this gate lacked
+                            # the combined square+enclosed
+                            # candidate the main gate already
+                            # has, so it fell through to the
+                            # raw-fraction punycode instead of
+                            # the browser's form. Accept the
+                            # fraction-expanded form further
+                            # translated through the square
+                            # table and the three CJK remap
+                            # tables, and the Greek and
+                            # as-is variants of it, mirroring
+                            # the main gate; their key domains
+                            # are disjoint, so other labels
+                            # are unchanged.
+                            or _frac_recovered
+                            == label.translate(_fraction_excl_map)
+                            .translate(_square_cjk_remap)
+                            .translate(_enclosed_cjk_remap)
+                            .translate(_parenthesized_cjk_remap)
+                            .translate(_cjk_compat_remap)
+                            or _frac_recovered
+                            == label.translate(_fraction_excl_map)
+                            .translate(_greek_extended_remap)
+                            .translate(_square_cjk_remap)
+                            .translate(_enclosed_cjk_remap)
+                            .translate(_parenthesized_cjk_remap)
+                            .translate(_cjk_compat_remap)
+                            or _frac_recovered
+                            == label.translate(_fraction_excl_map)
+                            .translate(_asis_map)
+                            .translate(_square_cjk_remap)
+                            .translate(_enclosed_cjk_remap)
+                            .translate(_parenthesized_cjk_remap)
+                            .translate(_cjk_compat_remap)
                         )
                         if any(
                             ord(c)
