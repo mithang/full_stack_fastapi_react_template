@@ -26,10 +26,25 @@ router = APIRouter(prefix="/tenants", tags=["Tenants"])
 @router.get("/", response_model=TenantListDto, status_code=status.HTTP_200_OK)
 async def list_tenants(
     response: Response,
+    current_user: CurrentUser,
     skip: int = Query(0, ge=0, le=10000), limit: int = Query(10, ge=1, le=100),
     service: TenantService = Depends(get_tenant_service),
-    _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.HOST_MANAGE_TENANTS]))    
+    _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.HOST_MANAGE_TENANTS]))
 ):
+    # The HOST_MANAGE_TENANTS gate also admits FULL_ACCESS holders (see
+    # UserAccessManagement), and every tenant's seeded ADMIN role holds
+    # FULL_ACCESS, so without this a tenant admin could enumerate every
+    # tenant (names, subdomains, custom domains, subscription ids) via
+    # this list. The frontend tenants page is host-only (App.tsx renders
+    # it only when the user has no tenant_id), so scoping a tenant
+    # caller to their own tenant loses no legitimate use; host callers
+    # (tenant_id None) keep the full paginated list below.
+    if current_user.tenant_id is not None:
+        tenant = await service.get_tenant_by_id(tenant_id=current_user.tenant_id)
+        return TenantListDto(
+            tenants=[TenantDto(**tenant.model_dump())],
+            skip=0, limit=1, total=1, has_previous=False, has_next=False,
+        )
     # This GET returns the host-admin tenant list, so it must never be
     # served from a browser or proxy cache: a cached 200 could hide a
     # freshly created or deleted tenant, or serve one host admin's list
