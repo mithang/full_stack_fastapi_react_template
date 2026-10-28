@@ -92,6 +92,26 @@ class BrandingService:
             payload = data.model_dump(exclude_unset=True, exclude_none=True)
             if claim_legacy:
                 payload["tenant_id"] = tenant_id
+            elif existing is not None:
+                # Pin the stamp: UpdateBrandingDto carries a tenant_id
+                # field and the payload above is its exclude_unset dump,
+                # so a client-supplied tenant_id otherwise reaches the
+                # repository verbatim — and the scope check above only
+                # verifies the EXISTING record is accessible to the
+                # caller. The POST / route (which doubles as update
+                # when a branding already exists) passes the client DTO
+                # straight through, unlike PATCH which pins
+                # data.tenant_id to the caller, so a tenant caller
+                # updating their own branding could re-stamp it to
+                # another tenant's id (or to None, making it
+                # host-visible). Overwrite with the existing stamp in
+                # all non-claim cases: a caller-stamped update writes
+                # the same stamp back (a no-op), a host update of a
+                # host record writes None which the repository's
+                # exclude_none dump drops, and a foreign stamp is
+                # discarded. Mirrors the role-update pin from
+                # iteration 871.
+                payload["tenant_id"] = existing.tenant_id
             # identity is optional on UpdateBrandingDto: PUT /logo (and
             # a PATCH without an identity block) pass no identity, so
             # reading data.identity.app_name unconditionally raised
