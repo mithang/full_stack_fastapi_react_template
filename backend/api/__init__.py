@@ -3167,6 +3167,35 @@ def _encode_idna(host: str) -> str | None:
                         == label.translate(_fraction_excl_map)
                         .translate({0xFB29: "+"})
                         .translate(_asis_map)
+                        # A label mixing a fraction with a
+                        # double exclamation mark, U+FB29 and
+                        # an enclosed CJK member, a
+                        # parenthesized CJK member, or a CJK
+                        # Compatibility Ideograph ("¼‼﬩㊣" ->
+                        # "1⁄4!!+正", "¼‼﬩豈" ->
+                        # "1⁄4!!+豈"): the whole-label remap
+                        # expands all four, so it equals none
+                        # of the candidates above, and the
+                        # label fell through to None even
+                        # though the browser carries the
+                        # remapped form. Accept the
+                        # fraction-expanded form further
+                        # translated through the FB29 map and
+                        # the three CJK remap tables; their key
+                        # domains are disjoint from each
+                        # other and from the fraction table,
+                        # so the chained form is identity for
+                        # labels without such a member. It is
+                        # still anchored to the real UTS46
+                        # remap: any other remapped character
+                        # fails every candidate and falls
+                        # through unchanged, as before.
+                        or _frac_remapped
+                        == label.translate(_fraction_excl_map)
+                        .translate({0xFB29: "+"})
+                        .translate(_enclosed_cjk_remap)
+                        .translate(_parenthesized_cjk_remap)
+                        .translate(_cjk_compat_remap)
                         # A label mixing a fraction with an
                         # enclosed CJK member, a parenthesized
                         # CJK member, or a CJK Compatibility
