@@ -73,11 +73,22 @@ async def create_tenant(
 @router.delete("/{id}", status_code=status.HTTP_202_ACCEPTED)
 async def delete_tenant(
     id: str,
+    current_user: CurrentUser,
     service: TenantService = Depends(get_tenant_service),
     _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.HOST_MANAGE_TENANTS]))
 ):
     try:
         tenant: Tenant = await service.get_tenant_by_id(tenant_id=id)
+        # The HOST_MANAGE_TENANTS gate also admits FULL_ACCESS holders (see
+        # UserAccessManagement), and every tenant's seeded ADMIN role holds
+        # FULL_ACCESS, so without this a tenant admin could pass any
+        # tenant_id and delete another tenant outright — the most
+        # destructive of the sibling host-gated endpoints. Host callers
+        # (tenant_id None) keep the global view. Compared after fetch,
+        # so id forms normalize, mirroring the PUT/check_dns/update_dns
+        # scoping; the check runs before any deletion or worker dispatch.
+        if current_user.tenant_id is not None and str(tenant.id) != current_user.tenant_id:
+            raise TenantNotFoundException(id)
         tenant_doc = TenantDto(**tenant.model_dump())
         payload=WorkerPayloadDto(
             label="post-tenant-deletion",
