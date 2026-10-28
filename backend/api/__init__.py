@@ -5052,6 +5052,63 @@ def _encode_idna(host: str) -> str | None:
                         _hyph_1806_sub_remapped = None
                     if _hyph_1806_sub_remapped == _hyph_1806_sub:
                         _hyph_form = label
+                    elif _hyph_1806_sub_remapped is not None:
+                        # The NFC-normalizing variant of the
+                        # U+1806 exception, mirroring the NFC
+                        # exception above: a label such as
+                        # "a\u0301\u1806b" was previously left
+                        # at None, because substituting U+1806
+                        # with "-" gives "a\u0301-b", whose
+                        # remap is its NFC form "á-b" rather
+                        # than itself — but UTS46 processing
+                        # NFC-normalizes before punycoding, so
+                        # the browser form is the punycode of
+                        # the NFC form "á\u1806b"
+                        # ("xn--b-tfa988o"). Accept the NFC
+                        # form only when the substituted
+                        # label's remap is exactly its NFC
+                        # form, that NFC form corresponds to
+                        # the NFC form of the label with
+                        # U+1806 put back, and the NFC form
+                        # is itself remap-stable (so a label
+                        # mixing U+1806 with another mapped
+                        # character, e.g. "a\u212a\u1806b",
+                        # keeps its existing behaviour);
+                        # every gate below then runs against
+                        # the NFC form actually punycoded.
+                        _hyph_1806_nfc = (
+                            _hyph_unicodedata.normalize(
+                                "NFC", label
+                            )
+                        )
+                        _hyph_1806_sub_nfc = (
+                            _hyph_unicodedata.normalize(
+                                "NFC", _hyph_1806_sub
+                            )
+                        )
+                        if (
+                            _hyph_1806_sub_remapped
+                            == _hyph_1806_sub_nfc
+                            and _hyph_1806_nfc.replace(
+                                "\u1806", "-"
+                            )
+                            == _hyph_1806_sub_nfc
+                        ):
+                            try:
+                                _hyph_1806_nfc_stable = (
+                                    _idna.uts46_remap(
+                                        _hyph_1806_sub_nfc,
+                                        std3_rules=False,
+                                        transitional=False,
+                                    )
+                                )
+                            except (UnicodeError, ValueError):
+                                _hyph_1806_nfc_stable = None
+                            if (
+                                _hyph_1806_nfc_stable
+                                == _hyph_1806_sub_nfc
+                            ):
+                                _hyph_form = _hyph_1806_nfc
                 # The RTL-label alternative to the character
                 # gate below, mirroring the underscore
                 # fallback's UTS46 bidi gate: a label whose
