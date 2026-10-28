@@ -26,6 +26,10 @@ class SSOSettingsProviderRepository(BaseRepository[SSOSettings], AuditLogReposit
         result: bool =  await super().delete(id=id)
         return result
     
-    async def list_sso_settings(self) -> list[SSOSettings]:
-        sso_settings_list: list[SSOSettings] = await super().list()
+    async def list_sso_settings(self, tenant_id: PydanticObjectId | None = None) -> list[SSOSettings]:
+        # Tenant-scoped listing: no filter means the historic global view
+        # (host callers and the SSO login flows, which resolve a provider
+        # by name). The admin list endpoint passes the caller's tenant.
+        query = {"tenant_id": tenant_id} if tenant_id is not None else {}
+        sso_settings_list: list[SSOSettings] = await self.model.find(query).to_list()
         return sso_settings_list

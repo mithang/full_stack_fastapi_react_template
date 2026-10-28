@@ -1,4 +1,5 @@
 from typing import List
+from beanie import PydanticObjectId
 from typing_extensions import get_args
 from api.common.exceptions import NotFoundException
 from api.common.utils import get_logger, get_sso_redirect_uri
@@ -78,8 +79,21 @@ class SSOSettingsService:
     async def delete_sso_settings(self, id: str) -> bool:
         return await self.sso_settings_provider_repository.delete_sso_settings(id)
     
-    async def list(self) -> SSOSettingsListDto:
-        ssos: List[SSOSettings] = await self.sso_settings_provider_repository.list_sso_settings()
+    async def list(self, tenant_id: str | None = None) -> SSOSettingsListDto:
+        # Tenant callers see only their tenant's SSO settings; host
+        # callers (tenant_id None) keep the global view, the same scope
+        # rule as the GET /users/ list. A malformed tenant id cannot
+        # match any record, so fail closed with an empty list rather
+        # than falling back to the unscoped list. The login flows
+        # (get_provider / get_only_enabled_providers) do not pass a
+        # tenant and keep their global provider resolution.
+        tenant_oid = None
+        if tenant_id:
+            try:
+                tenant_oid = PydanticObjectId(tenant_id)
+            except Exception:
+                return SSOSettingsListDto(items=[])
+        ssos: List[SSOSettings] = await self.sso_settings_provider_repository.list_sso_settings(tenant_id=tenant_oid)
         logger.info(f"Retrieved {len(ssos)} SSO settings from repository")
         # Do not log the full SSOSettings list: it carries client_secret
         # (the API response deliberately excludes it, see below), so log

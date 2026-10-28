@@ -16,6 +16,7 @@ router = APIRouter(prefix="/ssos", tags=["SSO Settings"], dependencies=[Depends(
 @router.get("/", response_model=SSOSettingsListDto, response_model_exclude_none=True)
 async def list(
     response: Response,
+    current_user: CurrentUser,
     sso_settings_service: SSOSettingsService = Depends(get_sso_settings_service)
 ):
     # SSO configuration (masked client secrets included): a
@@ -25,7 +26,13 @@ async def list(
     # previous iteration.
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
-    return await sso_settings_service.list()
+    # Scope to the caller's tenant: settings are stamped with the
+    # creator's tenant_id on create, but this list previously returned
+    # every tenant's SSO configuration to any FULL_ACCESS admin calling
+    # without a tenant DB selected (no X-Tenant-ID/subdomain) — masked
+    # client ids, redirect URIs and scopes of other tenants. Host
+    # callers (tenant_id None) keep the global view.
+    return await sso_settings_service.list(tenant_id=current_user.tenant_id)
 
 @router.get("/available-providers", response_model=List)
 async def get_available_sso_providers(
