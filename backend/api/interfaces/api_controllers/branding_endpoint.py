@@ -60,7 +60,8 @@ async def partial_update_branding(
     current_user: CurrentUser,
     branding_id: str,
     data: UpdateBrandingDto,
-    branding_service: BrandingService = Depends(get_deps(BrandingService))
+    branding_service: BrandingService = Depends(get_deps(BrandingService)),
+    request_tenant_id = Depends(get_tenant_id)
 ):
     branding = await branding_service.get_branding()
     if branding is None:
@@ -76,7 +77,7 @@ async def partial_update_branding(
         raise BrandingException("Branding not found.")
 
     data.tenant_id = current_user.tenant_id
-    await branding_service.update_branding(id=branding_id, data=data, tenant_id=current_user.tenant_id)
+    await branding_service.update_branding(id=branding_id, data=data, tenant_id=current_user.tenant_id, request_tenant_id=request_tenant_id)
 
 
 @router.put("/logo", status_code=status.HTTP_202_ACCEPTED)
@@ -129,4 +130,4 @@ async def upload_logo(
         return
     
 
-    await branding_service.update_branding(id=str(branding.id), data=UpdateBrandingDto(logo_url=key, logo_type=file.content_type), tenant_id=current_user.tenant_id)
+    await branding_service.update_branding(id=str(branding.id), data=UpdateBrandingDto(logo_url=key, logo_type=file.content_type), tenant_id=current_user.tenant_id, request_tenant_id=request_tenant_id)
