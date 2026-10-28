@@ -86,6 +86,7 @@ async def create_role(
 async def get_role(
     response: Response,
     role_id: str,
+    current_user: CurrentUser,
     service: RoleService = Depends(get_role_service),
     _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.ROLE_VIEW_ONLY]))
 ):
@@ -95,7 +96,9 @@ async def get_role(
     # switch, or hide a freshly updated role.
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
-    role = await service.get_role_by_id(role_id)
+    # Tenant-scoped like the list: a tenant caller reading another
+    # tenant's id gets the same 404 as an unknown id.
+    role = await service.get_role_by_id(role_id, tenant_id=current_user.tenant_id)
     role_doc = await role.to_serializable_dict()
     return RoleDto(**role_doc)
 
@@ -104,10 +107,11 @@ async def get_role(
 async def update_role(
     role_id: str,
     data: UpdateRoleDto,
+    current_user: CurrentUser,
     service: RoleService = Depends(get_role_service),
     _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.ROLE_READ_AND_WRITE_ONLY]))
 ):
-    role_doc = await service.update_role(role_id=role_id, role_data=data)
+    role_doc = await service.update_role(role_id=role_id, role_data=data, tenant_id=current_user.tenant_id)
     serialized_role = await role_doc.to_serializable_dict()
     return RoleDto(**serialized_role)
 
@@ -115,17 +119,23 @@ async def update_role(
 @router.delete("/{role_id:path}", status_code=status.HTTP_202_ACCEPTED, description="Deletes a role if it is not assigned to any users.")
 async def delete_role(
     role_id: str,
+    current_user: CurrentUser,
     service: RoleService = Depends(get_role_service),
     user_service: UserService = Depends(get_user_service),
     _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.ROLE_DELETE_ONLY]))
 ):
+    # Scope check before the assigned-users check: the service raises
+    # the same 404 for a cross-tenant id as for an unknown id, so the
+    # "cannot delete" error below cannot confirm another tenant's role
+    # exists. (delete_role re-checks scope internally as well.)
+    await service.get_role_by_id(role_id, tenant_id=current_user.tenant_id)
     users_role = await user_service.total_count(params={"role_id": role_id})
     logger.debug(f"Number of users with role {role_id}: {users_role}")
     if users_role > 0:
         logger.warning(f"Cannot delete role {role_id} as it is assigned to users.")
         raise InvalidOperationException(f"Cannot delete role {role_id} as it is assigned to users.")
-    
-    await service.delete_role(role_id)
+
+    await service.delete_role(role_id, tenant_id=current_user.tenant_id)
     return status.HTTP_202_ACCEPTED
 
 

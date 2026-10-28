@@ -9,6 +9,21 @@ from api.infrastructure.persistence.repositories.role_repository_impl import Rol
 
 logger = get_logger(__name__)
 
+
+def _caller_may_access(record_tenant_id: PydanticObjectId | None, caller_tenant_id: str | PydanticObjectId | None) -> bool:
+    # Single-record scope rule, mirroring list_roles(): host callers
+    # (tenant_id None) may access any record; a tenant caller may
+    # access only records stamped with their own tenant_id. A
+    # malformed caller id cannot match any record, so it fails closed.
+    if caller_tenant_id is None:
+        return True
+    try:
+        caller_oid = PydanticObjectId(caller_tenant_id)
+    except Exception:
+        return False
+    return record_tenant_id == caller_oid
+
+
 class RoleService:
     def __init__(self, role_repository: RoleRepository):
         self.role_repository = role_repository
@@ -52,9 +67,18 @@ class RoleService:
                 return []
         return await self.role_repository.search(query)
 
-    async def get_role_by_id(self, role_id: str) -> Role:
+    async def get_role_by_id(self, role_id: str, tenant_id: str | PydanticObjectId | None = None) -> Role:
         existing = await self.role_repository.get(id=role_id)
         if existing is None:
+            raise RoleNotFoundException(role_id=role_id)
+        if not _caller_may_access(existing.tenant_id, tenant_id):
+            # Cross-tenant read: same 404 as an unknown id, so probing
+            # another tenant's id reveals neither its existence nor its
+            # name/permissions. Host callers (tenant_id None) keep the
+            # global view, the same scope rule as list_roles() — and a
+            # host-stamped record (tenant_id None) is not visible to a
+            # tenant caller, matching the list filter which only returns
+            # the caller's own rows.
             raise RoleNotFoundException(role_id=role_id)
         return existing
 
@@ -64,13 +88,24 @@ class RoleService:
             raise RoleAlreadyExistsException(name=role_data.name)
         return await self.role_repository.create(data=role_data) 
 
-    async def update_role(self, role_id: str, role_data: UpdateRoleDto) -> Role | None:
+    async def update_role(self, role_id: str, role_data: UpdateRoleDto, tenant_id: str | PydanticObjectId | None = None) -> Role | None:
         existing = await self.role_repository.get(id=role_id)
         if existing is None:
             raise RoleNotFoundException(role_id=role_id)
+        if not _caller_may_access(existing.tenant_id, tenant_id):
+            # Cross-tenant write: same 404 as an unknown id (and raised
+            # before any write), so probing another tenant's id reveals
+            # nothing and cannot overwrite its name or permissions.
+            raise RoleNotFoundException(role_id=role_id)
         return await self.role_repository.update(role_id=role_id, data=role_data)
 
-    async def delete_role(self, role_id: str) -> None:
+    async def delete_role(self, role_id: str, tenant_id: str | PydanticObjectId | None = None) -> None:
+        # Scope check first: a cross-tenant delete must be
+        # indistinguishable from deleting an unknown id, so the same
+        # 404 is raised before any delete — and before the endpoint's
+        # assigned-users check, which would otherwise confirm the
+        # record exists via its "cannot delete" error.
+        await self.get_role_by_id(role_id, tenant_id=tenant_id)
         if await self.role_repository.delete(id=role_id) is False:
             raise RoleNotFoundException(role_id=role_id)
 
