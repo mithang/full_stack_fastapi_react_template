@@ -190,6 +190,7 @@ async def tenant_checkout_canceled(
 @router.get("/all", response_model=BillingRecordListDto, status_code=status.HTTP_200_OK)
 async def list_checkout_records(
     response: Response,
+    current_user: CurrentUser,
     # The frontend defaults to limit 10, but a direct API call passed
     # skip/limit straight into the DB query unbounded, so a single request
     # could dump the whole checkout-record table (limit=1000000) or pass
@@ -205,5 +206,11 @@ async def list_checkout_records(
     # /audit-logs fix in the previous iteration.
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
-    return await billing_service.list_checkout_records(skip=skip, limit=limit)
+    # Scope to the caller's tenant: tenant requests normally hit the
+    # tenant database (TenantMiddleware), but a tenant user calling
+    # without a tenant DB selected (no X-Tenant-ID/subdomain) would
+    # otherwise read the host database's full checkout-record table.
+    # Host callers (tenant_id None) keep the global view, the same
+    # scope rule as the GET /users/ list.
+    return await billing_service.list_checkout_records(skip=skip, limit=limit, tenant_id=current_user.tenant_id)
 

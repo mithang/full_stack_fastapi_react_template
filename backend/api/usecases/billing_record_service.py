@@ -599,12 +599,22 @@ class BillingRecordService:
             await self.billing_record_repository.update(record.id, record.model_dump())
 
     async def list_checkout_records(
-        self, skip: int = 0, limit: int = 100
+        self, skip: int = 0, limit: int = 100, tenant_id: str | None = None
     ) -> BillingRecordListDto:
         """
         List checkout records
         """
-        return await self.billing_record_repository.list(skip=skip, limit=limit)
+        # Tenant callers see only their tenant's records; host callers
+        # (tenant_id None) keep the global view. A malformed tenant id
+        # cannot match any record, so fail closed with an empty page
+        # rather than falling back to the unscoped list.
+        tenant_oid = None
+        if tenant_id:
+            try:
+                tenant_oid = PydanticObjectId(tenant_id)
+            except Exception:
+                return BillingRecordListDto(billing_records=[], skip=skip, limit=limit, total=0, has_previous=skip > 0, has_next=False)
+        return await self.billing_record_repository.list(skip=skip, limit=limit, tenant_id=tenant_oid)
 
     async def from_stripe_invoice_paid(
         self,

@@ -1,3 +1,5 @@
+from beanie import PydanticObjectId
+
 from api.common.base_repository import BaseRepository
 from api.common.utils import get_logger
 from api.domain.dtos.billing_dto import BillingRecordDto, BillingRecordListDto
@@ -9,10 +11,15 @@ class BillingRecordRepository(BaseRepository[BillingRecord]):
     def __init__(self):
         super().__init__(BillingRecord)
 
-    async def list (self, skip: int = 0, limit: int = 10) -> BillingRecordListDto:
+    async def list (self, skip: int = 0, limit: int = 10, tenant_id: PydanticObjectId | None = None) -> BillingRecordListDto:
         logger.debug(f"Listing billing records with skip={skip} and limit={limit}")
-        docs = await self.model.find_all().skip(skip).limit(limit).to_list()
-        total = await self.model.count()
+        # Tenant-scoped listing: the filter applies to both the page
+        # and the total, so pagination metadata (total/has_next) does
+        # not leak another tenant's record count. No filter means the
+        # historic global view (host callers).
+        query = {"tenant_id": tenant_id} if tenant_id is not None else {}
+        docs = await self.model.find(query).skip(skip).limit(limit).to_list()
+        total = await self.model.find(query).count()
         result = BillingRecordListDto(
             billing_records=[BillingRecordDto(**doc.model_dump()) for doc in docs],
             skip=skip,
