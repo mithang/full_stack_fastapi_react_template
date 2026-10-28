@@ -4941,8 +4941,19 @@ def _encode_idna(host: str) -> str | None:
                 # unchecked, matching the browser
                 # ("क्‍‼b", "क्‍b‍c", "क्‌‍‼b" all
                 # carried; "a‼‍b", "a‌‍‼b", "م‌‍‼b"
-                # all rejected). ZERO WIDTH NON-JOINER
-                # U+200C is gated just below: its full
+                # all rejected). A first ZWJ preceded
+                # by a ZWNJ is unchecked: the browser
+                # checks only the label's first joiner,
+                # so when the ZWNJ comes first the ZWNJ
+                # gate below is the only joiner check
+                # ("م‼‌‍م", "م‌‼‍م" carried, while
+                # "م‼‌‍", "a‼‌‍م", "م‼‌‍b" are still
+                # rejected by that gate for lacking a
+                # joining letter on a side) — mirroring
+                # the ZWNJ gate's skip when a ZWJ
+                # precedes the ZWNJ. ZERO WIDTH
+                # NON-JOINER U+200C is gated just
+                # below: its full
                 # ContextJ rule depends on Joining_Type
                 # data the stdlib does not expose, and
                 # the browser carries some ZWNJ ‼ mixes
@@ -4951,7 +4962,7 @@ def _encode_idna(host: str) -> str | None:
                 # side cases and the finer rule stays
                 # for a separate assessment.
                 _excl_zwj = _excl_remapped.find("\u200d")
-                if _excl_zwj != -1:
+                if _excl_zwj != -1 and "\u200c" not in _excl_remapped[:_excl_zwj]:
                     _excl_zwj_prev = _excl_zwj - 1
                     while (
                         _excl_zwj_prev >= 0
