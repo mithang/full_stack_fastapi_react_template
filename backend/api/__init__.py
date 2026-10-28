@@ -3872,6 +3872,65 @@ def _encode_idna(host: str) -> str | None:
                             != "M"
                         )
                         # A label mixing a fraction with a
+                        # UTS46-mapped dash and an uppercase
+                        # letter ("a¼︱bΣ" -> "a1⁄4—bσ" ->
+                        # "xn--a14b-ood6064btja", "Ω¼︱b" ->
+                        # "ω1⁄4—b", "﹣¼bΣ" -> "-1⁄4bσ",
+                        # verified against Node's WHATWG
+                        # parser): the whole-label remap
+                        # case-folds as well as expanding
+                        # the fraction and mapping the dash,
+                        # so it equals neither the plain
+                        # fraction candidate above nor the
+                        # mapped-dash candidate above, and
+                        # the label fell through to None
+                        # (or, for an underscore mix, to a
+                        # wrong raw-fraction punycode) even
+                        # though the browser carries the
+                        # folded form. Accept the
+                        # fraction-expanded form further
+                        # translated through the mapped-dash
+                        # table and then folded per
+                        # character (as the small-form case
+                        # arm does, so a trailing Σ folds
+                        # to σ, not ς). It is still anchored
+                        # to the real UTS46 remap, and it is
+                        # gated on a mapped-dash member so
+                        # a plain fraction-plus-case label
+                        # ("Ω¼b") keeps its existing
+                        # handling, on no joiner so the
+                        # pre-existing joiner behaviour is
+                        # not extended, and on a non-mark
+                        # first character so the plain
+                        # fraction branch's mark-first
+                        # over-emission is not extended to
+                        # this class, as with the plain
+                        # mapped-dash arm above; the bidi
+                        # gate above still rejects an RTL
+                        # mix ("م¼︱b"). NFC, small-form
+                        # and as-is combinations with a
+                        # mapped dash need their own arms
+                        # and are unchanged by this one.
+                        or (
+                            any(
+                                ord(c) in _mapped_dash
+                                for c in label
+                            )
+                            and _frac_remapped
+                            == "".join(
+                                c.lower()
+                                for c in label.translate(
+                                    _fraction_excl_map
+                                ).translate(_mapped_dash)
+                            )
+                            and "\u200c" not in label
+                            and "\u200d" not in label
+                            and _frac_sf_unicodedata.category(
+                                label[0]
+                            )[0]
+                            != "M"
+                        )
+                        # A label mixing a fraction with a
                         # carried small form and an uppercase
                         # letter ("Ω¼﹐b" -> "ω1⁄4,b" ->
                         # "xn--14,b-fpd1684b", "a¼﹐bΣ" ->
