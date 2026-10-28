@@ -20,6 +20,14 @@ class StripeSettingService:
             TenantNotFoundException: If the tenant does not exist.
         """
         await self.tenant_service.get_tenant_by_id(tenant_id)
+        # Stamp server-side from the authenticated caller, not the DTO:
+        # the endpoint already requires a tenant context and validates
+        # this tenant exists, but the repository's creation branch stored
+        # settings.tenant_id verbatim, so a client could stamp the record
+        # with another tenant's id (or a bogus one the caller never
+        # validated). The legitimate frontend sends current_tenant.id,
+        # which equals the caller's tenant, so this is a no-op there.
+        settings.tenant_id = tenant_id
         await self.payment_repository.store_stripe_settings(stripe_config=settings)
         
     async def get_stripe_settings(self) -> StripeSettingDto:
