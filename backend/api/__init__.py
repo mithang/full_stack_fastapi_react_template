@@ -3510,6 +3510,52 @@ def _encode_idna(host: str) -> str | None:
                     and (
                         _frac_remapped
                         == label.translate(_fraction_excl_map)
+                        # A label mixing a fraction with a
+                        # carried small form ("¼﹐b" ->
+                        # "1⁄4,b" -> "xn--14,b-0g7a", "¼﹑b"
+                        # -> "1⁄4、b", "¼﹗b" -> "1⁄4!b",
+                        # verified against Node's WHATWG
+                        # parser): the whole-label remap
+                        # expands both, so it equals
+                        # neither the plain fraction
+                        # candidate above nor any other
+                        # candidate, and the label fell
+                        # through to None (or, for an
+                        # underscore or as-is mix, to a
+                        # wrong raw-fraction punycode)
+                        # even though the browser carries
+                        # the doubly-expanded form. Accept
+                        # the fraction-expanded form
+                        # further translated through the
+                        # small-form map; its key domain
+                        # is disjoint from the fraction
+                        # and double-exclamation tables,
+                        # so the chained form is identity
+                        # for labels without such a member.
+                        # It is still anchored to the real
+                        # UTS46 remap: a browser-rejected
+                        # small form (e.g. U+FE52) and any
+                        # other remapped character fail
+                        # every candidate and fall through
+                        # unchanged, as before, and the
+                        # bidi gate above still rejects
+                        # an RTL mix ("م¼﹐b"). Joiner
+                        # mixes keep their existing
+                        # behaviour (None): the plain
+                        # fraction branch already carries
+                        # joiner labels the browser
+                        # rejects ("¼b‍" -> a punycode
+                        # instead of an error), a
+                        # pre-existing class this
+                        # candidate does not extend.
+                        or (
+                            _frac_remapped
+                            == label.translate(
+                                _fraction_excl_map
+                            ).translate(_small_form_map)
+                            and "\u200c" not in label
+                            and "\u200d" not in label
+                        )
                         or _frac_remapped
                         == label.translate(_fraction_excl_map).translate(
                             _greek_extended_remap
