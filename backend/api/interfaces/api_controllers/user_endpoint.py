@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, File, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Query, Response, UploadFile, status
 from api.common.exceptions import ForbiddenException, InvalidOperationException
 from api.common.utils import get_logger, is_tenancy_enabled
 from api.domain.dtos.user_dto import CreateUserDto, CreateUserResponseDto, UpdateUserDto, UserDto, UserListDto, UserProfileImageUpdateDto, UserRoleUpdateRequestDto
@@ -110,10 +110,21 @@ async def update_user(
 
 @router.get("/profile/{image_key:path}", response_model=UserProfileImageUpdateDto)
 async def get_profile_image(
+    response: Response,
     image_key: str,
     _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.USER_VIEW_ONLY])),
     file_service: FileService = Depends(get_file_service)
 ):
+    # This GET returns a freshly minted presigned URL (1-hour expiry),
+    # so it must never be served from a browser or proxy cache: a
+    # cached 200 would hand back an expired URL after the hour instead
+    # of minting a fresh one, breaking the avatar until the cache
+    # expires — the same no-store hardening as the passkey GET (which
+    # also returns credential-adjacent data). The server-side Redis
+    # cache already bypasses this route via its /api/v1/users/
+    # substring; this covers the browser/proxy cache it cannot reach.
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
     try:
         image_url = await file_service.get_file_url(image_key)
         return UserProfileImageUpdateDto(image_url=image_url)
