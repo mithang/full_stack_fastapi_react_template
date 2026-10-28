@@ -2643,10 +2643,14 @@ def _encode_idna(host: str) -> str | None:
         # symbol UTS46 maps or rejects, so only
         # pass-through symbols ride along; a symbol mix
         # with no non-ASCII letter, mark or number (e.g.
-        # "a﹐b©") still fails the presence check below
-        # and keeps its existing behaviour in the
-        # branches below (the as-is branch already
-        # carries it). Other S categories (Sm, Sc, Sk)
+        # "a﹐b★") is admitted too, since browsers carry
+        # it ("a﹐b★" -> "xn--a,b-2m5a", verified
+        # against Node's WHATWG parser) — the presence
+        # check below now counts a pass-through So symbol
+        # alongside letters, marks and numbers, so such a
+        # label no longer falls through to None (or, with
+        # an underscore, to a wrong raw punycode). Other
+        # S categories (Sm, Sc, Sk)
         # stay excluded: Sk holds CONTEXTO symbols such
         # as U+0375, whose browser handling needs
         # real-browser verification before any
@@ -2687,7 +2691,10 @@ def _encode_idna(host: str) -> str | None:
                 return False
             if not any(
                 ord(c) > 127
-                and _sf_unicodedata.category(c)[0] in "LMN"
+                and (
+                    _sf_unicodedata.category(c)[0] in "LMN"
+                    or _sf_unicodedata.category(c) == "So"
+                )
                 for c in _lab
             ):
                 return False
@@ -2754,14 +2761,14 @@ def _encode_idna(host: str) -> str | None:
         # non-ASCII letter, so _sf_mix_ok on the folded
         # form fails only its LMN-presence check; that
         # case is admitted when the original label does
-        # contain a non-ASCII letter/mark/number and the
-        # folded form passes every other gate check
-        # (mark-first, bidi, characters, exact remap), so
-        # the body below punycodes exactly the gated
-        # form. A label failing any part keeps its
-        # existing behaviour below, since this arm only
-        # widens the small-form branch's condition and
-        # never raises.
+        # contain a non-ASCII letter/mark/number or
+        # pass-through symbol and the folded form passes
+        # every other gate check (mark-first, bidi,
+        # characters, exact remap), so the body below
+        # punycodes exactly the gated form. A label
+        # failing any part keeps its existing behaviour
+        # below, since this arm only widens the
+        # small-form branch's condition and never raises.
         def _sf_case_ok(_lab: str) -> bool:
             import unicodedata as _case_unicodedata
 
@@ -2772,7 +2779,10 @@ def _encode_idna(host: str) -> str | None:
                 return True
             if not any(
                 ord(c) > 127
-                and _case_unicodedata.category(c)[0] in "LMN"
+                and (
+                    _case_unicodedata.category(c)[0] in "LMN"
+                    or _case_unicodedata.category(c) == "So"
+                )
                 for c in _lab
             ):
                 return False
@@ -2882,9 +2892,9 @@ def _encode_idna(host: str) -> str | None:
                 # behaviour below unless it passes the
                 # _sf_mix_ok gate above (e.g. "münchen﹐b"
                 # is now carried, as are pass-through
-                # So-symbol mixes such as "münchen﹐b☀",
-                # while "a﹐b©" and "م﹐b"
-                # are unchanged), or the _sf_nfc_ok arm
+                # So-symbol mixes such as "münchen﹐b☀"
+                # and symbol-only mixes such as "a﹐b★",
+                # while "م﹐b" is unchanged), or the _sf_nfc_ok arm
                 # above (a decomposed "mu\u0308nchen﹐b"
                 # is now carried in its NFC form, matching
                 # the browser), or the _sf_case_ok arm
