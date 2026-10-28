@@ -114,14 +114,23 @@ class AuthService:
                 tenant_id=str(user.tenant_id) if user.tenant_id else None
             ))
             return await self._get_token_set(user)
-        except UserNotFoundException or Exception:
+        except Exception:
+            # "except UserNotFoundException or Exception" was NOT a
+            # catch-all: `or` evaluates to the first truthy operand, so
+            # it caught only UserNotFoundException — and this handler
+            # then read the unbound `user` when get_user_by_id itself
+            # failed, turning the intended generic 401 into a NameError
+            # 500 (the validate endpoint does not wrap this call). The
+            # error audit log uses only the user_id parameter, which is
+            # always bound, so every failure path now yields the generic
+            # 401 instead of leaking internals.
             logger.error(f"Login attempt failed for user_id: {user_id}")
             await self.audit_log_service.create_audit_log(audit_log=AuditLogDto(
                 entity="User",
                 action="error",
-                user_id=str(user.id),
-                tenant_id=str(user.tenant_id) if user.tenant_id else None,
-                changes={"Info": f"User with an email: {user.email} failed to log in."}
+                user_id=user_id,
+                tenant_id=None,
+                changes={"Info": f"Magic link login failed for user_id: {user_id}."}
             ))
             raise UnauthorizedException("Authentication failed. Please check your credentials.")
 
@@ -137,7 +146,14 @@ class AuthService:
                 changes={"Info": f"User attempted to log in with passkey."}
             ))
             return await self._get_token_set(user)
-        except UserNotFoundException or Exception:
+        except Exception:
+            # Same `or`-in-except idiom bug as login_with_magic_link:
+            # "except UserNotFoundException or Exception" caught only
+            # UserNotFoundException. This handler uses only the bound
+            # `email` parameter, so no NameError arose here, but other
+            # failures escaped the generic 401; now all are caught and
+            # logged, and the passkey endpoint still maps the 401 to
+            # its generic 406, so the user-visible response is unchanged.
             logger.error(f"Login attempt failed for email: {email}")
             await self.audit_log_service.create_audit_log(audit_log=AuditLogDto(
                 entity="User",
