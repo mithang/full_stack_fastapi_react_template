@@ -5043,10 +5043,11 @@ def _encode_idna(host: str) -> str | None:
                 # parenthesized letter -> "(a)", or a UTS46-mapped
                 # letter mixed with an emoji, e.g. "😀K" -> "😀k",
                 # which keeps its existing behaviour for separate
-                # assessment), and no character is strong-RTL or
-                # Arabic-Indic (so an emoji/RTL mix such as "😀م",
-                # which browsers reject, still falls through to
-                # None, as do joiner sequences, whose Cf characters
+                # assessment), and, for the LTR gate below, no
+                # character is strong-RTL or Arabic-Indic (so an
+                # invalid emoji/RTL mix such as "😀م", which
+                # browsers reject, still falls through to None,
+                # as do joiner sequences, whose Cf characters
                 # fail the character gate; combining marks are
                 # admitted below except at the label start,
                 # where browsers reject them) — except ARABIC RAISED
@@ -5095,7 +5096,7 @@ def _encode_idna(host: str) -> str | None:
                         in ("So", "Sk")
                         for c in label
                     )
-                    and all(
+                    and (all(
                         c
                         in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-"
                         or (
@@ -5157,6 +5158,76 @@ def _encode_idna(host: str) -> str | None:
                             not in ("R", "AL", "AN")
                         )
                         for c in label
+                    )
+                    or (
+                        # An RTL label with an emoji/symbol: the
+                        # LTR gate above bars every strong-RTL
+                        # character, so a label browsers carry
+                        # under the UTS46 RTL-label rules fell
+                        # through to None ("א☀ב" ->
+                        # "xn--4dbc038v", "م☀م" ->
+                        # "xn--hhba284v", verified against
+                        # Node's WHATWG parser), and a CORS
+                        # origin for such a host never matched.
+                        # Admit exactly the labels those rules
+                        # admit, for the character classes this
+                        # branch already handles: the first
+                        # character is strong-RTL (R/AL), the
+                        # last is strong-RTL, a European digit
+                        # (EN) or a nonspacing mark (NSM), and
+                        # every character is an ASCII digit or
+                        # hyphen, a neutral symbol (So/Sk whose
+                        # bidi class is neither strong-RTL,
+                        # Arabic-Indic nor L — so the AL symbols
+                        # U+0888/U+06FD/U+06FE stay out of this
+                        # arm, as with the LTR gate's bar), a
+                        # strong-RTL letter, or a mark of class
+                        # NSM/R/AL. The arms together bar Latin
+                        # letters (bidi L) and Arabic-Indic
+                        # digits (category Nd, admitted by no
+                        # arm), so invalid mixes still fall
+                        # through exactly as before ("😀م",
+                        # "א☀", "☀ב", "א☀ב☀", "אaב",
+                        # "א1☀" are all browser-rejected and
+                        # still return None). AL-symbol labels
+                        # are not admitted by this arm; whatever
+                        # form they take comes from their own
+                        # branches elsewhere, unchanged here.
+                        # The remap-unchanged,
+                        # mark-not-first and symbol-present
+                        # conditions above still apply to this
+                        # arm, since it sits inside the same
+                        # parenthesized condition.
+                        _emoji_unicodedata.bidirectional(label[0])
+                        in ("R", "AL")
+                        and _emoji_unicodedata.bidirectional(label[-1])
+                        in ("R", "AL", "EN", "NSM")
+                        and all(
+                            c in "0123456789-"
+                            or (
+                                ord(c) > 127
+                                and _emoji_unicodedata.category(c)
+                                in ("So", "Sk")
+                                and _emoji_unicodedata.bidirectional(c)
+                                not in ("R", "AL", "AN", "L")
+                            )
+                            or (
+                                ord(c) > 127
+                                and _emoji_unicodedata.category(c)[0]
+                                == "L"
+                                and _emoji_unicodedata.bidirectional(c)
+                                in ("R", "AL")
+                            )
+                            or (
+                                ord(c) > 127
+                                and _emoji_unicodedata.category(c)[0]
+                                == "M"
+                                and _emoji_unicodedata.bidirectional(c)
+                                in ("NSM", "R", "AL")
+                            )
+                            for c in label
+                        )
+                    )
                     )
                 ):
                     encoded_labels.append(
