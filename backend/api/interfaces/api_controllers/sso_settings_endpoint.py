@@ -29,8 +29,16 @@ async def list(
 
 @router.get("/available-providers", response_model=List)
 async def get_available_sso_providers(
+    response: Response,
     sso_settings_service: SSOSettingsService = Depends(get_sso_settings_service)
 ):
+    # Static provider catalogue, but completing the no-store
+    # coverage of this file: a browser/proxy-cached 200 could
+    # otherwise hide a newly added provider from the SSO
+    # configuration UI after a deploy, unlike the list/detail
+    # endpoints above which already send no-store.
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
     return await sso_settings_service.get_available_sso_providers()
 
 @router.get("/{sso_id}", response_model=ReadSSOSettingsDto, response_model_exclude_none=True)
