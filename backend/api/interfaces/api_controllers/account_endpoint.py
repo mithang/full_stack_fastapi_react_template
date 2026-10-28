@@ -9,7 +9,7 @@ from api.common.dtos.passkey_rep_dto import HasPasskeysDto
 from api.common.dtos.token_dto import TokenRefreshRequestDto, TokenSetDto
 from api.common.dtos.worker_dto import WorkerPayloadDto
 from api.common.exceptions import ApiBaseException, ForbiddenException, InvalidOperationException
-from api.common.utils import get_logger
+from api.common.utils import get_logger, is_tenancy_enabled
 from api.core.container import get_auth_service, get_email_magic_link_service, get_passkey_service, get_role_service, get_sso_auth_provider, get_user_magic_link_repository
 from api.core.exceptions import PassKeyException, UserNotFoundException
 from api.domain.dtos.auth_dto import ChangeEmailConfirmRequestDto, ChangeEmailRequestDto, ChangeEmailResponseDto, MagicLinkResponseDto, MeResponseDto, PasswordResetConfirmRequestDto, PasswordResetRequestDto, PasswordResetResponseDto
@@ -144,6 +144,24 @@ async def register(
         )
     
     data.role_id = role_guest.id
+    if x_tenant_id is not None and is_tenancy_enabled():
+        # Tenant-context registration: the middleware already selected
+        # this tenant's database and stamped the DTO above, but
+        # AuthService.register() only creates when tenant_id is None
+        # (its branches cover a brand-new subdomain or a taken one),
+        # so a request carrying X-Tenant-ID — e.g. the frontend's
+        # ApiClient with a stale _tenant entry, or a visit on a tenant
+        # subdomain — previously returned 201 while creating nothing,
+        # and the "check your email" toast promised an account that
+        # never existed. Create directly into the already-selected
+        # tenant DB, stamped with that tenant, mirroring the
+        # single-tenant path (which also goes through
+        # new_user_creation). The stamp is the middleware-resolved id
+        # already on the DTO, not a fresh client value; a forged header
+        # can only land a self-owned GUEST account in that header's
+        # isolated tenant DB, never in another tenant's data.
+        await auth_service.new_user_creation(new_user=data, tenant_id=x_tenant_id)
+        return status.HTTP_201_CREATED
     await auth_service.register(data, process_user_creation)
     return status.HTTP_201_CREATED
         
