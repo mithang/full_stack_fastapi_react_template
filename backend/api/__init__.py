@@ -3982,6 +3982,69 @@ def _encode_idna(host: str) -> str | None:
                             != "M"
                         )
                         # A label mixing a fraction with a
+                        # UTS46-mapped dash that is BOTH
+                        # uppercase and decomposed
+                        # ("MU\u0308NCHEN¼︱b" ->
+                        # "münchen1⁄4—b" ->
+                        # "xn--mnchen14b-q9a1868foqa",
+                        # "A\u0308¼︱b" -> "ä1⁄4—b" ->
+                        # "xn--14b-pla6301bgia",
+                        # "MU\u0308NCHEN¼︱bΣ" ->
+                        # "münchen1⁄4—bσ", verified
+                        # against Node's WHATWG parser):
+                        # it fails both arms above — the
+                        # NFC arm's remap check rejects
+                        # the uppercase form, and the case
+                        # arm's folded form is still
+                        # decomposed, so its remap check
+                        # rejects it too — and it fell
+                        # through to None (or, for an
+                        # underscore mix, to a wrong
+                        # raw-fraction punycode) even
+                        # though the browser carries the
+                        # folded then composed form.
+                        # UTS46 maps before it normalizes,
+                        # so accept the NFC of the
+                        # per-character folded chained
+                        # form (folded per character as
+                        # the case arm does, so a trailing
+                        # Σ folds to σ, not ς), under the
+                        # same mapped-dash-member,
+                        # no-joiner, non-mark-first and
+                        # bidi gates as the mapped-dash,
+                        # case and NFC candidates above; a
+                        # label with only one of case or
+                        # decomposition keeps its existing
+                        # handling, as the earlier arms
+                        # handle it, and a label with a
+                        # small form keeps its existing
+                        # handling, since the triple
+                        # case+NFC arm below requires the
+                        # small-form translation this arm
+                        # does not apply.
+                        or (
+                            any(
+                                ord(c) in _mapped_dash
+                                for c in label
+                            )
+                            and _frac_remapped
+                            == _frac_sf_unicodedata.normalize(
+                                "NFC",
+                                "".join(
+                                    c.lower()
+                                    for c in label.translate(
+                                        _fraction_excl_map
+                                    ).translate(_mapped_dash)
+                                ),
+                            )
+                            and chr(0x200C) not in label
+                            and chr(0x200D) not in label
+                            and _frac_sf_unicodedata.category(
+                                label[0]
+                            )[0]
+                            != "M"
+                        )
+                        # A label mixing a fraction with a
                         # UTS46-mapped dash and a carried
                         # small form ("a¼︱b﹐c" ->
                         # "a1⁄4—b,c" ->
