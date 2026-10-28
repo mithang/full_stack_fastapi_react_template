@@ -288,7 +288,17 @@ async def passkey_login_options(
     auth_service: AuthService = Depends(get_auth_service)
 ):
     user_service = await auth_service.get_user_service()
-    user = await user_service.find_by_email(email=email)
+    try:
+        user = await user_service.find_by_email(email=email)
+    except UserNotFoundException:
+        # Same class of account-enumeration leak closed for password login
+        # (iteration 792): an unknown email otherwise escapes as 404
+        # "User with identifier <email> not found.", while a known account
+        # without passkeys gets 406 "No credentials found...". Return the
+        # identical 406 response so the two cases are indistinguishable
+        # to a prober. The normal UI never reaches this path: loginFlow
+        # only runs after has_passkeys returns true, so no UX change.
+        raise PassKeyException("No credentials found for the user. Please register first.") from None
     user_doc = await user.to_serializable_dict()
     try:
         return await passkey_service.auth_login_options(user_dto=UserDto(**user_doc))
