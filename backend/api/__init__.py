@@ -5003,7 +5003,15 @@ def _encode_idna(host: str) -> str | None:
                 # joining script on each side, or the
                 # label is rejected ("a‼‌b" has no
                 # joining letter before it, "a‼‌" and
-                # "م‼م‌٣" none after it). Checked on the
+                # "م‼م‌٣" none after it) — except when
+                # the character immediately before the
+                # ZWNJ is a virama (Canonical_Combining_
+                # Class Virama, value 9): UTS46 ContextJ
+                # admits a virama-preceded ZWNJ outright,
+                # regardless of joining letters on either
+                # side ("क्‌‼b" and its Bengali/Tamil
+                # equivalents are browser-carried even
+                # with nothing joining after it). Checked on the
                 # remapped form actually punycoded, so
                 # the check is complete, and raising
                 # returns None for the whole host, as
@@ -5066,9 +5074,22 @@ def _encode_idna(host: str) -> str | None:
                         _excl_remapped
                     ) and not _excl_zwnj_joining(_excl_remapped[_excl_zwnj_next]):
                         _excl_zwnj_next += 1
+                    # Virama-preceded ZWNJ (ContextJ first
+                    # clause): admitted outright, so the
+                    # no-joining-letter reject below does
+                    # not apply to it.
+                    _excl_zwnj_virama = _excl_zwnj > 0 and (
+                        _excl_unicodedata.combining(
+                            _excl_remapped[_excl_zwnj - 1]
+                        )
+                        == 9
+                    )
                     if (
-                        _excl_zwnj_prev < 0
-                        or _excl_zwnj_next >= len(_excl_remapped)
+                        not _excl_zwnj_virama
+                        and (
+                            _excl_zwnj_prev < 0
+                            or _excl_zwnj_next >= len(_excl_remapped)
+                        )
                     ):
                         raise ValueError(
                             "joiner without joining letters double-exclamation"
