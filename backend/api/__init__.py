@@ -6589,6 +6589,133 @@ def _encode_idna(host: str) -> str | None:
                 # falls through to the strict path below, so
                 # browser-rejected forms keep returning None.
                 encoded_labels.append(label)
+            elif "_" not in label and sum(
+                1 for c in label if c in ("\u200c", "\u200d")
+            ) >= 2:
+                # A plain multi-joiner label: browsers check
+                # only the label's first joiner (see the
+                # as-is branch's first-joiner gates), so a
+                # label whose first joiner is ContextJ-valid
+                # carries even when a later joiner would fail
+                # on its own ("م‌‍م" -> "xn--hhba019qea",
+                # "क्‍‌b" -> "xn--b-tud2ow90gea", verified
+                # against Node's WHATWG parser), while the
+                # `idna` package checks every joiner and
+                # returns None for the whole host. Single-
+                # joiner labels keep their existing behaviour
+                # (the package already handles the valid ones
+                # and rejects the invalid ones), as do
+                # underscore labels, which keep the fallback
+                # below, and labels claimed by an earlier
+                # branch (as-is, double-exclamation, gap and
+                # the like). The gate mirrors the as-is
+                # branch's: a first ZWJ needs a virama
+                # immediately before it, past any joiners,
+                # and a first ZWNJ needs a virama before it
+                # or a joining-script letter on both sides,
+                # scanning past non-joining characters; a
+                # mark-first label is rejected, as are
+                # symbols, punctuation (other than the
+                # hyphen), spaces and other format characters,
+                # and labels whose UTS46 remap differs (a
+                # mapped letter such as K must not ride
+                # along raw). A label failing any gate raises,
+                # so the outer handler returns None for the
+                # whole host, exactly as before for such
+                # labels; a label passing every gate punycodes
+                # raw, which is the browser-serialized form.
+                import unicodedata as _pj_unicodedata
+
+                def _pj_joining(_c: str) -> bool:
+                    return _pj_unicodedata.category(_c)[0] == "L" and (
+                        0x0600 <= ord(_c) <= 0x06FF
+                        or 0x0700 <= ord(_c) <= 0x074F
+                        or 0x0750 <= ord(_c) <= 0x077F
+                        or 0x07C0 <= ord(_c) <= 0x07FF
+                        or 0x0860 <= ord(_c) <= 0x086F
+                        or 0x0870 <= ord(_c) <= 0x089F
+                        or 0x08A0 <= ord(_c) <= 0x08FF
+                        or 0x1800 <= ord(_c) <= 0x18AF
+                        or 0x1E900 <= ord(_c) <= 0x1E95F
+                        or 0x10AC0 <= ord(_c) <= 0x10AFF
+                        or 0x10B80 <= ord(_c) <= 0x10BAF
+                        or 0x10D00 <= ord(_c) <= 0x10D8F
+                        or 0xFB50 <= ord(_c) <= 0xFDFF
+                        or 0xFE70 <= ord(_c) <= 0xFEFF
+                    )
+
+                if _pj_unicodedata.category(label[0])[0] == "M":
+                    raise ValueError("mark-first plain joiner")
+                if not all(
+                    c
+                    in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-"
+                    or c in ("\u200c", "\u200d")
+                    or (
+                        ord(c) > 127
+                        and _pj_unicodedata.category(c)[0] in "LMN"
+                    )
+                    for c in label
+                ):
+                    raise ValueError("plain joiner character")
+                try:
+                    _pj_remapped = _idna.uts46_remap(
+                        label, std3_rules=False, transitional=False
+                    )
+                except (UnicodeError, ValueError):
+                    raise ValueError("plain joiner remap")
+                if _pj_remapped != label:
+                    raise ValueError("plain joiner remap")
+                _pj_first = min(
+                    label.find("\u200c")
+                    if label.find("\u200c") != -1
+                    else len(label),
+                    label.find("\u200d")
+                    if label.find("\u200d") != -1
+                    else len(label),
+                )
+                if label[_pj_first] == "\u200d":
+                    _pj_prev = _pj_first - 1
+                    while (
+                        _pj_prev >= 0
+                        and label[_pj_prev] in ("\u200c", "\u200d")
+                    ):
+                        _pj_prev -= 1
+                    if (
+                        _pj_prev < 0
+                        or _pj_unicodedata.combining(
+                            label[_pj_prev]
+                        )
+                        != 9
+                    ):
+                        raise ValueError(
+                            "joiner without virama plain"
+                        )
+                else:
+                    _pj_prev = _pj_first - 1
+                    while _pj_prev >= 0 and not _pj_joining(
+                        label[_pj_prev]
+                    ):
+                        _pj_prev -= 1
+                    _pj_next = _pj_first + 1
+                    while _pj_next < len(label) and not _pj_joining(
+                        label[_pj_next]
+                    ):
+                        _pj_next += 1
+                    _pj_virama = _pj_first > 0 and (
+                        _pj_unicodedata.combining(
+                            label[_pj_first - 1]
+                        )
+                        == 9
+                    )
+                    if not _pj_virama and (
+                        _pj_prev < 0 or _pj_next >= len(label)
+                    ):
+                        raise ValueError(
+                            "joiner without joining letters plain"
+                        )
+                encoded_labels.append(
+                    "xn--" + label.encode("punycode").decode("ascii")
+                )
             elif "_" not in label:
                 # An emoji / symbol label: WHATWG URL
                 # serialization punycodes emoji and miscellaneous
