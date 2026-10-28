@@ -6441,6 +6441,28 @@ def _encode_idna(host: str) -> str | None:
                         raise ValueError("rtl bidi underscore")
                 elif "AN" in _us_bidi:
                     raise ValueError("an underscore without rtl")
+                # Browsers reject every underscore label that
+                # mixes U+0888 with another strong-RTL
+                # character or an Arabic-Indic digit ("م_࢈م",
+                # "࢈_م", "࢈_٣" all rejected by the WHATWG
+                # parser), even though the first/end/L checks
+                # above pass for them, so they were emitted as
+                # raw punycode that no browser origin could
+                # carry. U+0888 alone, with only itself, or
+                # with European digits / nonspacing marks
+                # ("࢈_࢈", "࢈_1", "࢈_\u0301") is unaffected:
+                # this clause needs another R/AL/AN character
+                # besides U+0888 itself. (The as-is and
+                # double-exclamation branches gained the R/AL
+                # form of this clause in iteration 699; the
+                # underscore branch's own gate above did not,
+                # and AN mixes reach only this branch — a bare
+                # "࢈٣" is already None.)
+                if "\u0888" in _us_remapped and any(
+                    b in ("R", "AL", "AN") and ord(c) != 0x0888
+                    for c, b in zip(_us_remapped, _us_bidi)
+                ):
+                    raise ValueError("rtl bidi underscore 0888")
                 if any(ord(c) > 127 for c in _us_remapped):
                     encoded_labels.append(
                         "xn--"
