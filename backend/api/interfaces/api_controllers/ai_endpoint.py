@@ -1,7 +1,7 @@
 
 from typing import Any, List
 from beanie import PydanticObjectId
-from fastapi import APIRouter, BackgroundTasks, Depends, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Response, status
 from fastapi.responses import StreamingResponse
 
 from api.common.dtos.new_session_dto import NewSessionResponseDto
@@ -28,8 +28,14 @@ async def get_models(
 @router.get("/history", response_model=List[AISessionByUserIdDto])
 async def get_history(
     current_user: CurrentUser,
+    response: Response,
     ai_service: LocalAIService = Depends(get_local_ai_service),
 ):
+    # Private per-user chat history: never let a browser/proxy cache serve a
+    # stale session list (or one belonging to a previous user on a shared
+    # machine) instead of running the handler.
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
     return await ai_service.get_user_sessions(current_user.id)
 
 
