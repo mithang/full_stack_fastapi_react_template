@@ -30,7 +30,7 @@ async def update_branding(
         data.tenant_id = current_user.tenant_id
         branding = await branding_service.create_branding(data=data)
     else:
-        await branding_service.update_branding(id=str(branding.id), data=data)
+        await branding_service.update_branding(id=str(branding.id), data=data, tenant_id=current_user.tenant_id)
 
 @router.patch("/{branding_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def partial_update_branding(
@@ -53,7 +53,7 @@ async def partial_update_branding(
         raise BrandingException("Branding not found.")
 
     data.tenant_id = current_user.tenant_id
-    await branding_service.update_branding(id=branding_id, data=data)
+    await branding_service.update_branding(id=branding_id, data=data, tenant_id=current_user.tenant_id)
 
 
 @router.put("/logo", status_code=status.HTTP_202_ACCEPTED)
@@ -91,9 +91,14 @@ async def upload_logo(
     logger.debug(f"Logo uploaded successfully with key: {key}")
     branding = await branding_service.get_branding()
     if branding is None:
-        current_user.tenant_id = current_user.tenant_id
-        branding = await branding_service.create_branding(data=UpdateBrandingDto(logo_url=key, logo_type=file.content_type))
+        # Stamp the logo-first creation with the caller's tenant, as
+        # the POST route does: without it the record is host-stamped
+        # (tenant_id None) and the update scope check in
+        # BrandingService would then refuse the tenant caller any
+        # later update of their own branding (the previous code here
+        # was a no-op self-assignment, not a stamp).
+        branding = await branding_service.create_branding(data=UpdateBrandingDto(logo_url=key, logo_type=file.content_type, tenant_id=current_user.tenant_id))
         return
     
 
-    await branding_service.update_branding(id=str(branding.id), data=UpdateBrandingDto(logo_url=key, logo_type=file.content_type))
+    await branding_service.update_branding(id=str(branding.id), data=UpdateBrandingDto(logo_url=key, logo_type=file.content_type), tenant_id=current_user.tenant_id)

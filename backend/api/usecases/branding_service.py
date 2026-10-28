@@ -1,3 +1,4 @@
+from beanie import PydanticObjectId
 from api.common.utils import get_logger
 from api.core.exceptions import BrandingException
 from api.domain.dtos.branding_dto import BrandingDto, UpdateBrandingDto
@@ -6,6 +7,22 @@ from api.infrastructure.persistence.repositories.branding_repository_impl import
 from api.usecases.file_service import FileService
 
 logger = get_logger(__name__)
+
+
+def _caller_may_access(record_tenant_id: PydanticObjectId | None, caller_tenant_id: str | PydanticObjectId | None) -> bool:
+    # Single-record scope rule, mirroring the notification-banner
+    # service: host callers (tenant_id None) may access any record; a
+    # tenant caller may access only records stamped with their own
+    # tenant_id. A malformed caller id cannot match any record, so it
+    # fails closed.
+    if caller_tenant_id is None:
+        return True
+    try:
+        caller_oid = PydanticObjectId(caller_tenant_id)
+    except Exception:
+        return False
+    return record_tenant_id == caller_oid
+
 
 class BrandingService:
     def __init__(self, branding_repository: BrandingRepository, file_service: FileService):
@@ -29,7 +46,27 @@ class BrandingService:
             branding.logo_url = await self.file_service.get_file_url(file_key=branding.logo_url)
         return branding
     
-    async def update_branding(self, id: str, data: UpdateBrandingDto) -> None:
+    async def update_branding(self, id: str, data: UpdateBrandingDto, tenant_id: str | PydanticObjectId | None = None) -> None:
+        # Scope to the caller's tenant, mirroring the banner PUT fix:
+        # the branding routes are FULL_ACCESS-gated with no tenant
+        # check, and branding is a singleton in the current DB, so a
+        # tenant caller without a tenant DB selected (no X-Tenant-ID /
+        # subdomain, hitting the host DB) could otherwise overwrite
+        # the host branding — or, via another tenant's X-Tenant-ID,
+        # that tenant's branding — since the repository updates by id
+        # alone. Host callers (tenant_id None) keep the global view; a
+        # host-stamped record (tenant_id None) is not visible to a
+        # tenant caller, matching the POST create path which stamps
+        # each branding with its creator's tenant_id (and the logo
+        # create path, stamped in the same change). A cross-tenant id
+        # raises the same "Branding not found." as an unknown id, so a
+        # probe cannot distinguish the two, and the check runs before
+        # any write. The stamp is read straight from the repository
+        # document, not via get_branding(), which would also resolve
+        # the logo URL through the file service for no benefit here.
+        existing = await self.branding_repository.get_branding()
+        if existing is not None and not _caller_may_access(existing.tenant_id, tenant_id):
+            raise BrandingException("Branding not found.")
         try:
             # Log the id only: the full DTO carries contact_info PII.
             logger.debug(f"Updating branding with ID {id}")
