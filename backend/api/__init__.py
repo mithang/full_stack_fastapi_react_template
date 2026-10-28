@@ -3042,6 +3042,8 @@ def _encode_idna(host: str) -> str | None:
                             _frac_recovered = "".join(_frac_parts)
                         except (UnicodeError, ValueError):
                             _frac_recovered = None
+                        import unicodedata as _frac_rec_unicodedata
+
                         _frac_recovered_ok = (
                             _frac_recovered
                             == label.translate(_fraction_excl_map)
@@ -3179,6 +3181,107 @@ def _encode_idna(host: str) -> str | None:
                             .translate(_enclosed_cjk_remap)
                             .translate(_parenthesized_cjk_remap)
                             .translate(_cjk_compat_remap)
+                            # A label mixing a fraction with a
+                            # carried small form plus an as-is
+                            # mark ("¼﹐b᫏" -> "1⁄4,b᫏"):
+                            # the whole-label remap raises on
+                            # the as-is mark, so the recovery
+                            # above remaps the small form per
+                            # character, but this gate lacked
+                            # the small-form candidate the
+                            # main gate already has, so it
+                            # fell through to the raw-fraction
+                            # punycode instead of the browser's
+                            # form. Accept the
+                            # fraction-expanded form further
+                            # translated through the small-form
+                            # map; its key domain is disjoint
+                            # from the fraction table, so other
+                            # labels are unchanged. The
+                            # candidate is gated on the
+                            # recovered form already being NFC:
+                            # the per-character recovery does
+                            # not normalize, so a decomposed
+                            # mix ("mu\u0308nchen¼﹐b᫏")
+                            # would otherwise match this
+                            # candidate in its decomposed form
+                            # and be punycoded decomposed
+                            # instead of the browser's composed
+                            # form — such a mix needs its own
+                            # normalizing arm and is left
+                            # unchanged by this candidate.
+                            # Joiner mixes need no extra gate
+                            # here: the per-character recovery
+                            # above already raises on a joiner,
+                            # so such a label never reaches
+                            # this candidate; and an RTL mix
+                            # ("م¼﹐b᫏") that reaches the
+                            # main gate below is rejected by
+                            # its bidi check and now returns
+                            # None, matching the browser,
+                            # instead of its previous raw
+                            # fallback emission.
+                            or (
+                                _frac_recovered is not None
+                                and _frac_recovered
+                                == label.translate(
+                                    _fraction_excl_map
+                                ).translate(_small_form_map)
+                                and _frac_recovered
+                                == _frac_rec_unicodedata.normalize(
+                                    "NFC", _frac_recovered
+                                )
+                            )
+                            # A label mixing a fraction with a
+                            # carried small form and an
+                            # uppercase letter plus an as-is
+                            # mark ("Ω¼﹐b᫏" -> "ω1⁄4,b᫏"):
+                            # the per-character recovery
+                            # case-folds as well as expanding
+                            # both (single-character remap
+                            # folds Ω -> ω and a trailing Σ
+                            # -> σ, as the main gate's
+                            # per-character lower does), but
+                            # this gate lacked the case
+                            # candidate the main gate already
+                            # has, so it fell through to the
+                            # raw-fraction punycode instead of
+                            # the browser's form. Accept the
+                            # fraction-expanded,
+                            # small-form-translated form
+                            # folded per character, gated on
+                            # a small-form member so a plain
+                            # fraction-plus-case label keeps
+                            # its existing handling. As with
+                            # the plain candidate above, the
+                            # candidate is gated on the
+                            # recovered form already being
+                            # NFC, so a decomposed mix
+                            # ("MU\u0308NCHEN¼﹐b᫏") is left
+                            # unchanged: the per-character
+                            # recovery does not normalize,
+                            # so its recovered form stays
+                            # decomposed while the browser
+                            # carries the composed form, and
+                            # such a mix needs its own
+                            # normalizing arm.
+                            or (
+                                any(
+                                    ord(c) in _small_form_map
+                                    for c in label
+                                )
+                                and _frac_recovered
+                                == "".join(
+                                    c.lower()
+                                    for c in label.translate(
+                                        _fraction_excl_map
+                                    ).translate(_small_form_map)
+                                )
+                                and _frac_recovered
+                                == _frac_rec_unicodedata.normalize(
+                                    "NFC", _frac_recovered
+                                )
+                            )
                         )
                         if any(
                             ord(c)
