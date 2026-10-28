@@ -2977,8 +2977,42 @@ def _encode_idna(host: str) -> str | None:
                     .translate(_cjk_compat_remap)
                     .translate(_hebrew_presentation_remap)
                 )
+                # An Arabic presentation form carried as-is
+                # (_punycode_arabic_presentation_as_is) in an
+                # as-is label is invisible to this gate as
+                # written: this Python's Unicode data leaves
+                # most of the set unassigned (no bidi class
+                # at all), gives others a neutral (ON) class,
+                # and gives U+FBC2 an AL class — yet browsers
+                # treat every one of them as a Latin-class
+                # letter, so a label mixing one with a
+                # strong-RTL character is browser-rejected
+                # while the gate above passed it and emitted
+                # raw punycode ("م©﯃1", "م©﯃٣" and "م©﯃م"
+                # all rejected by the WHATWG parser, as are
+                # the same shapes for every other member of
+                # the set). Map each member to "L" for the
+                # gate, so the existing "L" check raises for
+                # exactly those mixes; labels without a
+                # strong-RTL character are unaffected (the
+                # gate only acts when one is present), so
+                # standalone as-is mixes ("©﯃") keep their
+                # existing forms, and U+FBC2's standalone
+                # mix ("©﯂", previously None via its AL
+                # class) now emits the browser's form too.
+                # Excepted: U+FD3E, U+FD3F and U+FDFD, which
+                # behave as neutrals in browsers (the same
+                # shapes are accepted for them), so mapping
+                # them to "L" would wrongly reject valid
+                # labels.
                 _asis_bidi = [
-                    _asis_rtl_unicodedata.bidirectional(c)
+                    (
+                        "L"
+                        if ord(c)
+                        in _punycode_arabic_presentation_as_is
+                        and ord(c) not in (0xFD3E, 0xFD3F, 0xFDFD)
+                        else _asis_rtl_unicodedata.bidirectional(c)
+                    )
                     for c in _asis_translated
                 ]
                 if any(b in ("R", "AL") for b in _asis_bidi):
