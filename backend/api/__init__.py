@@ -4152,6 +4152,31 @@ def _encode_idna(host: str) -> str | None:
                 # for separate assessment.
                 if any(ord(c) in (0x2017, 0x2024) for c in label):
                     raise ValueError("dot-leader or double-low-line as-is")
+                # The browser-rejected small forms U+FE52,
+                # U+FE53, U+FE55, U+FE56 and U+FE5F are
+                # likewise disallowed outright under UTS46,
+                # so browsers reject every label containing
+                # one — yet this branch punycoded an as-is
+                # mix raw ("a©﹒b" ->
+                # "xn--ab-tda2680x", and the same shape
+                # for each of the other four), a form no
+                # browser origin could carry. The carried
+                # small forms (U+FE50, U+FE51, U+FE54,
+                # U+FE57, U+FE59-U+FE5E) are mapped below
+                # and are unaffected. Reject here, before
+                # the bidi gate, mirroring the dot-leader
+                # fix above: no translation in this branch
+                # introduces any of them (they appear
+                # nowhere in this helper), so checking the
+                # raw label is complete, and raising
+                # returns None for the whole host, as for
+                # other rejected labels. Labels without
+                # any of them are unchanged.
+                if any(
+                    ord(c) in (0xFE52, 0xFE53, 0xFE55, 0xFE56, 0xFE5F)
+                    for c in label
+                ):
+                    raise ValueError("rejected small form as-is")
                 import unicodedata as _asis_rtl_unicodedata
 
                 _asis_translated = (
@@ -4513,6 +4538,29 @@ def _encode_idna(host: str) -> str | None:
                 # unchanged.
                 if any(ord(c) in (0x2017, 0x2024) for c in label):
                     raise ValueError("dot-leader or double-low-line double-exclamation")
+                # The browser-rejected small forms U+FE52,
+                # U+FE53, U+FE55, U+FE56 and U+FE5F are
+                # likewise disallowed outright under UTS46,
+                # so browsers reject every label containing
+                # one — yet this branch punycoded a ‼ mix
+                # raw ("a‼﹒b" -> "xn--a!!b-xh9x", and
+                # the same shape for each of the other
+                # four, including the RTL "م‼﹒م"), a form
+                # no browser origin could carry. Reject
+                # here, before the bidi gate, mirroring
+                # the as-is branch's fix above: no
+                # translation in this branch introduces
+                # any of them (they appear nowhere in
+                # this helper), so checking the raw label
+                # is complete, and raising returns None
+                # for the whole host, as for other
+                # rejected labels. Labels without any of
+                # them are unchanged.
+                if any(
+                    ord(c) in (0xFE52, 0xFE53, 0xFE55, 0xFE56, 0xFE5F)
+                    for c in label
+                ):
+                    raise ValueError("rejected small form double-exclamation")
                 _excl_remapped = (
                     label.translate(_double_excl_map)
                     .translate(_enclosed_cjk_remap)
