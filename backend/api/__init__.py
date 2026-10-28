@@ -1296,6 +1296,65 @@ def _encode_idna(host: str) -> str | None:
         | frozenset(range(0xFB43, 0xFB45))
         | frozenset(range(0xFB46, 0xFB50))
     )
+    # U+FB29 mixed with an enclosed/square member whose UTS46
+    # expansion is plain ASCII (㉐ -> "pte", ㊱ -> "36", ㋌ ->
+    # "hg", ㍱ -> "hpa", ㎀ -> "pa"): browsers serialize the
+    # label as that plain form with a literal "+" ("㉐﬩" ->
+    # "pte+", "㍱﬩" -> "hpa+", verified against Node's WHATWG
+    # parser), because WHATWG URL serialization does not apply
+    # STD3 ASCII rules — but the UTS46 retry below encodes the
+    # remapped label as punycode ("xn--pte+-") since "+" is not
+    # a STD3-valid label character, so the entry never matched
+    # under Starlette's exact allow_origins matching. The
+    # U+FB29 branch further down never sees these hosts because
+    # the retry returns first, so check here, before the retry:
+    # when U+FB29 is present and every label remaps (via the
+    # package's own UTS46 remap, the same mapping the retry
+    # uses) to plain kept-verbatim characters (letters, digits,
+    # "_", "+" and "-", the set the U+FB29 branch itself uses),
+    # return that plain form directly. The gate keeps every
+    # other host unchanged: a literally configured "+" host has
+    # no U+FB29 and never reaches this check; a label whose
+    # remap stays non-ASCII (an as-is enclosed/square member,
+    # a fraction-slash square expansion such as "m∕s", a
+    # non-ASCII letter such as "ß", or an RTL letter, whose
+    # browser form with "+" is rejected) fails the check and
+    # falls through to the retry and the U+FB29 branch exactly
+    # as before; and a remap failure (a codepoint the package
+    # rejects, such as an as-is mark) is caught and falls
+    # through too. A genuinely empty label stays empty, as in
+    # the U+FB29 branch, but a label that would remap to empty
+    # does not qualify, so no character is silently dropped.
+    if "\uFB29" in host:
+        try:
+            _fb29_plain_labels = []
+            _fb29_plain_ok = True
+            for _fb29_plain_label in host.split("."):
+                _fb29_plain_remapped = "".join(
+                    _idna.uts46_remap(
+                        c, std3_rules=False, transitional=False
+                    )
+                    if ord(c) > 127
+                    else c
+                    for c in _fb29_plain_label
+                )
+                if (
+                    (not _fb29_plain_label or _fb29_plain_remapped)
+                    and all(
+                        c in "abcdefghijklmnopqrstuvwxyz"
+                        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                        "0123456789_+-"
+                        for c in _fb29_plain_remapped
+                    )
+                ):
+                    _fb29_plain_labels.append(_fb29_plain_remapped)
+                else:
+                    _fb29_plain_ok = False
+                    break
+            if _fb29_plain_ok:
+                return ".".join(_fb29_plain_labels)
+        except (UnicodeError, ValueError):
+            pass
     if any(
         ord(c) in _punycode_modifiers or ord(c) in _punycode_letterlike
         or ord(c) in _punycode_digraphs or ord(c) in _punycode_cherokee
