@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Response, status
 
 from api.common.utils import get_logger
 from api.core.container import get_billing_record_service
@@ -17,13 +17,21 @@ router.tags = ["Stripe - Billing"]
 
 @router.get("/plans", summary="List available plans", response_model=PlanListDto)
 async def list_plans(
+    response: Response,
     current_user_optional: CurrentUserOptional,
     billing_service: BillingRecordService = Depends(get_billing_record_service)
 ):
     scope = "host"
     if current_user_optional and current_user_optional.tenant_id:
         scope = "tenant"
-    
+
+    # The list is scope-dependent (host vs tenant), so it must not
+    # be served from a browser or proxy cache: a cached 200 could
+    # show one scope's plans to another user after an account switch
+    # on a shared machine, or hide freshly created/updated plans —
+    # the same no-store hardening as the tenant list GET.
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
     logger.debug(f"Listing plans for scope: {scope}")
     return await billing_service.list_plans(scope=scope)
 
