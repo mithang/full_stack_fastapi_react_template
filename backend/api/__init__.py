@@ -3280,6 +3280,43 @@ def _encode_idna(host: str) -> str | None:
                         raise ValueError(
                             "fraction presentation underscore edge"
                         )
+                    elif _frac_rtl_remapped is not None and (
+                        any(
+                            _frac_rtl_unicodedata.bidirectional(c)
+                            == "EN"
+                            for c in _frac_rtl_remapped
+                        )
+                        and any(
+                            _frac_rtl_unicodedata.bidirectional(c)
+                            == "AN"
+                            for c in _frac_rtl_remapped
+                        )
+                    ):
+                        # A mixed-digit label the RTL gate
+                        # above just rejected: UTS46 bars
+                        # European and Arabic-Indic digits
+                        # from mixing in an RTL label, and
+                        # the fraction expansion itself
+                        # supplies European digits ("¼" ->
+                        # "1⁄4"), so any Arabic-Indic digit
+                        # in the remapped form ("ا¼ﯽم_٣" /
+                        # "ا¼ﯽم_٣م" / "ا¼ﯽ٣_م") is such a
+                        # mix and is browser-rejected, yet
+                        # this raw fallback punycoded it
+                        # raw, a form no browser origin
+                        # could carry. Raise, so the outer
+                        # handler returns None for the
+                        # whole host, mirroring the gate
+                        # above, which this earlier branch
+                        # bypassed. Labels with only one
+                        # digit class ("ا¼ﯽم_م" /
+                        # "ا¼ﯽم_1" still match) are
+                        # untouched, as are labels whose
+                        # remap failed, for which the gate
+                        # above already decides.
+                        raise ValueError(
+                            "fraction presentation mixed digits"
+                        )
                     elif any(ord(c) > 127 for c in label):
                         encoded_labels.append(
                             "xn--"
