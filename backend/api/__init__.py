@@ -2678,6 +2678,40 @@ def _encode_idna(host: str) -> str | None:
                 return False
             return _sf_remapped == _sf_translated
 
+        # The decomposed small-form mix arm: UTS46 remaps a
+        # decomposed mix to its NFC form ("mu\u0308nchen﹐b"
+        # -> "münchen,b"), so the exact-remap check above
+        # rejects it and it fell through to None, while
+        # browsers NFC-normalize and carry it
+        # ("mu\u0308nchen﹐b" -> "xn--mnchen,b-65a",
+        # verified against Node's WHATWG parser). Admit
+        # such a label only when its NFC form passes the
+        # _sf_mix_ok gate (which re-checks the mark-first,
+        # bidi and character conditions and the exact
+        # remap on the NFC form, so an uppercase mix such
+        # as "Ω﹐b" — whose NFC form still needs a case
+        # fold — keeps its existing behaviour) and the
+        # NFC of the translated form equals the
+        # translation of the NFC form, so the body below
+        # punycodes exactly the gated form. A label
+        # failing any part keeps its existing behaviour
+        # below, since this arm only widens the
+        # small-form branch's condition and never raises.
+        def _sf_nfc_ok(_lab: str) -> bool:
+            import unicodedata as _nfc_unicodedata
+
+            _nfc = _nfc_unicodedata.normalize("NFC", _lab)
+            if _nfc == _lab:
+                return False
+            if not _sf_mix_ok(_nfc):
+                return False
+            return (
+                _nfc_unicodedata.normalize(
+                    "NFC", _lab.translate(_small_form_map)
+                )
+                == _nfc.translate(_small_form_map)
+            )
+
         encoded_labels = []
         for label in host.split("."):
             if not label:
@@ -2692,6 +2726,7 @@ def _encode_idna(host: str) -> str | None:
                         for c in label
                     )
                     or _sf_mix_ok(label)
+                    or _sf_nfc_ok(label)
                 )
             ):
                 # A plain small-form label: every non-ASCII
@@ -2704,8 +2739,10 @@ def _encode_idna(host: str) -> str | None:
                 # behaviour below unless it passes the
                 # _sf_mix_ok gate above (e.g. "münchen﹐b"
                 # is now carried, while "a﹐b©", "م﹐b",
-                # a decomposed "mu\u0308nchen﹐b" and an
-                # uppercase "Ω﹐b" are unchanged).
+                # and an uppercase "Ω﹐b" are unchanged),
+                # or the _sf_nfc_ok arm above (a decomposed
+                # "mu\u0308nchen﹐b" is now carried in its
+                # NFC form, matching the browser).
                 # Translate, then
                 # pass a pure-ASCII result through unchanged
                 # and punycode any other result directly, as
@@ -2719,6 +2756,12 @@ def _encode_idna(host: str) -> str | None:
                 # keeps its existing behaviour, matching the
                 # browser's rejection of such mixes.
                 _sf_mapped = label.translate(_small_form_map)
+                if _sf_nfc_ok(label):
+                    import unicodedata as _sf_nfc_unicodedata
+
+                    _sf_mapped = _sf_nfc_unicodedata.normalize(
+                        "NFC", _sf_mapped
+                    )
                 if any(ord(c) > 127 for c in _sf_mapped):
                     encoded_labels.append(
                         "xn--"
