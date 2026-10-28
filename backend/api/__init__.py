@@ -5095,6 +5095,48 @@ def _encode_idna(host: str) -> str | None:
                     )
                 except (UnicodeError, ValueError):
                     _emoji_remapped = None
+                # The AL-symbol gap set: strong-RTL symbols the
+                # `idna` package rejects under both strict and
+                # UTS46 processing, but browsers carry in RTL
+                # labels (verified against Node's WHATWG
+                # parser): ARABIC RAY U+0608, AFGHANI SIGN
+                # U+060B, the Arabic symbol dots U+FBB2-U+FBC1,
+                # and the Siyaq marks U+1ECAC, U+1ECB0, U+1ED2E.
+                # Their neighbours in the same class are
+                # deliberately not in the set: U+06FD/U+06FE
+                # and RIAL SIGN U+FDFC already encode through
+                # the package paths, while U+0888 and U+FBC2
+                # are browser-rejected in RTL mixes (and fall
+                # out of the per-character remap check below
+                # anyway).
+                _emoji_al_gap = frozenset(
+                    [0x0608, 0x060B]
+                    + list(range(0xFBB2, 0xFBC2))
+                    + [0x1ECAC, 0x1ECB0, 0x1ED2E]
+                )
+                # Per-character remap stability for the new arm
+                # below: the whole-label remap above raises on
+                # a gap symbol, so it cannot gate the arm, but
+                # UTS46 mapping is per codepoint — a gap symbol
+                # is kept verbatim, and every other character
+                # must remap to itself (this bars UTS46-mapped
+                # letters, and the remap-rejected U+0888 /
+                # U+FBC2, exactly as browsers reject those
+                # mixes). A character whose single-character
+                # remap raises (e.g. a joiner, whose CONTEXTJ
+                # rule needs neighbours) fails the arm, so
+                # ZWNJ mixes stay for a later iteration.
+                try:
+                    _emoji_gap_remap_ok = all(
+                        ord(c) in _emoji_al_gap
+                        or _idna.uts46_remap(
+                            c, std3_rules=False, transitional=False
+                        )
+                        == c
+                        for c in label
+                    )
+                except (UnicodeError, ValueError):
+                    _emoji_gap_remap_ok = False
                 if (
                     _emoji_remapped == label
                     # A mark at the label start is barred here:
@@ -5243,6 +5285,122 @@ def _encode_idna(host: str) -> str | None:
                             for c in label
                         )
                     )
+                    )
+                    or (
+                        # An RTL label with an AL symbol from
+                        # the gap set above: the LTR and RTL arms
+                        # above bar every strong-RTL symbol, and
+                        # the whole-label remap gate bars the gap
+                        # symbols outright, so such a label fell
+                        # through to the strict path, raised, and
+                        # returned None ("م؈م" -> browser
+                        # "xn--qfb5jb", "م؈" -> "xn--qfb5j",
+                        # "؈" -> "xn--qfb", verified against
+                        # Node's WHATWG parser), and a CORS
+                        # origin for such a host never matched.
+                        # Admit exactly the labels the browser
+                        # carries for this class: at least one
+                        # gap symbol, a first character that is
+                        # strong-RTL (R/AL), a last character
+                        # that is strong-RTL, a European or
+                        # Arabic-Indic digit, or a nonspacing
+                        # mark, no Latin letter, no joiner or
+                        # space, no mixed European and
+                        # Arabic-Indic digits, and the
+                        # per-character remap check above, plus
+                        # the explicit U+0888 / U+FBC2 exclusion
+                        # below (both are remap-identity, so the
+                        # check alone would pass them, yet
+                        # browsers reject them in RTL mixes, so
+                        # they still fall through, as do
+                        # UTS46-mapped letters). Neutral symbols
+                        # (So/Sk, bidi neither R/AL/AN nor L)
+                        # are admitted mid-label, since browsers
+                        # carry them there ("م؈☀م"), while the
+                        # first/last gates bar them at the edges
+                        # ("م؈☀", "☀؈م" are browser-rejected);
+                        # ASCII punctuation beyond the hyphen
+                        # ("+", ",") and ZWNJ mixes are left for
+                        # later iterations, as are non-ASCII
+                        # European digits, which browsers
+                        # reject in this class.
+                        _emoji_gap_remap_ok
+                        and any(
+                            ord(c) in _emoji_al_gap for c in label
+                        )
+                        and _emoji_unicodedata.category(label[0])[
+                            0
+                        ]
+                        != "M"
+                        and _emoji_unicodedata.bidirectional(
+                            label[0]
+                        )
+                        in ("R", "AL")
+                        and _emoji_unicodedata.bidirectional(
+                            label[-1]
+                        )
+                        in ("R", "AL", "EN", "AN", "NSM")
+                        and not (
+                            any(
+                                _emoji_unicodedata.bidirectional(c)
+                                == "EN"
+                                for c in label
+                            )
+                            and any(
+                                _emoji_unicodedata.bidirectional(c)
+                                == "AN"
+                                for c in label
+                            )
+                        )
+                        and all(
+                            c in "0123456789-"
+                            or ord(c) in _emoji_al_gap
+                            or (
+                                ord(c) > 127
+                                and _emoji_unicodedata.category(c)
+                                in ("So", "Sk")
+                                and _emoji_unicodedata.bidirectional(c)
+                                not in ("R", "AL", "AN", "L")
+                            )
+                            or (
+                                ord(c) > 127
+                                and _emoji_unicodedata.category(c)[0]
+                                == "S"
+                                and _emoji_unicodedata.bidirectional(c)
+                                == "AL"
+                                # U+0888 and U+FBC2 are
+                                # remap-identity, so the check
+                                # above passes them, but browsers
+                                # reject them in RTL mixes
+                                # ("م؈࢈م", "م؈﯂م" are both
+                                # rejected), so admitting them
+                                # here would emit a form no
+                                # browser origin could carry.
+                                and ord(c) not in (0x0888, 0xFBC2)
+                            )
+                            or (
+                                ord(c) > 127
+                                and _emoji_unicodedata.category(c)[0]
+                                == "L"
+                                and _emoji_unicodedata.bidirectional(c)
+                                in ("R", "AL")
+                            )
+                            or (
+                                ord(c) > 127
+                                and _emoji_unicodedata.category(c)[0]
+                                == "M"
+                                and _emoji_unicodedata.bidirectional(c)
+                                in ("NSM", "R", "AL")
+                            )
+                            or (
+                                ord(c) > 127
+                                and _emoji_unicodedata.category(c)
+                                == "Nd"
+                                and _emoji_unicodedata.bidirectional(c)
+                                == "AN"
+                            )
+                            for c in label
+                        )
                     )
                 ):
                     encoded_labels.append(
