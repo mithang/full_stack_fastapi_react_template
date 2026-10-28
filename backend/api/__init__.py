@@ -9069,8 +9069,10 @@ def _encode_idna(host: str) -> str | None:
                 # The first-joiner gate for the
                 # mapped-dash+small-form arm above, for
                 # the mapped-dash arms above (via
-                # _hyph_dash_joiner) and for the U+1806
-                # arm above (via _hyph_1806_joiner),
+                # _hyph_dash_joiner), for the U+1806
+                # arm above (via _hyph_1806_joiner) and
+                # for a dash-punctuation U+2E5D form
+                # (via _hyph_2e5d_joiner below),
                 # mirroring the small-form gate: a joiner
                 # is admitted in that arm's form only when
                 # the FIRST joiner is preceded by a virama
@@ -9083,11 +9085,30 @@ def _encode_idna(host: str) -> str | None:
                 # the RTL gate above (which has no joiner
                 # clause) is unchanged too, so an RTL
                 # joiner mix keeps its existing behaviour.
+                # A joiner mix of a U+2E5D form whose
+                # first joiner is virama-preceded
+                # ("क\u094d\u200d\u2e5db" ->
+                # "xn--b-tud2o090gplq", verified against
+                # Node's WHATWG parser) is carried too:
+                # _hyph_2e5d_joiner is set when the form
+                # finally accepted above contains U+2E5D
+                # (the identity/NFC forms — every other
+                # arm that could carry U+2E5D already sets
+                # its own joiner flag, so this only adds
+                # admission for those forms), and the
+                # first-joiner gate below admits it, so
+                # a bad-first-joiner mix still returns
+                # None as before.
+                _hyph_2e5d_joiner = (
+                    _hyph_form is not None
+                    and "\u2e5d" in _hyph_form
+                )
                 _hyph_joiner_ok = False
                 if (
                     _hyph_dash_sf
                     or _hyph_dash_joiner
                     or _hyph_1806_joiner
+                    or _hyph_2e5d_joiner
                 ) and _hyph_form is not None:
                     _hyph_first_joiner = next(
                         (
