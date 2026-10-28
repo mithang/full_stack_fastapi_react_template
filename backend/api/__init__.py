@@ -3782,6 +3782,90 @@ def _encode_idna(host: str) -> str | None:
                                     "NFC", _frac_recovered
                                 )
                             )
+                        # A label mixing a fraction with a
+                        # UTS46-mapped dash, a carried
+                        # small form and a decomposed mark
+                        # plus an as-is mark
+                        # ("mu\u0308nchen¼︱b﹐c᫏" ->
+                        # "münchen1⁄4—b,c᫏", verified
+                        # against Node's WHATWG parser):
+                        # the same gap as the mapped-dash
+                        # arm above, composed with the
+                        # small-form translation — the
+                        # per-character recovery expands
+                        # the fraction, maps the dash and
+                        # translates the small form but
+                        # does not normalize, so its
+                        # recovered form stays decomposed,
+                        # fails the recovery gate's
+                        # NFC-gated mapped-dash+small-
+                        # form candidate, and the label
+                        # fell through to a decomposed raw
+                        # punycode instead of the browser's
+                        # composed form. Accept the NFC of
+                        # the recovered form when it equals
+                        # the NFC of the fraction-expanded,
+                        # mapped-dash-translated,
+                        # small-form-translated candidate,
+                        # mirroring the arm above; the main
+                        # gate's mapped-dash+small-form NFC
+                        # arm below then accepts the
+                        # normalized form (and its bidi and
+                        # space gates still apply to it).
+                        # The arm is gated on both a
+                        # mapped-dash and a small-form
+                        # member (plain dash or plain
+                        # small-form labels keep their own
+                        # arms), on the recovered form
+                        # actually being decomposed, on no
+                        # space or joiner, and on a
+                        # non-mark first character, so
+                        # composed, joiner, space,
+                        # mark-first and single-class labels
+                        # keep their existing handling; a
+                        # label that is also uppercase
+                        # keeps its existing handling too,
+                        # since its folded recovered form
+                        # does not equal the unfolded
+                        # candidate's NFC form.
+                        if (
+                            _frac_recovered is not None
+                            and " " not in label
+                            and any(
+                                ord(c) in _mapped_dash
+                                for c in label
+                            )
+                            and any(
+                                ord(c) in _small_form_map
+                                for c in label
+                            )
+                            and "\u200c" not in label
+                            and "\u200d" not in label
+                            and _frac_rec_unicodedata.category(
+                                label[0]
+                            )[0]
+                            != "M"
+                            and _frac_recovered
+                            != _frac_rec_unicodedata.normalize(
+                                "NFC", _frac_recovered
+                            )
+                            and _frac_rec_unicodedata.normalize(
+                                "NFC", _frac_recovered
+                            )
+                            == _frac_rec_unicodedata.normalize(
+                                "NFC",
+                                label.translate(
+                                    _fraction_excl_map
+                                ).translate(_mapped_dash).translate(
+                                    _small_form_map
+                                ),
+                            )
+                        ):
+                            _frac_remapped = (
+                                _frac_rec_unicodedata.normalize(
+                                    "NFC", _frac_recovered
+                                )
+                            )
                 # A label mixing a fraction with an as-is
                 # expansion form (DEGREE CELSIUS U+2103 ->
                 # "°c", DEGREE FAHRENHEIT U+2109 -> "°f"):
