@@ -4067,6 +4067,59 @@ def _encode_idna(host: str) -> str | None:
                             != "M"
                         )
                         # A label mixing a fraction with a
+                        # UTS46-mapped dash, a carried small
+                        # form and a decomposed mark
+                        # ("mu\u0308nchen¼︱b﹐c" ->
+                        # "münchen1⁄4—b,c" ->
+                        # "xn--mnchen14b,c-thb1064hfta",
+                        # verified against Node's WHATWG
+                        # parser): UTS46 maps before it
+                        # normalizes, so the whole-label
+                        # remap equals the NFC of the
+                        # fraction-expanded, mapped-dash
+                        # and small-form translated form,
+                        # which matches neither the triple
+                        # candidate above nor any other
+                        # candidate, and the label fell
+                        # through to None (or, for an
+                        # underscore mix, to a wrong
+                        # raw-fraction punycode) even
+                        # though the browser carries the
+                        # composed form. Accept the NFC of
+                        # that chained form, under the same
+                        # both-members, no-joiner,
+                        # non-mark-first and bidi gates as
+                        # the triple and case candidates
+                        # above; a label that is also
+                        # uppercase ("MU\u0308NCHEN¼︱b﹐c",
+                        # combined case+NFC) needs its own
+                        # arm and is unchanged by this one.
+                        or (
+                            any(
+                                ord(c) in _mapped_dash
+                                for c in label
+                            )
+                            and any(
+                                ord(c) in _small_form_map
+                                for c in label
+                            )
+                            and _frac_remapped
+                            == _frac_sf_unicodedata.normalize(
+                                "NFC",
+                                label.translate(
+                                    _fraction_excl_map
+                                ).translate(_mapped_dash).translate(
+                                    _small_form_map
+                                ),
+                            )
+                            and "\u200c" not in label
+                            and "\u200d" not in label
+                            and _frac_sf_unicodedata.category(
+                                label[0]
+                            )[0]
+                            != "M"
+                        )
+                        # A label mixing a fraction with a
                         # carried small form and an uppercase
                         # letter ("Ω¼﹐b" -> "ω1⁄4,b" ->
                         # "xn--14,b-fpd1684b", "a¼﹐bΣ" ->
