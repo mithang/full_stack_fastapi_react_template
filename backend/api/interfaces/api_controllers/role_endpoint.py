@@ -68,10 +68,17 @@ async def create_role(
 
 @router.get("/{role_id}", response_model=RoleDto)
 async def get_role(
+    response: Response,
     role_id: str,
     service: RoleService = Depends(get_role_service),
     _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.ROLE_VIEW_ONLY]))
 ):
+    # Same no-store hardening as the GET /roles/ list above: this GET
+    # returns a single role (name and permissions), so a cached 200
+    # could serve one tenant's role to another admin after an account
+    # switch, or hide a freshly updated role.
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
     role = await service.get_role_by_id(role_id)
     role_doc = await role.to_serializable_dict()
     return RoleDto(**role_doc)
