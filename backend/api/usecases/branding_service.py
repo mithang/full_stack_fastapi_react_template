@@ -92,7 +92,19 @@ class BrandingService:
             payload = data.model_dump(exclude_unset=True, exclude_none=True)
             if claim_legacy:
                 payload["tenant_id"] = tenant_id
-            updated = await self.branding_repository.update_branding(id, Branding(**payload, app_name=data.identity.app_name))
+            # identity is optional on UpdateBrandingDto: PUT /logo (and
+            # a PATCH without an identity block) pass no identity, so
+            # reading data.identity.app_name unconditionally raised
+            # AttributeError and every such update surfaced as
+            # "Failed to update branding." Only override app_name when
+            # an identity was actually supplied; otherwise the
+            # repository's exclude_unset dump leaves the stored
+            # app_name untouched (Branding's default is not in
+            # fields_set, so it is excluded too).
+            branding_kwargs = {}
+            if data.identity is not None:
+                branding_kwargs["app_name"] = data.identity.app_name
+            updated = await self.branding_repository.update_branding(id, Branding(**payload, **branding_kwargs))
         except Exception as e:
             # Log the detail server-side only: the ApiBaseException
             # handler returns the message verbatim, so str(e) here would
