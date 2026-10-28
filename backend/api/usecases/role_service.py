@@ -97,6 +97,15 @@ class RoleService:
             # before any write), so probing another tenant's id reveals
             # nothing and cannot overwrite its name or permissions.
             raise RoleNotFoundException(role_id=role_id)
+        # Pin the tenant stamp server-side, mirroring the create path
+        # (iteration 870): UpdateRoleDto inherits the client-supplied
+        # tenant_id from CreateRoleDto, and the repository applies
+        # whatever it carries, so a caller who may update their own
+        # role could otherwise re-stamp it to another tenant's id —
+        # moving it into that tenant's role list — or to None, making
+        # it host-visible. The legitimate frontend sends only name and
+        # description on update, so no legitimate update is affected.
+        role_data.tenant_id = existing.tenant_id
         return await self.role_repository.update(role_id=role_id, data=role_data)
 
     async def delete_role(self, role_id: str, tenant_id: str | PydanticObjectId | None = None) -> None:
