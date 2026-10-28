@@ -14,6 +14,24 @@ from api.common.security import hash_it
 
 logger = get_logger(__name__)
 
+
+def _caller_may_access(record_tenant_id: PydanticObjectId | None, caller_tenant_id: str | PydanticObjectId | None) -> bool:
+    # Single-record scope rule, mirroring list_users() and the role
+    # service's get_role_by_id(): host callers (tenant_id None) may
+    # access any record; a tenant caller may access only records
+    # stamped with their own tenant_id. A malformed caller id cannot
+    # match any record, so it fails closed. Self-access is unaffected:
+    # a caller's tenant_id comes from their own user record, so their
+    # own record always carries that same tenant_id.
+    if caller_tenant_id is None:
+        return True
+    try:
+        caller_oid = PydanticObjectId(caller_tenant_id)
+    except Exception:
+        return False
+    return record_tenant_id == caller_oid
+
+
 class UserService:
     def __init__(
             self,
@@ -46,10 +64,20 @@ class UserService:
             raise UserNotFoundException(email)
         return existing
     
-    async def get_user_by_id(self, user_id: str) -> User:
+    async def get_user_by_id(self, user_id: str, tenant_id: str | PydanticObjectId | None = None) -> User:
         """Get user by ID. Returns User model. Raises UserNotFoundException if not found."""
         existing = await self.user_repository.get(id=user_id)
         if existing is None:
+            raise UserNotFoundException(user_id)
+        if not _caller_may_access(existing.tenant_id, tenant_id):
+            # Cross-tenant read: same 404 as an unknown id, so probing
+            # another tenant's id reveals neither its existence nor its
+            # name/email/role. Host callers (tenant_id None) keep the
+            # global view, the same scope rule as list_users() — and a
+            # host-stamped record (tenant_id None) is not visible to a
+            # tenant caller, matching the list filter which only returns
+            # the caller's own rows. Callers that omit tenant_id (auth,
+            # current-user resolution, background jobs) are unaffected.
             raise UserNotFoundException(user_id)
         return existing
 

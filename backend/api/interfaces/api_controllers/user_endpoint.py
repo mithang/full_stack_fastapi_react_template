@@ -69,6 +69,7 @@ async def create_user(
 async def get_user(
     response: Response,
     user_id: str,
+    current_user: CurrentUser,
     service: UserService = Depends(get_user_service),
     _bool: bool = Depends(check_permissions_for_current_role(
         required_permissions=[Permission.USER_SELF_READ_AND_WRITE_ONLY],
@@ -82,7 +83,14 @@ async def get_user(
     # the same no-store hardening as the profile-image GET above.
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
-    user = await service.get_user_by_id(user_id)
+    # Scope to the caller's tenant, mirroring list_users() and the
+    # single-record role/SSO endpoints: the list was already scoped,
+    # but this detail read was not, so a tenant admin with
+    # USER_VIEW_ONLY could read any other tenant's user by id (name,
+    # email, role). A cross-tenant id now answers with the same 404
+    # as an unknown id; self-access is unaffected, since the caller's
+    # tenant_id comes from their own record.
+    user = await service.get_user_by_id(user_id, tenant_id=current_user.tenant_id)
     user_doc = await user.to_serializable_dict()
     return UserDto(**user_doc)
 
