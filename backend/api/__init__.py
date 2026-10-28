@@ -4424,10 +4424,75 @@ def _encode_idna(host: str) -> str | None:
                 )
                 import unicodedata as _frac_sf_unicodedata
 
+                # A plain fraction label carrying a
+                # joiner (ZERO WIDTH NON-JOINER
+                # U+200C or ZERO WIDTH JOINER
+                # U+200D) that browsers reject
+                # ("¼b‍" -> an error, "a¼b‍" ->
+                # an error, while the main gate
+                # below emitted a punycode for
+                # both, since the plain fraction
+                # candidate has no joiner check and
+                # the whole-label remap passes
+                # joiners through unchanged): the
+                # browser's joiner rule, verified
+                # against Node's WHATWG parser,
+                # looks only at the FIRST joiner in
+                # the label — later joiners ride
+                # along once the first is valid
+                # ("x\u094d\u200ca\u200d¼b" and
+                # "x\u094d\u200c¼b\u200c" are
+                # carried) — and requires that
+                # first joiner to be preceded by a
+                # virama (a character with
+                # Canonical Combining Class 9)
+                # that is itself preceded by
+                # another character, so a
+                # label-initial virama plus joiner
+                # ("‌¼b", a mark-first label
+                # browsers reject) still fails.
+                # Four Class-9 characters are not
+                # viramas for the browser
+                # (verified by sweeping every
+                # Class-9 character): U+1715
+                # TAGALOG SIGN PAMUDPOD, U+11070
+                # BRAHMI SIGN OLD TAMIL VIRAMA,
+                # U+11F41 KAWI SIGN KILLER and
+                # U+11F42 KAWI CONJOINER. The
+                # gate sits on the whole main gate,
+                # not just the plain candidate: the
+                # late Greek / as-is / FB29 arms
+                # are identity for plain labels, so
+                # they would otherwise re-admit
+                # the same label, while the dash,
+                # small-form, case and NFC arms
+                # keep their own stricter
+                # no-joiner checks and are
+                # unchanged.
+                _frac_main_joiner_ok = True
+                for _frac_j in range(len(label)):
+                    if label[_frac_j] in ("\u200c", "\u200d"):
+                        _frac_main_joiner_ok = (
+                            _frac_j >= 2
+                            and _frac_sf_unicodedata.combining(
+                                label[_frac_j - 1]
+                            )
+                            == 9
+                            and ord(label[_frac_j - 1])
+                            not in (
+                                0x1715,
+                                0x11070,
+                                0x11F41,
+                                0x11F42,
+                            )
+                        )
+                        break
+
                 if (
                     _frac_remapped is not None
                     and " " not in label
                     and _frac_main_bidi_ok
+                    and _frac_main_joiner_ok
                     and (
                         _frac_remapped
                         == label.translate(_fraction_excl_map)
@@ -4462,13 +4527,14 @@ def _encode_idna(host: str) -> str | None:
                         # bidi gate above still rejects
                         # an RTL mix ("م¼﹐b"). Joiner
                         # mixes keep their existing
-                        # behaviour (None): the plain
-                        # fraction branch already carries
-                        # joiner labels the browser
-                        # rejects ("¼b‍" -> a punycode
-                        # instead of an error), a
-                        # pre-existing class this
-                        # candidate does not extend.
+                        # behaviour (None): the main
+                        # gate above now bars a plain
+                        # fraction label whose first
+                        # joiner is not virama-preceded,
+                        # and this candidate's own
+                        # no-joiner check keeps
+                        # small-form joiner mixes at
+                        # None as before.
                         or (
                             _frac_remapped
                             == label.translate(
