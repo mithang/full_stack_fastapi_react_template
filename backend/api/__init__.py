@@ -5011,6 +5011,52 @@ def _encode_idna(host: str) -> str | None:
                             _hyph_mapped_stable = None
                         if _hyph_mapped_stable == _hyph_mapped:
                             _hyph_form = _hyph_mapped
+                    # The NFC-normalizing variant of the
+                    # mapped-dash exception, mirroring the
+                    # NFC exception above and the NFC arm
+                    # of the U+1806 exception below: a label
+                    # such as "a\u0301\ufe31\u0888b" was
+                    # previously left at None, because
+                    # translating it through _mapped_dash
+                    # gives "a\u0301\u2014\u0888b", whose
+                    # remap is its NFC form
+                    # "\u00e1\u2014\u0888b" rather than
+                    # itself — but UTS46 processing
+                    # NFC-normalizes before punycoding, so
+                    # the browser form is the punycode of
+                    # that NFC form ("xn--b-tfa199c5m0a").
+                    # Accept the NFC form only when it is
+                    # exactly the remap (so no other UTS46
+                    # mapping can ride along — a label
+                    # mixing a mapped dash with another
+                    # mapped character, e.g.
+                    # "a\u0301\ufe31\u212ab", keeps its
+                    # existing behaviour) and it is itself
+                    # remap-stable; every gate below then
+                    # runs against the form actually
+                    # punycoded.
+                    if _hyph_form is None:
+                        _hyph_mapped_nfc = (
+                            _hyph_unicodedata.normalize(
+                                "NFC", _hyph_mapped
+                            )
+                        )
+                        if _hyph_mapped_nfc == _hyph_remapped:
+                            try:
+                                _hyph_mapped_nfc_stable = (
+                                    _idna.uts46_remap(
+                                        _hyph_mapped_nfc,
+                                        std3_rules=False,
+                                        transitional=False,
+                                    )
+                                )
+                            except (UnicodeError, ValueError):
+                                _hyph_mapped_nfc_stable = None
+                            if (
+                                _hyph_mapped_nfc_stable
+                                == _hyph_mapped_nfc
+                            ):
+                                _hyph_form = _hyph_mapped_nfc
                 # The U+1806 exception, mirroring the
                 # mapped-dash exception above: MONGOLIAN TODO
                 # SOFT HYPHEN U+1806 is category Pd, but its
