@@ -4103,6 +4103,7 @@ def _encode_idna(host: str) -> str | None:
                 or 0x3248 <= ord(c) <= 0x324F
                 or 0x3260 <= ord(c) <= 0x326D
                 or ord(c) == 0x327F
+                or ord(c) in _punycode_enclosed_cjk
                 for c in label
             ):
                 # Enclosed CJK Letters and Months forms that
@@ -4121,7 +4122,29 @@ def _encode_idna(host: str) -> str | None:
                 # members already match via the UTS46 retry
                 # above (circled digits/letters, square era
                 # names), and U+321F is browser-rejected, so
-                # it is excluded here. The gates mirror the
+                # it is excluded here. The gate also claims
+                # the remaining enclosed members in
+                # _punycode_enclosed_cjk (U+3244-U+3247,
+                # U+3250-U+325F, U+326E-U+327E, U+3280-U+32FF):
+                # alone they already match via the UTS46 retry
+                # above, but a mix with a codepoint the `idna`
+                # package rejects under UTS46 — an emoji, which
+                # browsers punycode as-is ("㉄😀" ->
+                # "xn--lzr8018g") — fails the retry and fell
+                # through to the fallback's None, while the
+                # branch members above already punycoded the
+                # same mix through this branch ("㈀😀" ->
+                # "xn--()-dmk25139a"). The branch's own gates
+                # (idempotent remap, first character not a
+                # mark, every character an ASCII label
+                # character or a non-RTL letter/mark/number/
+                # symbol/punctuation) still decide each label,
+                # so a gated mix (RTL, space, joiner, mark-
+                # first) falls through to None exactly as
+                # before, and labels mixing one of these
+                # members with a fraction, as-is symbol or
+                # double exclamation mark keep their earlier
+                # branches, which run first. The gates mirror the
                 # U+1ABE branch: the remap must succeed and
                 # be idempotent, the first character must not
                 # be a mark, and every remapped character must
