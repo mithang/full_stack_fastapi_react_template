@@ -4897,15 +4897,76 @@ def _encode_idna(host: str) -> str | None:
                 # ZWNJ, "क्‍‼b" with ZWJ after a virama),
                 # so a blanket joiner reject would
                 # regress them; only the never-valid
-                # space separators are gated, and the
-                # Latin-joiner over-emissions ("a‼‌b",
-                # "a‼‍b") keep their existing behaviour
-                # for a ContextJ-aware assessment.
+                # space separators are gated here, and
+                # the Latin-ZWNJ over-emission ("a‼‌b")
+                # keeps its existing behaviour for a
+                # ContextJ-aware assessment; the ZWJ
+                # over-emission is gated just below.
                 if any(
                     _excl_unicodedata.category(c) == "Zs"
                     for c in _excl_remapped
                 ):
                     raise ValueError("space separator double-exclamation")
+                # ZERO WIDTH JOINER U+200D in a
+                # double-exclamation label is
+                # browser-rejected under WHATWG/UTS46
+                # unless its ContextJ rule holds — and
+                # the browser's rule, verified against
+                # Node's WHATWG parser, checks only
+                # the label's first ZWJ: scanning back
+                # from it past any joiners (U+200C /
+                # U+200D) must reach a virama (a
+                # character with canonical combining
+                # class 9, e.g. DEVANAGARI SIGN VIRAMA
+                # U+094D) — yet this branch emitted a
+                # ‼ mix raw ("a‼‍b" ->
+                # "xn--a!!b-776a", "م‼‍م" likewise), a
+                # form no browser origin could carry.
+                # Reject here, before the bidi gate,
+                # checked on the remapped form actually
+                # punycoded: no translation in this
+                # branch introduces or removes a
+                # virama or a joiner (none appears as a
+                # value in the ‼, enclosed,
+                # parenthesized, square, FB29 or Greek
+                # Extended tables, and the NFC /
+                # mapped-dash arms already skip joiner
+                # labels via their ZC guards), so the
+                # check is complete, and raising
+                # returns None for the whole host, as
+                # for other rejected labels. A first
+                # ZWJ that does follow a virama
+                # (directly or past joiners) is
+                # unchanged, and later ZWJs are
+                # unchecked, matching the browser
+                # ("क्‍‼b", "क्‍b‍c", "क्‌‍‼b" all
+                # carried; "a‼‍b", "a‌‍‼b", "م‌‍‼b"
+                # all rejected). ZERO WIDTH NON-JOINER
+                # U+200C keeps its existing behaviour:
+                # its ContextJ rule depends on
+                # Joining_Type data the stdlib does not
+                # expose, and the browser carries some
+                # ZWNJ ‼ mixes ("م‼‌م"), so it stays
+                # for a separate assessment.
+                _excl_zwj = _excl_remapped.find("\u200d")
+                if _excl_zwj != -1:
+                    _excl_zwj_prev = _excl_zwj - 1
+                    while (
+                        _excl_zwj_prev >= 0
+                        and _excl_remapped[_excl_zwj_prev]
+                        in ("\u200c", "\u200d")
+                    ):
+                        _excl_zwj_prev -= 1
+                    if (
+                        _excl_zwj_prev < 0
+                        or _excl_unicodedata.combining(
+                            _excl_remapped[_excl_zwj_prev]
+                        )
+                        != 9
+                    ):
+                        raise ValueError(
+                            "joiner without virama double-exclamation"
+                        )
                 _excl_bidi = [
                     (
                         "L"
