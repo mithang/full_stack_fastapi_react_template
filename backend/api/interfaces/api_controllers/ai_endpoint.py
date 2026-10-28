@@ -40,7 +40,14 @@ async def get_history(
 
 
 @router.get("/new_session", response_model=NewSessionResponseDto)
-async def create_new_session(current_user: CurrentUser):
+async def create_new_session(current_user: CurrentUser, response: Response):
+    # A fresh session id is minted on every call: a browser/proxy-cached
+    # 200 would hand the same session id to every new chat, merging
+    # distinct conversations into one history. The server Redis cache
+    # already bypasses this route; no-store is the browser/proxy
+    # counterpart, matching get_history/get_single_session above.
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
     return NewSessionResponseDto(session_id=str(PydanticObjectId()))
 
 
