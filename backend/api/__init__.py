@@ -4667,6 +4667,58 @@ def _encode_idna(host: str) -> str | None:
                 )
                 import unicodedata as _excl_unicodedata
 
+                # The NFC-normalizing arm, mirroring the
+                # as-is branch's plain NFC arm (iteration
+                # 708): a label mixing a double
+                # exclamation with a decomposed sequence
+                # previously punycoded raw here
+                # ("a\u0301\u203cb" -> "xn--a!!b-vvc"),
+                # while UTS46 processing
+                # NFC-normalizes before punycoding, so
+                # the browser form is the punycode of
+                # the NFC form ("xn--!!b-dla").
+                # Accept the NFC form only when it is
+                # exactly the UTS46 remap of the
+                # remapped form (so a label mixing in
+                # any other UTS46-mapped character
+                # keeps its existing behaviour) and it
+                # is itself remap-stable, and only
+                # when the remapped form contains no
+                # space, separator or format character
+                # (so the pre-existing space/joiner
+                # over-emissions keep their existing
+                # form for separate assessment). The
+                # bidi gate and the punycode below
+                # then run against the form actually
+                # punycoded, so a browser-rejected
+                # mix still falls through to None.
+                # Labels already in NFC are unchanged.
+                _excl_nfc = _excl_unicodedata.normalize(
+                    "NFC", _excl_remapped
+                )
+                if _excl_nfc != _excl_remapped and not any(
+                    _excl_unicodedata.category(c)[0] in "ZC"
+                    for c in _excl_remapped
+                ):
+                    try:
+                        _excl_nfc_remapped = _idna.uts46_remap(
+                            _excl_remapped,
+                            std3_rules=False,
+                            transitional=False,
+                        )
+                    except (UnicodeError, ValueError):
+                        _excl_nfc_remapped = None
+                    if _excl_nfc_remapped == _excl_nfc:
+                        try:
+                            _excl_nfc_stable = _idna.uts46_remap(
+                                _excl_nfc,
+                                std3_rules=False,
+                                transitional=False,
+                            )
+                        except (UnicodeError, ValueError):
+                            _excl_nfc_stable = None
+                        if _excl_nfc_stable == _excl_nfc:
+                            _excl_remapped = _excl_nfc
                 _excl_bidi = [
                     (
                         "L"
