@@ -1,6 +1,6 @@
 from typing import Annotated, List
 from beanie import PydanticObjectId
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from api.common.exceptions import InvalidOperationException
 from api.common.utils import get_logger
 from api.domain.dtos.role_dto import CreateRoleDto, CreateRoleResponseDto, RoleDto, RoleListDto, UpdateRoleDto
@@ -18,6 +18,7 @@ router = APIRouter(prefix="/roles", tags=["Roles"])
 
 @router.get("/", response_model=RoleListDto)
 async def list_roles(
+    response: Response,
     # Same unbounded-pagination gap as GET /users/ (iteration 237):
     # a direct API call could pass limit=1000000 or negative values
     # straight into the DB query. Cap server-side; out-of-range
@@ -28,6 +29,14 @@ async def list_roles(
     _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.ROLE_VIEW_ONLY]))
 
 ):
+    # This GET returns the tenant's role list (names and permissions), so
+    # it must never be served from a browser or proxy cache: a cached
+    # 200 could serve one tenant's roles to another admin after an
+    # account switch on a shared machine, or hide freshly created,
+    # updated, or deleted roles — the same no-store hardening as the
+    # GET /users/ list in the same sweep.
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
     logger.info(f"Listing roles with skip={skip}, limit={limit}")
     return await service.list_roles(skip=skip, limit=limit)
 
