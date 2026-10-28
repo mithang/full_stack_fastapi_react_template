@@ -2765,17 +2765,70 @@ def _encode_idna(host: str) -> str | None:
                 # parenthesized enclosed forms through
                 # _parenthesized_cjk_remap; labels without one
                 # are unchanged by them.
-                encoded_labels.append(
-                    "xn--"
-                    + label.translate(_asis_map)
+                # A UTS46 bidi violation in an as-is label: this
+                # branch punycoded without any bidi gate, while
+                # the underscore fallback below already raises
+                # for the same violations, so a label claimed
+                # here emitted a form no browser origin could
+                # carry and never matched ("م_م·" and "م_م‚"
+                # end in a neutral, "م_م·x" mixes a Latin
+                # letter in, all browser-rejected). Mirror that
+                # fallback's gate here, evaluated on the
+                # translated form actually punycoded (checking
+                # the raw label would miss an expansion that
+                # introduces the violation: "م_م℃" expands to
+                # "م_م°c" ending in a Latin letter, and "م©㉄"
+                # expands to "م©問" mixing one in, both
+                # browser-rejected too). A label containing a
+                # strong-RTL character (R/AL) must start with
+                # one, must end — ignoring trailing nonspacing
+                # marks, which the rule allows after a valid
+                # end ("م_م·م\u0301" still passes, while
+                # "م_م·\u0301" fails: its last non-mark is the
+                # neutral) — with a strong-RTL character or a
+                # digit, must contain no Latin (L) character,
+                # and must not mix European and Arabic-Indic
+                # digits; a label containing an Arabic-Indic
+                # digit but no strong-RTL character ("٣·",
+                # "a·٣") is likewise neither a valid RTL label
+                # nor a valid LTR label. Raise, so the outer
+                # handler returns None for the whole host, as
+                # for other rejected labels. Labels with no
+                # R/AL/AN character keep their existing forms.
+                import unicodedata as _asis_rtl_unicodedata
+
+                _asis_translated = (
+                    label.translate(_asis_map)
                     .translate(_double_excl_map)
                     .translate(_greek_extended_remap)
                     .translate(_enclosed_cjk_remap)
                     .translate(_kangxi_remap)
                     .translate(_parenthesized_cjk_remap)
                     .translate(_cjk_compat_remap)
-                    .encode("punycode")
-                    .decode("ascii")
+                )
+                _asis_bidi = [
+                    _asis_rtl_unicodedata.bidirectional(c)
+                    for c in _asis_translated
+                ]
+                if any(b in ("R", "AL") for b in _asis_bidi):
+                    _asis_end = None
+                    for _b in reversed(_asis_bidi):
+                        if _b != "NSM":
+                            _asis_end = _b
+                            break
+                    if (
+                        _asis_bidi[0] not in ("R", "AL")
+                        or _asis_end
+                        not in ("R", "AL", "EN", "AN")
+                        or "L" in _asis_bidi
+                        or ("EN" in _asis_bidi and "AN" in _asis_bidi)
+                    ):
+                        raise ValueError("rtl bidi as-is")
+                elif "AN" in _asis_bidi:
+                    raise ValueError("an as-is without rtl")
+                encoded_labels.append(
+                    "xn--"
+                    + _asis_translated.encode("punycode").decode("ascii")
                 )
             elif any(ord(c) in _double_excl_map for c in label):
                 # UTS46 maps DOUBLE EXCLAMATION MARK U+203C to "!!"
