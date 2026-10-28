@@ -6,7 +6,7 @@ from fastapi_sso import OpenID
 from pydantic import EmailStr
 from api.common.dtos.token_dto import ActivationTokenPayloadDto, RefreshTokenPayloadDto, TokenPayloadDto, TokenRefreshRequestDto, TokenSetDto
 from api.common.exceptions import ForbiddenException, InvalidOperationException, UnauthorizedException
-from api.common.security import verify_password
+from api.common.security import hash_it, verify_password
 from api.common.utils import get_logger, get_utc_now, is_tenancy_enabled, get_email_sharing_link
 from api.core.exceptions import TenantNotFoundException, UserNotFoundException
 from api.domain.dtos.audit_logs_dto import AuditLogDto
@@ -35,6 +35,12 @@ from api.usecases.user_service import UserService
 from typing import Callable, Optional
 
 logger = get_logger(__name__)
+
+# Dummy password hash, computed once per process, used only to equalize
+# login timing for unknown emails (see AuthService.login): it hashes a
+# random value, so no supplied password can ever match it, and the
+# result is always discarded.
+_DUMMY_PASSWORD_HASH = hash_it(secrets.token_hex(32))
 
 class AuthService:
     def __init__(self, 
@@ -150,8 +156,11 @@ class AuthService:
             # email raised UserNotFoundException, which the exception
             # handler maps to 404 "User with identifier <email> not
             # found.", letting anyone probe whether an email has an
-            # account. Timing still differs (no password check runs for
-            # an unknown email); that is a separate, smaller channel.
+            # account. Run a dummy password check first so this path
+            # takes about as long as a wrong-password attempt (one
+            # pbkdf2 verify in both), closing the remaining timing
+            # channel; the result is discarded and the 401 follows.
+            verify_password(req.password, _DUMMY_PASSWORD_HASH)
             raise UnauthorizedException("Authentication failed. Please check your credentials.")
         if verify_password(req.password, user.password) is False:
             raise UnauthorizedException("Authentication failed. Please check your credentials.")
