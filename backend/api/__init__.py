@@ -4104,6 +4104,7 @@ def _encode_idna(host: str) -> str | None:
                 or 0x3260 <= ord(c) <= 0x326D
                 or ord(c) == 0x327F
                 or ord(c) in _punycode_enclosed_cjk
+                or ord(c) in _punycode_square_cjk
                 for c in label
             ):
                 # Enclosed CJK Letters and Months forms that
@@ -4134,7 +4135,22 @@ def _encode_idna(host: str) -> str | None:
                 # through to the fallback's None, while the
                 # branch members above already punycoded the
                 # same mix through this branch ("㈀😀" ->
-                # "xn--()-dmk25139a"). The branch's own gates
+                # "xn--()-dmk25139a"). The gate likewise
+                # claims the CJK Compatibility square members
+                # in _punycode_square_cjk (U+3300-U+33FF runs):
+                # alone they already match via the UTS46 retry
+                # above, but the same emoji mix fails the retry
+                # and fell through to the fallback's None, while
+                # the branch's remap-then-punycode body
+                # reproduces the browser form ("㌀😀" ->
+                # "xn--cckzd0a3n9514t", "㍱😀" -> "xn--hpa-th33b").
+                # The seven as-is square
+                # members (U+33A7, U+33A8, U+33AE, U+33AF,
+                # U+33C6, U+33DE, U+33DF) are not in that set
+                # and keep their earlier as-is branch, and the
+                # browser-rejected square members outside the
+                # set are deliberately left alone. The branch's
+                # own gates
                 # (idempotent remap, first character not a
                 # mark, every character an ASCII label
                 # character or a non-RTL letter/mark/number/
