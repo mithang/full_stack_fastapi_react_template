@@ -1,6 +1,6 @@
 from typing import Literal
 
-from fastapi import Depends, Query, APIRouter
+from fastapi import Depends, Query, APIRouter, Response
 from api.common.utils import get_date_range
 from api.core.container import get_user_service
 from api.domain.dtos.dashboard_dto import DashboardMetricsDto
@@ -14,10 +14,17 @@ router.tags = ["Dashboard"]
 
 @router.get("/",  response_model=DashboardMetricsDto)
 async def get_dashboard_metrics(
+    response: Response,
     current_user: CurrentUser,
     filter: Literal["today", "this_week", "last_3_months", "all"] = Query("all"),
     user_service: UserService = Depends(get_user_service)
 ):
+    # Per-tenant metrics (user counts, signup timeseries): a
+    # browser/proxy-cached 200 could serve one tenant's metrics to
+    # another admin after an account switch, or hide fresh signups —
+    # same no-store hardening as the /invoices and /ssos fixes.
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
     # Simulate fetching data based on the filter
     start, end, group_format = get_date_range(filter)
 
