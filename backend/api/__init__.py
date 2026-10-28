@@ -4166,12 +4166,68 @@ def _encode_idna(host: str) -> str | None:
                 # key domain is disjoint from the other two
                 # tables and its outputs are members of neither,
                 # so labels without a square member are unchanged.
+                # The same gap held for U+FB29: the branch
+                # punycoded it raw, so a ‼ mix never matched
+                # ("م‼﬩م" -> helper "xn--!!-vvdc37542a",
+                # browser "xn--!!+-22ed"). UTS46 maps U+FB29
+                # to "+" first, as the as-is branch already
+                # does (see there); translate it here too.
+                # Its key domain is disjoint from the other
+                # tables, so labels without U+FB29 are
+                # unchanged. Translating alone is not enough:
+                # a "+" in an RTL label is only valid in the
+                # middle (a trailing "+" is browser-rejected:
+                # "م‼﬩" is an invalid URL), and the branch
+                # had no bidi gate at all, so it also emitted
+                # forms no browser origin could carry ("م‼",
+                # "‼م", "٣‼"). Gate the remapped form exactly
+                # as the as-is branch does (same "L" mapping
+                # for the Arabic presentation as-is members,
+                # which browsers treat as Latin letters):
+                # an RTL label must start with R/AL, end
+                # (ignoring NSM) with R/AL/EN/AN, contain no
+                # L, and not mix EN and AN digits; a label
+                # with AN but no R/AL is likewise rejected.
+                # Raising here returns None for the whole
+                # host via the loop's handler, matching the
+                # browser's rejection; labels that already
+                # matched ("م‼م", "م‼٣", "م٣‼م") pass the
+                # gate unchanged.
                 _excl_remapped = (
                     label.translate(_double_excl_map)
                     .translate(_enclosed_cjk_remap)
                     .translate(_parenthesized_cjk_remap)
                     .translate(_square_cjk_remap)
+                    .translate({0xFB29: "+"})
                 )
+                import unicodedata as _excl_unicodedata
+
+                _excl_bidi = [
+                    (
+                        "L"
+                        if ord(c)
+                        in _punycode_arabic_presentation_as_is
+                        and ord(c) not in (0xFD3E, 0xFD3F, 0xFDFD)
+                        else _excl_unicodedata.bidirectional(c)
+                    )
+                    for c in _excl_remapped
+                ]
+                if any(b in ("R", "AL") for b in _excl_bidi):
+                    _excl_end = None
+                    for _b in reversed(_excl_bidi):
+                        if _b != "NSM":
+                            _excl_end = _b
+                            break
+                    if (
+                        _excl_bidi[0] not in ("R", "AL")
+                        or _excl_end
+                        not in ("R", "AL", "EN", "AN")
+                        or "L" in _excl_bidi
+                        or ("EN" in _excl_bidi and "AN" in _excl_bidi)
+                    ):
+                        raise ValueError("rtl bidi double-exclamation")
+                elif "AN" in _excl_bidi:
+                    raise ValueError("an double-exclamation without rtl")
                 if any(ord(c) > 127 for c in _excl_remapped):
                     encoded_labels.append(
                         "xn--"
