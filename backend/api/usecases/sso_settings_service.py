@@ -43,6 +43,24 @@ class SSOSettingsService:
         # as if it had succeeded — the silent-success class fixed for
         # tenant delete in iteration 364. Surface the mapped 404 instead,
         # matching get_sso_settings_by_id() in this file.
+        # Masked-credential round-trip: GET serializes client_id (and
+        # client_secret, where present) as first-2 + stars + last-2, and
+        # the SSO edit form pre-fills from that response, so a save
+        # that changes only e.g. enabled/scopes resubmits the masked
+        # value. Treat a submission exactly equal to the stored
+        # value's masked form as "unchanged" (dropped via exclude_none
+        # below) instead of overwriting the live credential with the
+        # masked string, which would silently break SSO login. A
+        # genuinely new credential differs from its own masked form.
+        existing = await self.sso_settings_provider_repository.get_by_id(id)
+        if existing is not None:
+            for field in ("client_id", "client_secret"):
+                submitted = getattr(sso_settings, field)
+                stored = getattr(existing, field)
+                if submitted is not None and stored is not None:
+                    masked = ("*" * len(stored)) if len(stored) <= 4 else stored[:2] + "*" * (len(stored) - 4) + stored[-2:]
+                    if submitted == masked:
+                        setattr(sso_settings, field, None)
         updated = await self.sso_settings_provider_repository.update_sso_settings(id, SSOSettings(**sso_settings.model_dump(exclude_none=True, exclude_unset=True)))
         if updated is None:
             raise NotFoundException("SSOSettings", id)
