@@ -2635,6 +2635,28 @@ def _encode_idna(host: str) -> str | None:
         # form starts with no mark, and it contains no
         # R/AL/AN bidi character (an RTL mix such as "م﹐b"
         # is browser-rejected and keeps returning None).
+        # A joiner (ZERO WIDTH NON-JOINER U+200C or ZERO
+        # WIDTH JOINER U+200D) is admitted alongside
+        # letters, marks and numbers, but only under the
+        # browser's first-joiner rule, mirrored from the
+        # fraction branch's main gate: the FIRST joiner
+        # in the label must be preceded by a virama (a
+        # character with Canonical Combining Class 9)
+        # that is itself preceded by another character,
+        # and the four Class-9 characters that are not
+        # viramas for the browser (U+1715, U+11070,
+        # U+11F41, U+11F42) do not count; later joiners
+        # ride along once the first is valid (e.g.
+        # "a\u094d\u200ca\u200d﹐b" is carried). A label
+        # such as "a\u094d\u200c﹐b" previously fell
+        # through to None (or, with an underscore, to a
+        # wrong raw punycode), while browsers carry it
+        # ("a\u094d\u200c﹐b" -> "xn--a,b-smh9220a",
+        # verified against Node's WHATWG parser). A
+        # bad-first-joiner mix (a joiner not
+        # virama-preceded, a Khmer/excluded virama, or
+        # a label-initial virama plus joiner) still
+        # fails this gate and keeps returning None.
         # Other symbols (category So, e.g. ©, ☀, ★) are
         # admitted alongside letters, marks and numbers:
         # a mix such as "münchen﹐b©" is carried by
@@ -2679,6 +2701,7 @@ def _encode_idna(host: str) -> str | None:
                 in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
                 or ord(c) in _small_form_map
                 or c in _hyph_punct
+                or c in ("\u200c", "\u200d")
                 or (
                     ord(c) > 127
                     and (
@@ -2687,6 +2710,29 @@ def _encode_idna(host: str) -> str | None:
                     )
                 )
                 for c in _lab
+            ):
+                return False
+            _sf_first_joiner = next(
+                (
+                    _i
+                    for _i, _c in enumerate(_lab)
+                    if _c in ("\u200c", "\u200d")
+                ),
+                None,
+            )
+            if _sf_first_joiner is not None and not (
+                _sf_first_joiner >= 2
+                and _sf_unicodedata.combining(
+                    _lab[_sf_first_joiner - 1]
+                )
+                == 9
+                and ord(_lab[_sf_first_joiner - 1])
+                not in (
+                    0x1715,
+                    0x11070,
+                    0x11F41,
+                    0x11F42,
+                )
             ):
                 return False
             if not any(
