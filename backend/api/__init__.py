@@ -4571,23 +4571,28 @@ def _encode_idna(host: str) -> str | None:
                         # every candidate and fall through
                         # unchanged, as before, and the
                         # bidi gate above still rejects
-                        # an RTL mix ("م¼﹐b"). Joiner
-                        # mixes keep their existing
-                        # behaviour (None): the main
-                        # gate above now bars a plain
-                        # fraction label whose first
-                        # joiner is not virama-preceded,
-                        # and this candidate's own
-                        # no-joiner check keeps
-                        # small-form joiner mixes at
-                        # None as before.
+                        # an RTL mix ("م¼﹐b"). A
+                        # small-form joiner mix whose
+                        # first joiner is virama-preceded
+                        # ("क\u094d\u200d﹐b¼" ->
+                        # "xn--,b14-47i22a227kxma",
+                        # verified against Node's WHATWG
+                        # parser) is now carried too: this
+                        # candidate no longer has its own
+                        # no-joiner check, since the outer
+                        # main gate above already bars a
+                        # label whose first joiner is not
+                        # virama-preceded, so a bad-first-
+                        # joiner mix still returns None
+                        # as before. The mapped-dash
+                        # candidate below keeps its own
+                        # no-joiner check and is unchanged
+                        # by this arm.
                         or (
                             _frac_remapped
                             == label.translate(
                                 _fraction_excl_map
                             ).translate(_small_form_map)
-                            and "\u200c" not in label
-                            and "\u200d" not in label
                         )
                         # A label mixing a fraction with a
                         # UTS46-mapped dash ("a¼︱b" ->
