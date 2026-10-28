@@ -679,6 +679,21 @@ def _encode_idna(host: str) -> str | None:
     host = host.translate(
         {cp: chr(cp - 0xFEE0) for cp in range(0xFF01, 0xFF5F)}
     )
+    # WHATWG URL domainToASCII splits a host on "." and on the two
+    # other dot forms, IDEOGRAPHIC FULL STOP U+3002 and HALFWIDTH
+    # IDEOGRAPHIC FULL STOP U+FF61, as well as on U+FF0E — but
+    # only U+FF0E is covered by the fullwidth table above (U+3002
+    # is not a fullwidth ASCII form, and U+FF61 is a halfwidth
+    # form, which that table deliberately leaves alone). A mixed
+    # label containing one therefore reached the branches below
+    # as a single label and was punycoded whole ("a©。b" ->
+    # "xn--ab-tda8959b") instead of splitting ("xn--a-nca.b"),
+    # so it never matched the browser's Origin. Map both to "."
+    # up front, so every branch below sees the browser's
+    # sub-labels; plain labels already matched via the UTS46
+    # retry below, and empty sub-labels (leading, trailing or
+    # doubled dots) are preserved by the label loop, as with ".".
+    host = host.translate({0x3002: ".", 0xFF61: "."})
     try:
         import idna as _idna
     except ImportError:
