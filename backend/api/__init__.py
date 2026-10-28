@@ -4366,7 +4366,82 @@ def _encode_idna(host: str) -> str | None:
                     )
                     for c in _excl_remapped
                 ]
-                if any(b in ("R", "AL") for b in _excl_bidi):
+                # The U+0888 exception to the bidi gate below,
+                # mirroring the as-is branch's
+                # _asis_0888_latin_ok: ARABIC RAISED ROUND DOT
+                # U+0888 is a strong-RTL symbol (bidi class
+                # AL), so the gate below raised for every
+                # Latin double-exclamation label mixing it in
+                # ("a‼࢈b", "‼࢈b", "a‼࢈" all fell through
+                # to None) while browsers carry them
+                # (verified against Node's WHATWG parser).
+                # Admit it only in a Latin label: every
+                # R/AL/AN-bidi character in the remapped form
+                # must be U+0888 itself (the _excl_bidi
+                # mapping above already counts an Arabic
+                # presentation form as "L", so a mix with
+                # one, e.g. "a‼﯂࢈b", is admitted too), the
+                # first character must not be a mark (a
+                # mark-first label is browser-rejected),
+                # every character must be an admitted ASCII
+                # character, an as-is member, an Arabic
+                # presentation as-is member, or a non-ASCII
+                # letter, mark, number, symbol or
+                # punctuation that is not right-to-left (so
+                # a space, joiner or other separator, which
+                # the positive gate already excludes, keeps
+                # its existing behaviour), and none may be
+                # a browser-rejected dot-mapping or
+                # double-low-line form (U+2017, U+2024,
+                # U+3002, U+FF0E, U+FF61). An RTL mix
+                # ("م‼࢈", "م‼࢈م"), a Latin/RTL mix
+                # ("a‼࢈אb") or a mix with an Arabic-Indic
+                # digit ("a‼࢈٣"), which browsers reject,
+                # still raises exactly as before, since the
+                # all-U+0888 condition fails for them; the
+                # pure-RTL forms the gate already passes
+                # are likewise unchanged, since they fail
+                # it too.
+                _excl_0888_latin_ok = (
+                    "\u0888" in _excl_remapped
+                    and _excl_unicodedata.category(
+                        _excl_remapped[0]
+                    )[0] != "M"
+                    and all(
+                        ord(c) == 0x0888
+                        for c, b in zip(
+                            _excl_remapped, _excl_bidi
+                        )
+                        if b in ("R", "AL", "AN")
+                    )
+                    and not any(
+                        ord(c)
+                        in (0x2017, 0x2024, 0x3002, 0xFF0E, 0xFF61)
+                        for c in _excl_remapped
+                    )
+                    and all(
+                        c
+                        in (
+                            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-+()!"
+                        )
+                        or ord(c) == 0x0888
+                        or ord(c) in _punycode_asis
+                        or ord(c)
+                        in _punycode_arabic_presentation_as_is
+                        or (
+                            ord(c) > 127
+                            and _excl_unicodedata.category(c)[0]
+                            in "LMNSP"
+                            and _excl_unicodedata.bidirectional(c)
+                            not in ("R", "AL", "AN")
+                        )
+                        for c in _excl_remapped
+                    )
+                )
+                if (
+                    any(b in ("R", "AL") for b in _excl_bidi)
+                    and not _excl_0888_latin_ok
+                ):
                     _excl_end = None
                     for _b in reversed(_excl_bidi):
                         if _b != "NSM":
