@@ -2621,17 +2621,77 @@ def _encode_idna(host: str) -> str | None:
             0xFE66: "=",
             0xFE69: "$",
         }
+        # The small-form mix gate: a label mixing a carried
+        # small form with a non-ASCII letter, mark or number
+        # (e.g. "münchen﹐b") fell through to None, while
+        # browsers map the small form and punycode the result
+        # ("münchen﹐b" -> "xn--mnchen,b-65a", verified
+        # against Node's WHATWG parser). Admit such a mix
+        # only when translating the small forms gives exactly
+        # the label's UTS46 remap (so no other mapping — a
+        # case fold, a fraction expansion, a MICRO SIGN, a
+        # decomposed form needing NFC — can ride along; those
+        # mixes keep their existing behaviour), the translated
+        # form starts with no mark, and it contains no
+        # R/AL/AN bidi character (an RTL mix such as "م﹐b"
+        # is browser-rejected and keeps returning None).
+        # A symbol mix such as "a﹐b©" likewise fails this
+        # gate's character check and keeps its existing
+        # behaviour in the branches below (the as-is branch
+        # already carries it). A label failing
+        # any part keeps its existing behaviour in the
+        # branches below, since this gate only widens the
+        # small-form branch's condition and never raises.
+        def _sf_mix_ok(_lab: str) -> bool:
+            import unicodedata as _sf_unicodedata
+
+            _sf_translated = _lab.translate(_small_form_map)
+            if _sf_unicodedata.category(_sf_translated[0])[0] == "M":
+                return False
+            if any(
+                _sf_unicodedata.bidirectional(c) in ("R", "AL", "AN")
+                for c in _sf_translated
+            ):
+                return False
+            if not all(
+                c
+                in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
+                or ord(c) in _small_form_map
+                or (
+                    ord(c) > 127
+                    and _sf_unicodedata.category(c)[0] in "LMN"
+                )
+                for c in _lab
+            ):
+                return False
+            if not any(
+                ord(c) > 127
+                and _sf_unicodedata.category(c)[0] in "LMN"
+                for c in _lab
+            ):
+                return False
+            try:
+                _sf_remapped = _idna.uts46_remap(
+                    _lab, std3_rules=False, transitional=False
+                )
+            except (UnicodeError, ValueError):
+                return False
+            return _sf_remapped == _sf_translated
+
         encoded_labels = []
         for label in host.split("."):
             if not label:
                 encoded_labels.append(label)
             elif (
                 any(ord(c) in _small_form_map for c in label)
-                and all(
-                    c
-                    in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
-                    or ord(c) in _small_form_map
-                    for c in label
+                and (
+                    all(
+                        c
+                        in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
+                        or ord(c) in _small_form_map
+                        for c in label
+                    )
+                    or _sf_mix_ok(label)
                 )
             ):
                 # A plain small-form label: every non-ASCII
@@ -2641,8 +2701,12 @@ def _encode_idna(host: str) -> str | None:
                 # special-branch member can ride along, and
                 # a label mixing a small form with any other
                 # non-ASCII character keeps its existing
-                # behaviour below (e.g. "münchen﹐b" and
-                # "a﹐b©" are unchanged). Translate, then
+                # behaviour below unless it passes the
+                # _sf_mix_ok gate above (e.g. "münchen﹐b"
+                # is now carried, while "a﹐b©", "م﹐b",
+                # a decomposed "mu\u0308nchen﹐b" and an
+                # uppercase "Ω﹐b" are unchanged).
+                # Translate, then
                 # pass a pure-ASCII result through unchanged
                 # and punycode any other result directly, as
                 # the underscore fallback does for its labels
