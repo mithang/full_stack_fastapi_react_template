@@ -4193,12 +4193,27 @@ def _encode_idna(host: str) -> str | None:
                 # browser's rejection; labels that already
                 # matched ("م‼م", "م‼٣", "م٣‼م") pass the
                 # gate unchanged.
+                # The same gap held for Greek Extended members
+                # (ά U+1F71 -> ά, ᾀ U+1F80 -> ἀι, ι U+1FBE
+                # -> ι): the branch punycoded them raw, so a
+                # ‼ mix never matched ("a‼ά" -> helper
+                # "xn--a!!-m4z", browser "xn--a!!-5wc", which
+                # decodes to the remapped "a!!ά"). Translate
+                # through the Greek Extended table the as-is
+                # branch already uses; its key domain is
+                # disjoint from the other tables and its
+                # outputs are plain Greek letters (bidi class
+                # L, as the raw members are), so labels
+                # without a Greek Extended member are
+                # unchanged and the bidi gate above sees the
+                # same classes either way.
                 _excl_remapped = (
                     label.translate(_double_excl_map)
                     .translate(_enclosed_cjk_remap)
                     .translate(_parenthesized_cjk_remap)
                     .translate(_square_cjk_remap)
                     .translate({0xFB29: "+"})
+                    .translate(_greek_extended_remap)
                 )
                 import unicodedata as _excl_unicodedata
 
