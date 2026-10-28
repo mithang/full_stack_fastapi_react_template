@@ -8658,6 +8658,83 @@ def _encode_idna(host: str) -> str | None:
                         ):
                             _hyph_form = _hyph_dash_sf_nfc_form
                             _hyph_dash_sf = True
+                # The case-folding + NFC-normalizing variant
+                # of the mapped-dash+small-form exception
+                # above, composing the case arm and the
+                # NFC arm: a label mixing a UTS46-mapped
+                # dash with a carried small form, an
+                # uppercase letter and a decomposed form
+                # ("a\u0301\ufe31b\ufe50c\u03a3" ->
+                # "a\u0301\u2014b,c\u03c3" ->
+                # "xn--b,c-dla708au69c",
+                # "a\u0301\ufe63b\ufe50c\u03a3" ->
+                # "xn---b,c-4na645b", verified against
+                # Node's WHATWG parser) fell through
+                # to None because its remap is the NFC
+                # form of the per-character-folded
+                # doubly-translated form, not the
+                # doubly-translated form itself, so it
+                # matched neither the case arm (which
+                # does not normalize) nor the NFC arm
+                # (which does not fold). Accept the NFC
+                # form of the folded doubly-translated
+                # form only when it is exactly the remap
+                # (so a label mixing a mapped dash and
+                # a small form with a case fold plus a
+                # decomposed form plus any other
+                # UTS46-mapped character — a
+                # browser-rejected small form, a Kelvin
+                # sign — keeps its existing behaviour,
+                # for a separate arm) and it is itself
+                # remap-stable; every gate below then
+                # runs against the form actually
+                # punycoded. Gated on both a mapped-dash
+                # and a small-form member, as the arms
+                # above, and _hyph_dash_sf is set here
+                # too, so a virama-preceded-first-joiner
+                # case+NFC mix is carried under the
+                # first-joiner gate below, while a
+                # bad-first-joiner case+NFC mix still
+                # returns None as before.
+                if _hyph_form is None and _hyph_remapped is not None:
+                    _hyph_dash_sf_case_nfc_form = (
+                        _hyph_unicodedata.normalize(
+                            "NFC",
+                            "".join(
+                                c.lower()
+                                for c in label.translate(
+                                    _mapped_dash
+                                ).translate(_small_form_map)
+                            ),
+                        )
+                    )
+                    if (
+                        _hyph_dash_sf_case_nfc_form != label
+                        and any(
+                            ord(c) in _mapped_dash for c in label
+                        )
+                        and any(
+                            ord(c) in _small_form_map for c in label
+                        )
+                        and _hyph_dash_sf_case_nfc_form
+                        == _hyph_remapped
+                    ):
+                        try:
+                            _hyph_dash_sf_case_nfc_stable = (
+                                _idna.uts46_remap(
+                                    _hyph_dash_sf_case_nfc_form,
+                                    std3_rules=False,
+                                    transitional=False,
+                                )
+                            )
+                        except (UnicodeError, ValueError):
+                            _hyph_dash_sf_case_nfc_stable = None
+                        if (
+                            _hyph_dash_sf_case_nfc_stable
+                            == _hyph_dash_sf_case_nfc_form
+                        ):
+                            _hyph_form = _hyph_dash_sf_case_nfc_form
+                            _hyph_dash_sf = True
                 # The U+1806 exception, mirroring the
                 # mapped-dash exception above: MONGOLIAN TODO
                 # SOFT HYPHEN U+1806 is category Pd, but its
