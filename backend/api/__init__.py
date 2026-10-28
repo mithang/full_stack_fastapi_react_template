@@ -4392,6 +4392,38 @@ def _encode_idna(host: str) -> str | None:
                                 _asis_nfc_stable = None
                             if _asis_nfc_stable == _asis_nfc:
                                 _asis_translated = _asis_nfc
+                # A space separator (Unicode category Zs:
+                # U+0020, U+00A0, U+2000-U+200A, U+202F,
+                # U+205F, U+3000) in an as-is label is
+                # browser-rejected under WHATWG/UTS46 — the
+                # pipeline deliberately leaves an interior
+                # space alone, since the URL parser fails
+                # host parsing on it instead of removing
+                # it — yet this branch punycoded an as-is
+                # mix raw ("a© b" -> "xn--a b-zea", and
+                # the same shape for every other Zs member),
+                # a form no browser origin could carry.
+                # Reject here, before the bidi gate,
+                # checked on the translated form actually
+                # punycoded (so a mapped-dash/small-form
+                # or NFC form below cannot gain one either),
+                # raising so the outer handler returns None
+                # for the whole host, as for other rejected
+                # labels. Labels without a space separator
+                # are unchanged. ZERO WIDTH NON-JOINER
+                # U+200C and ZERO WIDTH JOINER U+200D are
+                # deliberately NOT rejected here: they are
+                # ContextJ-valid in some as-is mixes the
+                # browser carries and this branch already
+                # matches ("م©‌م" with ZWNJ, "क्‍©" with
+                # ZWJ after a virama), so a blanket joiner
+                # reject would regress them; only the
+                # never-valid space separators are gated.
+                if any(
+                    _asis_rtl_unicodedata.category(c) == "Zs"
+                    for c in _asis_translated
+                ):
+                    raise ValueError("space separator as-is")
                 # An Arabic presentation form carried as-is
                 # (_punycode_arabic_presentation_as_is) in an
                 # as-is label is invisible to this gate as
