@@ -4197,8 +4197,11 @@ def _encode_idna(host: str) -> str | None:
                 # An RTL mix ("م—࢈"), a Latin/RTL mix
                 # ("a—א࢈b") or a mix with an Arabic-Indic
                 # digit ("a—࢈٣"), which browsers reject,
-                # still raises exactly as before, since the
-                # all-U+0888 condition fails for them.
+                # raises: the Latin/RTL and digit mixes via
+                # the gate below, and the pure RTL mix via
+                # the U+0888-plus-strong-RTL clause in the
+                # gate below, since the all-U+0888 condition
+                # fails for all of them.
                 _asis_0888_latin_ok = (
                     "\u0888" in _asis_translated
                     and _asis_rtl_unicodedata.category(
@@ -4250,6 +4253,31 @@ def _encode_idna(host: str) -> str | None:
                         not in ("R", "AL", "EN", "AN")
                         or "L" in _asis_bidi
                         or ("EN" in _asis_bidi and "AN" in _asis_bidi)
+                        # Browsers reject every RTL label that
+                        # mixes U+0888 with another strong-RTL
+                        # character ("م—࢈", "م—࢈م", "م·࢈م"
+                        # all rejected by the WHATWG parser),
+                        # even though the first/end/L checks
+                        # above pass for them (first and last
+                        # strong-RTL, no Latin letter), so
+                        # they were emitted as raw punycode
+                        # that no browser origin could carry.
+                        # U+0888 alone or with neutrals/Latin
+                        # ("—࢈", "a—࢈b") is unaffected: the
+                        # Latin exception above already skips
+                        # the raise for those, and this clause
+                        # needs another strong-RTL character
+                        # besides U+0888 itself.
+                        or (
+                            "\u0888" in _asis_translated
+                            and any(
+                                b in ("R", "AL")
+                                and ord(c) != 0x0888
+                                for c, b in zip(
+                                    _asis_translated, _asis_bidi
+                                )
+                            )
+                        )
                     ):
                         raise ValueError("rtl bidi as-is")
                 elif "AN" in _asis_bidi:
@@ -4397,11 +4425,11 @@ def _encode_idna(host: str) -> str | None:
                 # ("م‼࢈", "م‼࢈م"), a Latin/RTL mix
                 # ("a‼࢈אb") or a mix with an Arabic-Indic
                 # digit ("a‼࢈٣"), which browsers reject,
-                # still raises exactly as before, since the
-                # all-U+0888 condition fails for them; the
-                # pure-RTL forms the gate already passes
-                # are likewise unchanged, since they fail
-                # it too.
+                # raises: the Latin/RTL and digit mixes via
+                # the gate below, and the pure RTL mix via
+                # the U+0888-plus-strong-RTL clause in the
+                # gate below, since the all-U+0888 condition
+                # fails for all of them.
                 _excl_0888_latin_ok = (
                     "\u0888" in _excl_remapped
                     and _excl_unicodedata.category(
@@ -4453,6 +4481,31 @@ def _encode_idna(host: str) -> str | None:
                         not in ("R", "AL", "EN", "AN")
                         or "L" in _excl_bidi
                         or ("EN" in _excl_bidi and "AN" in _excl_bidi)
+                        # Browsers reject every RTL label that
+                        # mixes U+0888 with another strong-RTL
+                        # character ("م‼࢈", "م‼࢈م", "م‼م࢈"
+                        # all rejected by the WHATWG parser),
+                        # even though the first/end/L checks
+                        # above pass for them, so they were
+                        # emitted as raw punycode that no
+                        # browser origin could carry — the
+                        # same class as the as-is branch's
+                        # gate above. U+0888 alone or with
+                        # neutrals/Latin is unaffected: the
+                        # Latin exception above already skips
+                        # the raise for those, and this clause
+                        # needs another strong-RTL character
+                        # besides U+0888 itself.
+                        or (
+                            "\u0888" in _excl_remapped
+                            and any(
+                                b in ("R", "AL")
+                                and ord(c) != 0x0888
+                                for c, b in zip(
+                                    _excl_remapped, _excl_bidi
+                                )
+                            )
+                        )
                     ):
                         raise ValueError("rtl bidi double-exclamation")
                 elif "AN" in _excl_bidi:
