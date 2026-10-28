@@ -3718,10 +3718,21 @@ def _encode_idna(host: str) -> str | None:
                 # browser-rejected U+321F (in neither table)
                 # keeps its existing behaviour for separate
                 # assessment.
+                # The same gap held for square CJK members
+                # (㌀ -> "アパート", ㍱ -> "hpa"): the branch
+                # punycoded them raw, so a ‼ mix never matched
+                # ("‼㌀" -> helper "xn--!!-gx5a", browser
+                # "xn--!!-ig4aogtb8q"; "‼㍱" -> helper
+                # "xn--!!-465a", browser plain "!!hpa").
+                # Translate through the square table too; its
+                # key domain is disjoint from the other two
+                # tables and its outputs are members of neither,
+                # so labels without a square member are unchanged.
                 _excl_remapped = (
                     label.translate(_double_excl_map)
                     .translate(_enclosed_cjk_remap)
                     .translate(_parenthesized_cjk_remap)
+                    .translate(_square_cjk_remap)
                 )
                 if any(ord(c) > 127 for c in _excl_remapped):
                     encoded_labels.append(
