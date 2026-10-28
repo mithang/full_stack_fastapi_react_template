@@ -42,10 +42,17 @@ async def list_roles(
 
 @router.get("/search_by_name", response_model=List[RoleDto])
 async def search_role_by_name(
+    response: Response,
     name: str,
     _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.ROLE_VIEW_ONLY])),
     service: RoleService = Depends(get_role_service)
 ):
+    # Same no-store hardening as the GET /roles/ list above: this GET
+    # returns matching roles (names and permissions), so a cached 200
+    # could serve one tenant's roles to another admin after an account
+    # switch, or hide freshly created/updated roles.
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
     roles = await service.search_role_by_name(name)
     return [RoleDto(**(await role.to_serializable_dict())) for role in roles]
 
