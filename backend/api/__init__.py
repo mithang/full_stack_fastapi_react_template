@@ -4130,6 +4130,28 @@ def _encode_idna(host: str) -> str | None:
                 # handler returns None for the whole host, as
                 # for other rejected labels. Labels with no
                 # R/AL/AN character keep their existing forms.
+                # ONE DOT LEADER U+2024 and DOUBLE LOW LINE
+                # U+2017 are not dot separators under WHATWG
+                # (unlike U+3002/U+FF0E/U+FF61, mapped to "."
+                # up front) and UTS46 disallows them outright,
+                # so browsers reject every label containing
+                # one — yet this branch punycoded an as-is
+                # mix raw ("a©․b" -> "xn--ab-tda0533a",
+                # "©․©", "é․©", "©․1", "a©‗b" likewise),
+                # a form no browser origin could carry.
+                # Reject here, before the bidi gate: no
+                # translation in this branch introduces
+                # either codepoint (they appear nowhere as a
+                # map target), so checking the raw label is
+                # complete, and raising returns None for the
+                # whole host, as for other rejected labels.
+                # Labels without either codepoint are
+                # unchanged. The double-exclamation branch
+                # emits the same shape for its own member
+                # ("a‼․b") and keeps its existing behaviour
+                # for separate assessment.
+                if any(ord(c) in (0x2017, 0x2024) for c in label):
+                    raise ValueError("dot-leader or double-low-line as-is")
                 import unicodedata as _asis_rtl_unicodedata
 
                 _asis_translated = (
