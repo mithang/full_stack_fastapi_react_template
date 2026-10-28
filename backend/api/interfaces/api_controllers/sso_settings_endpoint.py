@@ -35,9 +35,16 @@ async def get_available_sso_providers(
 
 @router.get("/{sso_id}", response_model=ReadSSOSettingsDto, response_model_exclude_none=True)
 async def get_sso_settings_by_id(
+    response: Response,
     sso_id: str,
     sso_settings_service: SSOSettingsService = Depends(get_sso_settings_service)
 ):
+    # Single SSO record, same sensitivity as the list endpoint
+    # above: a browser/proxy-cached 200 could serve one tenant's
+    # SSO settings to another admin after an account switch, or
+    # hide freshly updated settings.
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
     return await sso_settings_service.get_sso_settings_by_id(sso_id)
 
 @router.post("/", response_model=SSOSettingsResponseDto, status_code=status.HTTP_201_CREATED)
