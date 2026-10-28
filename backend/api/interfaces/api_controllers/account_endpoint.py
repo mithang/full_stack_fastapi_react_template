@@ -47,7 +47,13 @@ async def login(
         email=login_request.username,
         password=login_request.password
     ))
-    
+    # Token response (access token in the body, rotated refresh token
+    # in Set-Cookie): POST responses are not cached by default, but
+    # make that explicit so no browser/proxy cache can ever store a
+    # token body or replay a Set-Cookie — same no-store hardening as
+    # the magic-link validation GET in this controller.
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
     response.set_cookie(
         key="refresh_token",
         value=token_set.refresh_token,
@@ -71,6 +77,9 @@ async def refresh_token(
     token = TokenRefreshRequestDto(refresh_token=cookies.refresh_token)
     
     token_set = await auth_service.refresh_token(token)
+    # Same token-response no-store hardening as login() above.
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
     response.set_cookie(
         key="refresh_token",
         value=token_set.refresh_token,
@@ -347,7 +356,10 @@ async def passkey_login(
             raise PassKeyException("Passkey authentication failed.")
         
         token_set: TokenSetDto = await auth_service.login_with_passkey(email=email)
-        
+
+        # Same token-response no-store hardening as login() above.
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Pragma"] = "no-cache"
         response.set_cookie(
             key="refresh_token",
             value=token_set.refresh_token,
