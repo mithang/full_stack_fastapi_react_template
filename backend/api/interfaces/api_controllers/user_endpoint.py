@@ -50,6 +50,7 @@ async def create_user(
 
 @router.get("/{user_id}", response_model=UserDto)
 async def get_user(
+    response: Response,
     user_id: str,
     service: UserService = Depends(get_user_service),
     _bool: bool = Depends(check_permissions_for_current_role(
@@ -57,6 +58,13 @@ async def get_user(
         allow_self_access=True)
     )
 ):
+    # This GET returns one user's personal data (name, email, role), so
+    # it must never be served from a browser or proxy cache: a cached
+    # 200 could serve a previous user's record after an account switch
+    # on a shared machine, or stale data after a role/profile change —
+    # the same no-store hardening as the profile-image GET above.
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
     user = await service.get_user_by_id(user_id)
     user_doc = await user.to_serializable_dict()
     return UserDto(**user_doc)
