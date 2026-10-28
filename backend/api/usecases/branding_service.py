@@ -127,8 +127,20 @@ class BrandingService:
     async def create_branding(self, data: UpdateBrandingDto) -> BrandingDto:
         if await self.branding_repository.count() > 0:
             raise BrandingException("Branding already exists. Only one branding allowed.")
-        
-        branding_data = Branding(**data.model_dump(), app_name=data.identity.app_name)
+
+        # identity is optional on UpdateBrandingDto: PUT /logo's
+        # logo-first creation (and a POST without an identity block)
+        # pass no identity, so reading data.identity.app_name
+        # unconditionally raised AttributeError and every such
+        # creation failed — the same crash class fixed for updates
+        # in iteration 875. Only override app_name when an identity
+        # was actually supplied; otherwise Branding's own default
+        # ("SaaS Org") applies, and a later PATCH/POST with an
+        # identity block can still set it.
+        branding_kwargs = {}
+        if data.identity is not None:
+            branding_kwargs["app_name"] = data.identity.app_name
+        branding_data = Branding(**data.model_dump(), **branding_kwargs)
         
         created_branding = await self.branding_repository.create_branding(data=branding_data)
         # Log the tenant id only: the full document carries contact_info PII.
