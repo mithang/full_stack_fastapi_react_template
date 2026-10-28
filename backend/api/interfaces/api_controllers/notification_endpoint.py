@@ -41,7 +41,8 @@ async def create_notification_banner(
 async def update_notification_banner(
     id: str,
     updated_banner: CreateNotificationBannerSettingDto,
+    current_user: CurrentUser,
     _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.FULL_ACCESS])),
     notification_banner_service: NotificationBannerService = Depends(get_notification_banner_service)
 ):
-    await notification_banner_service.update_banner_setting(id, updated_banner.is_enabled, updated_banner.message)
+    await notification_banner_service.update_banner_setting(id, updated_banner.is_enabled, updated_banner.message, tenant_id=current_user.tenant_id)
