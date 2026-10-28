@@ -40,10 +40,17 @@ async def list_products(
 
 @router.get("/{product_id:path}", summary="Get Product by ID", response_model=ProductDto)
 async def get_product_by_id(
+    response: Response,
     product_id: str,
     current_user: CurrentUser,
     product_service: ProductService = Depends(get_product_service)
 ):
+    # Same no-store hardening as the GET /products/ list: a single
+    # product record is scope-dependent and changes on update/delete,
+    # so a cached 200 could show one tenant's product to another tenant
+    # after an account switch on a shared machine, or hide a fresh edit.
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
     scope = "tenant" if current_user.tenant_id else "host"
     return await product_service.get_product_by_id(product_id=product_id, scope=scope)
 
