@@ -4322,10 +4322,15 @@ def _encode_idna(host: str) -> str | None:
                 # (U+FE50 -> ",", U+FE51 -> U+3001, U+FE54
                 # -> ";", U+FE57 -> "!", U+FE59 -> "(",
                 # U+FE5A -> ")", U+FE5B -> "{", U+FE5C ->
-                # "}", U+FE5D -> U+3014, U+FE5E -> U+3015):
+                # "}", U+FE5D -> U+3014, U+FE5E -> U+3015,
+                # U+FE60 -> "&", U+FE61 -> "*", U+FE62 ->
+                # "+", U+FE66 -> "=", U+FE69 -> "$"):
                 # they previously punycoded raw here too
                 # ("©﹔b" -> helper "xn--b-mca1395q",
-                # browser "xn--;b-sda"). The exact-remap
+                # browser "xn--;b-sda"; "©﹠b" -> helper
+                # "xn--b-mca7695q", browser "xn--&b-sda",
+                # and the same shape for the other four).
+                # The exact-remap
                 # and remap-stability gates below are
                 # unchanged, so a mix with any other
                 # UTS46-mapped character keeps its existing
@@ -4347,6 +4352,11 @@ def _encode_idna(host: str) -> str | None:
                         0xFE5C: "}",
                         0xFE5D: "\u3014",
                         0xFE5E: "\u3015",
+                        0xFE60: "&",
+                        0xFE61: "*",
+                        0xFE62: "+",
+                        0xFE66: "=",
+                        0xFE69: "$",
                     }
                 )
                 if _asis_mapped != _asis_translated:
