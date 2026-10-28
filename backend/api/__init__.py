@@ -4318,6 +4318,56 @@ def _encode_idna(host: str) -> str | None:
                                 == _asis_mapped_nfc
                             ):
                                 _asis_translated = _asis_mapped_nfc
+                # The plain NFC-normalizing arm, mirroring
+                # the mapped-dash/small-form NFC arm above: a
+                # label mixing an as-is form with a decomposed
+                # sequence but no mapped dash or small form
+                # (so _asis_mapped == _asis_translated and the
+                # arm above never ran) previously punycoded
+                # raw here ("a\u0301\u00a9b" ->
+                # "xn--ab-tda31v"), while UTS46 processing
+                # NFC-normalizes before punycoding, so the
+                # browser form is the punycode of the NFC
+                # form ("xn--b-mca1o"). Accept the NFC form
+                # only when it is exactly the UTS46 remap of
+                # the translated form (so a label mixing in
+                # any other UTS46-mapped character keeps its
+                # existing behaviour) and it is itself
+                # remap-stable; the bidi gate and the
+                # punycode below then run against the form
+                # actually punycoded, so a browser-rejected
+                # mix still falls through to None. Labels
+                # already in NFC are unchanged.
+                if _asis_mapped == _asis_translated:
+                    _asis_nfc = (
+                        _asis_rtl_unicodedata.normalize(
+                            "NFC", _asis_translated
+                        )
+                    )
+                    if _asis_nfc != _asis_translated:
+                        try:
+                            _asis_nfc_remapped = (
+                                _idna.uts46_remap(
+                                    _asis_translated,
+                                    std3_rules=False,
+                                    transitional=False,
+                                )
+                            )
+                        except (UnicodeError, ValueError):
+                            _asis_nfc_remapped = None
+                        if _asis_nfc_remapped == _asis_nfc:
+                            try:
+                                _asis_nfc_stable = (
+                                    _idna.uts46_remap(
+                                        _asis_nfc,
+                                        std3_rules=False,
+                                        transitional=False,
+                                    )
+                                )
+                            except (UnicodeError, ValueError):
+                                _asis_nfc_stable = None
+                            if _asis_nfc_stable == _asis_nfc:
+                                _asis_translated = _asis_nfc
                 # An Arabic presentation form carried as-is
                 # (_punycode_arabic_presentation_as_is) in an
                 # as-is label is invisible to this gate as
