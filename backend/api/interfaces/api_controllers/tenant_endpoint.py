@@ -376,6 +376,7 @@ async def update_tenant_feature(
 @router.patch("/{tenant_id}/activate_trial_plan", response_model=UpdateTenantResponseDto, status_code=status.HTTP_200_OK)
 async def activate_trial_plan(
     tenant_id: str,
+    current_user: CurrentUser,
     tenant_service: TenantService = Depends(get_tenant_service),
     subcription_plan_service: SubscriptionPlanService = Depends(get_subscription_plan_service),
     billing_record_service: BillingRecordService = Depends(get_billing_record_service),
@@ -391,6 +392,19 @@ async def activate_trial_plan(
     # legitimate callers already hold this permission.
     _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.HOST_MANAGE_TENANTS])),
 ):
+    # The HOST_MANAGE_TENANTS gate also admits FULL_ACCESS holders (see
+    # UserAccessManagement), and every tenant's seeded ADMIN role holds
+    # FULL_ACCESS, so without this a tenant admin could pass any
+    # tenant_id and create a Stripe trial subscription for another
+    # tenant, overwriting that tenant's subscription_id. Host callers
+    # (tenant_id None) keep the global view. Compared after fetch, so
+    # id forms normalize, mirroring the PUT/DELETE/update_feature/
+    # features scoping; the check runs before any Stripe or billing
+    # work. Unknown ids behave as before (get_tenant_by_id already
+    # raises TenantNotFoundException).
+    tenant = await tenant_service.get_tenant_by_id(tenant_id)
+    if current_user.tenant_id is not None and str(tenant.id) != current_user.tenant_id:
+        raise TenantNotFoundException(tenant_id)
     logger.debug(f"Activating trial plan for tenant ID: {tenant_id}")
     all_plans = await billing_record_service.list_plans('host')
     if len(all_plans.plans) == 0:
