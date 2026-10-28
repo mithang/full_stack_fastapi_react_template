@@ -4092,8 +4092,8 @@ def _encode_idna(host: str) -> str | None:
                         # the triple and case candidates
                         # above; a label that is also
                         # uppercase ("MU\u0308NCHEN¼︱b﹐c",
-                        # combined case+NFC) needs its own
-                        # arm and is unchanged by this one.
+                        # combined case+NFC) is carried by
+                        # the case+NFC arm below.
                         or (
                             any(
                                 ord(c) in _mapped_dash
@@ -4110,6 +4110,66 @@ def _encode_idna(host: str) -> str | None:
                                     _fraction_excl_map
                                 ).translate(_mapped_dash).translate(
                                     _small_form_map
+                                ),
+                            )
+                            and "\u200c" not in label
+                            and "\u200d" not in label
+                            and _frac_sf_unicodedata.category(
+                                label[0]
+                            )[0]
+                            != "M"
+                        )
+                        # A label mixing a fraction with a
+                        # UTS46-mapped dash, a carried small
+                        # form, an uppercase letter and a
+                        # decomposed mark
+                        # ("MU\u0308NCHEN¼︱b﹐c" ->
+                        # "münchen1⁄4—b,c" ->
+                        # "xn--mnchen14b,c-thb1064hfta",
+                        # "mu\u0308nchen¼︱b﹐cΣ" ->
+                        # "münchen1⁄4—b,cσ", verified against
+                        # Node's WHATWG parser): it fails
+                        # both arms above — the NFC arm's
+                        # remap check rejects the uppercase
+                        # form, and the case arm's folded
+                        # form is still decomposed, so its
+                        # remap check rejects it too — and
+                        # it fell through to None (or, for an
+                        # underscore mix, to a wrong
+                        # raw-fraction punycode) even though
+                        # the browser carries the folded
+                        # then composed form. UTS46 maps
+                        # before it normalizes, so accept
+                        # the NFC of the per-character
+                        # folded chained form (folded per
+                        # character as the case arm does,
+                        # so a trailing Σ folds to σ, not
+                        # ς), under the same both-members,
+                        # no-joiner, non-mark-first and bidi
+                        # gates as the triple, case and NFC
+                        # candidates above; a label with
+                        # only one of case or decomposition
+                        # keeps its existing handling, as
+                        # the earlier arms handle it.
+                        or (
+                            any(
+                                ord(c) in _mapped_dash
+                                for c in label
+                            )
+                            and any(
+                                ord(c) in _small_form_map
+                                for c in label
+                            )
+                            and _frac_remapped
+                            == _frac_sf_unicodedata.normalize(
+                                "NFC",
+                                "".join(
+                                    c.lower()
+                                    for c in label.translate(
+                                        _fraction_excl_map
+                                    ).translate(_mapped_dash).translate(
+                                        _small_form_map
+                                    )
                                 ),
                             )
                             and "\u200c" not in label
