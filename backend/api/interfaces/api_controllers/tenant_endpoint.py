@@ -322,9 +322,22 @@ async def update_tenant(
 async def get_tenant_features(
     response: Response,
     tenant_id: str,
+    current_user: CurrentUser,
     tenant_service: TenantService = Depends(get_tenant_service),
     _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.HOST_MANAGE_TENANTS]))
 ):
+    # The HOST_MANAGE_TENANTS gate also admits FULL_ACCESS holders (see
+    # UserAccessManagement), and every tenant's seeded ADMIN role holds
+    # FULL_ACCESS, so without this a tenant admin could pass any
+    # tenant_id and read another tenant's feature enablement (e.g.
+    # which paid features it has). Host callers (tenant_id None) keep
+    # the global view. Compared after fetch, so id forms normalize,
+    # mirroring the PUT/DELETE/update_feature scoping; the check runs
+    # before any feature data is returned. Unknown ids behave as before
+    # (get_tenant_by_id already raises TenantNotFoundException).
+    tenant = await tenant_service.get_tenant_by_id(tenant_id)
+    if current_user.tenant_id is not None and str(tenant.id) != current_user.tenant_id:
+        raise TenantNotFoundException(tenant_id)
     # This GET returns one tenant's feature enablement, so it must never be
     # served from a browser or proxy cache: a cached 200 could hide a
     # freshly toggled feature, or serve one tenant's features to another
