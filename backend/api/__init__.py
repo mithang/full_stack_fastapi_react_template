@@ -2804,10 +2804,32 @@ def _encode_idna(host: str) -> str | None:
                                 _arb_unicodedata.bidirectional(_c)
                             )
                             break
+                # The trigger above must not count an Arabic
+                # presentation form as a strong-RTL character:
+                # this Python's data gives U+FBC2 (ARABIC
+                # SYMBOL WASLA ABOVE, the only member of the
+                # presentation-as-is set with an AL class) an
+                # AL class, so a fraction label carrying only
+                # it ("¼﯂", "a¼﯂", "¼﯂᫏") triggered the
+                # gate and failed its strong-RTL first
+                # character requirement, falling through to
+                # None — yet browsers carry all of them,
+                # treating the symbol as neutral (as they do
+                # the other, ON-class members of the set,
+                # e.g. "¼﷾"). Excluding the presentation
+                # set from the trigger makes the gate
+                # vacuous for such labels, as it already is
+                # for the ON-class members; a label that
+                # also carries a strong-RTL character
+                # outside the set still triggers the gate
+                # (and is then barred by the mix check
+                # below, as before, e.g. "ا¼﯂").
                 _frac_main_bidi_ok = (
                     _frac_remapped is None
                     or not any(
-                        _arb_unicodedata.bidirectional(c)
+                        ord(c)
+                        not in _punycode_arabic_presentation_as_is
+                        and _arb_unicodedata.bidirectional(c)
                         in ("R", "AL", "AN")
                         for c in _frac_remapped
                     )
