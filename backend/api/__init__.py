@@ -2633,6 +2633,33 @@ def _encode_idna(host: str) -> str | None:
                         .translate(_enclosed_cjk_remap)
                         .translate(_parenthesized_cjk_remap)
                         .translate(_cjk_compat_remap)
+                        # A label mixing a fraction with both
+                        # a Greek Extended member and an
+                        # enclosed CJK member, a parenthesized
+                        # CJK member, or a CJK Compatibility
+                        # Ideograph ("¼㊣ά" -> "1⁄4正ά"):
+                        # the whole-label remap expands all
+                        # three, so it equals none of the
+                        # candidates above, and the label fell
+                        # through to None even though the
+                        # browser carries the remapped form.
+                        # Accept the fraction-expanded form
+                        # further translated through the Greek
+                        # remap and the three CJK remap tables;
+                        # their key domains are disjoint, so
+                        # the chained form covers the combined
+                        # class and is identity for labels
+                        # without such a member. It is still
+                        # anchored to the real UTS46 remap: any
+                        # other remapped character fails every
+                        # candidate and falls through
+                        # unchanged, as before.
+                        or _frac_remapped
+                        == label.translate(_fraction_excl_map)
+                        .translate(_greek_extended_remap)
+                        .translate(_enclosed_cjk_remap)
+                        .translate(_parenthesized_cjk_remap)
+                        .translate(_cjk_compat_remap)
                         or _frac_hebrew_ok
                     )
                 ):
