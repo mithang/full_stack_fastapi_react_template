@@ -3196,6 +3196,30 @@ def _encode_idna(host: str) -> str | None:
                         .translate(_enclosed_cjk_remap)
                         .translate(_parenthesized_cjk_remap)
                         .translate(_cjk_compat_remap)
+                        # A label mixing a fraction with a
+                        # double exclamation mark, U+FB29 and
+                        # a Greek Extended member ("¼‼﬩ά" ->
+                        # "1⁄4!!+ά"): the whole-label remap
+                        # expands all four, so it equals none
+                        # of the candidates above, and the
+                        # label fell through to None even
+                        # though the browser carries the
+                        # remapped form. Accept the
+                        # fraction-expanded form further
+                        # translated through the FB29 map and
+                        # the Greek Extended remap table;
+                        # their key domains are disjoint from
+                        # each other and from the fraction
+                        # table, so the chained form is
+                        # identity for labels without such a
+                        # member. It is still anchored to the
+                        # real UTS46 remap: any other remapped
+                        # character fails every candidate and
+                        # falls through unchanged, as before.
+                        or _frac_remapped
+                        == label.translate(_fraction_excl_map)
+                        .translate({0xFB29: "+"})
+                        .translate(_greek_extended_remap)
                         # A label mixing a fraction with an
                         # enclosed CJK member, a parenthesized
                         # CJK member, or a CJK Compatibility
