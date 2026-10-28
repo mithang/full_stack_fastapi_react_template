@@ -1,4 +1,4 @@
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Response, status
 from fastapi.params import Depends
 
 from api.core.container import get_pricing_service
@@ -23,9 +23,17 @@ router.tags = ["Stripe - Pricing"]
 
 @router.get("/", response_model=PricingListDto)
 async def get_pricing_list(
+    response: Response,
     current_user: CurrentUser,
     pricing_service: PricingService = Depends(get_pricing_service)
 ):
+    # The list is scope-dependent (host vs tenant), so it must not
+    # be served from a browser or proxy cache: a cached 200 could
+    # show one scope's prices to another user after an account switch
+    # on a shared machine, or hide freshly created prices — the same
+    # no-store hardening as the billing plan list GET.
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
     scope = "tenant" if current_user.tenant_id else "host"
     return await pricing_service.list_prices(scope=scope)
 
