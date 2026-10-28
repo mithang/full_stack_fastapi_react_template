@@ -5177,6 +5177,33 @@ def _encode_idna(host: str) -> str | None:
                             for c in _hyph_form
                         )
                     )
+                # The U+0888 exception to the character gate
+                # below: ARABIC RAISED ROUND DOT U+0888 is a
+                # strong-RTL symbol (bidi class AL), so the
+                # non-RTL gate bars it and the RTL gate bars
+                # it explicitly, and a Latin label mixing it
+                # with a mapped dash or dash punctuation fell
+                # through to None while browsers carry it
+                # ("a︱࢈b" -> "xn--ab-jbf522v", "a⸗࢈b" ->
+                # "xn--ab-jbf3589a", verified against Node's
+                # WHATWG parser). Admit it only in a Latin
+                # label: the form must contain no other
+                # R/AL/AN-bidi character, so an RTL mix
+                # ("م︱࢈م") or a Latin/RTL mix ("a︱࢈م"),
+                # which browsers reject, still fails the
+                # gate exactly as before; the RTL gate's
+                # explicit U+0888 bar is unchanged, so an
+                # RTL-led label keeps its existing behaviour.
+                _hyph_0888_latin_ok = (
+                    _hyph_form is not None
+                    and "\u0888" in _hyph_form
+                    and not any(
+                        _hyph_unicodedata.bidirectional(c)
+                        in ("R", "AL", "AN")
+                        for c in _hyph_form
+                        if ord(c) != 0x0888
+                    )
+                )
                 if (
                     _hyph_form is not None
                     and (
@@ -5204,6 +5231,10 @@ def _encode_idna(host: str) -> str | None:
                                 in "LMNSP"
                                 and _hyph_unicodedata.bidirectional(c)
                                 not in ("R", "AL", "AN")
+                            )
+                            or (
+                                ord(c) == 0x0888
+                                and _hyph_0888_latin_ok
                             )
                             for c in _hyph_form
                         )
