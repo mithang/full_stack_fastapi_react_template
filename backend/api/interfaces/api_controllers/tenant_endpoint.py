@@ -313,7 +313,17 @@ async def activate_trial_plan(
     tenant_service: TenantService = Depends(get_tenant_service),
     subcription_plan_service: SubscriptionPlanService = Depends(get_subscription_plan_service),
     billing_record_service: BillingRecordService = Depends(get_billing_record_service),
-    _feature_check: bool = Depends(check_feature_access(feature_name=Feature.STRIPE))
+    _feature_check: bool = Depends(check_feature_access(feature_name=Feature.STRIPE)),
+    # Activating a trial creates a Stripe trial subscription and
+    # overwrites the target tenant's subscription_id, so it is a
+    # host-admin mutation like the sibling tenant endpoints above
+    # (update, update_feature, delete) — not a tenant-user action.
+    # The feature check alone only required the caller's own tenant
+    # to have STRIPE enabled, so any authenticated tenant user could
+    # activate a trial for any tenant_id in the path. The frontend
+    # caller is the host-admin tenant-subscription dialog, so
+    # legitimate callers already hold this permission.
+    _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.HOST_MANAGE_TENANTS])),
 ):
     logger.debug(f"Activating trial plan for tenant ID: {tenant_id}")
     all_plans = await billing_record_service.list_plans('host')
