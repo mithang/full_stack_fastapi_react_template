@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Query, Response, status
 
 from api.common.dtos.worker_dto import WorkerPayloadDto
-from api.common.exceptions import ApiBaseException, InvalidOperationException
+from api.common.exceptions import ApiBaseException, ForbiddenException, InvalidOperationException
 from api.common.utils import get_host_main_domain_name, get_logger, get_utc_now
 from api.core.container import    get_billing_record_service, get_subscription_plan_service, get_tenant_service
 from api.core.exceptions import InvalidSubdomainException, TenantNotFoundException
@@ -58,9 +58,25 @@ async def list_tenants(
 @router.post("/", response_model=CreateTenantResponseDto, status_code=status.HTTP_201_CREATED)
 async def create_tenant(
     data: CreateTenantDto,
+    current_user: CurrentUser,
     service: TenantService = Depends(get_tenant_service),
     _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.HOST_MANAGE_TENANTS]))
 ):
+    # Unlike the sibling single-record endpoints there is no tenant id
+    # here to scope to, so a tenant caller cannot be narrowed to their
+    # own tenant — creation itself is a host operation. The
+    # HOST_MANAGE_TENANTS gate also admits FULL_ACCESS holders (see
+    # UserAccessManagement), and every tenant's seeded ADMIN role holds
+    # FULL_ACCESS, so without this a tenant admin could create arbitrary
+    # new tenants with a caller-chosen admin account (email + password),
+    # claiming subdomains and gaining admin of a fresh tenant. The
+    # frontend tenants page and its create dialog are host-only (the
+    # sidebar hides /tenants for tenant users), so rejecting tenant
+    # callers loses no legitimate use; host callers (tenant_id None)
+    # are unaffected. The check runs before any service call or worker
+    # dispatch, so no tenant or admin account is created.
+    if current_user.tenant_id is not None:
+        raise ForbiddenException("Tenant creation is restricted to host administrators.")
     tenant_id = await service.create_tenant(data)
     
     response = CreateTenantResponseDto(id=str(tenant_id))
