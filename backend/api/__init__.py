@@ -5042,11 +5042,21 @@ def _encode_idna(host: str) -> str | None:
                         # that chained form, under the same
                         # both-members, non-mark-first and
                         # bidi gates as the triple and case
-                        # candidates above, plus this arm's
-                        # own no-joiner gate (the triple
-                        # plain and case arms above now
-                        # rely on the outer main gate
-                        # for joiners);
+                        # candidates above. A triple NFC
+                        # joiner mix whose first joiner
+                        # is virama-preceded
+                        # ("क\u094d\u200dmu\u0308nchen¼︱b﹐c" ->
+                        # "xn--mnchen14b,c-thb160yowaj16xqdaw0b",
+                        # verified against Node's WHATWG
+                        # parser) is now carried too:
+                        # this candidate no longer has
+                        # its own no-joiner check, since
+                        # the outer main gate above
+                        # already bars a label whose
+                        # first joiner is not
+                        # virama-preceded, so a
+                        # bad-first-joiner mix still
+                        # returns None as before;
                         # a label that is also
                         # uppercase ("MU\u0308NCHEN¼︱b﹐c",
                         # combined case+NFC) is carried by
@@ -5069,8 +5079,6 @@ def _encode_idna(host: str) -> str | None:
                                     _small_form_map
                                 ),
                             )
-                            and "\u200c" not in label
-                            and "\u200d" not in label
                             and _frac_sf_unicodedata.category(
                                 label[0]
                             )[0]
@@ -5105,9 +5113,9 @@ def _encode_idna(host: str) -> str | None:
                         # non-mark-first and bidi gates as
                         # the triple, case and NFC candidates
                         # above, plus this arm's own
-                        # no-joiner gate (the triple plain
-                        # and case arms above now rely on
-                        # the outer main gate for
+                        # no-joiner gate (the triple plain,
+                        # case and NFC arms above now rely
+                        # on the outer main gate for
                         # joiners); a label
                         # with
                         # only one of case or decomposition
