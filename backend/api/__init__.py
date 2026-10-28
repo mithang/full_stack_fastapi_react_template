@@ -4252,8 +4252,33 @@ def _encode_idna(host: str) -> str | None:
                     )
                 else:
                     encoded_labels.append(_excl_remapped)
-            elif any(0x20D0 <= ord(c) <= 0x20F0 for c in label):
+            elif any(0x20D0 <= ord(c) <= 0x20F0 for c in label) and not any(
+                ord(c) in (0x0608, 0x060B)
+                or 0xFBB2 <= ord(c) <= 0xFBC1
+                or ord(c) in (0x1ECAC, 0x1ECB0, 0x1ED2E)
+                for c in label
+            ):
                 # Combining marks for symbols U+20D0-U+20F0: the
+                # gap-symbol exclusion above mirrors the emoji
+                # branch's _emoji_al_gap set below: a label with
+                # both a gap symbol and a U+20D0-U+20F0 mark was
+                # claimed here, but the whole-label remap below
+                # raises on the gap symbol, so the gate failed
+                # and the label fell through to None (or to the
+                # raw "_" punycode for underscore labels) even
+                # though browsers carry it ("م؈⃐" ->
+                # "xn--qfb5jl92f", verified against Node's
+                # WHATWG parser). Such a label now falls
+                # through to the emoji branch's gap arm, whose
+                # first/last bidi, digit-mix and per-character
+                # gates already admit exactly the carried
+                # shapes (a U+20D0-U+20F0 mark is category M
+                # with bidi NSM, admitted mid-label and at the
+                # end, and remaps to itself), including the
+                # mapped-symbol forms, while still rejecting
+                # Latin mixes and underscore labels, which the
+                # browser rejects too. Labels without a gap
+                # symbol are unchanged.
                 # `idna` package rejects them under both strict
                 # and UTS46 processing, so neither path above
                 # reproduces them — but browsers punycode a label
