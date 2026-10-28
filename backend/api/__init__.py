@@ -3763,6 +3763,50 @@ def _encode_idna(host: str) -> str | None:
                             and chr(0x200C) not in label
                             and chr(0x200D) not in label
                         )
+                        # A label mixing a fraction with a
+                        # decomposed mark AND an uppercase
+                        # letter but no small form
+                        # ("MU\u0308NCHEN¼b" ->
+                        # "münchen1⁄4b", verified against
+                        # Node's WHATWG parser): it fails
+                        # both arms above — the case arm's
+                        # folded form is still decomposed,
+                        # and the NFC arm's composed form
+                        # is still uppercase — and it fell
+                        # through to None (or, for an
+                        # underscore mix, to a wrong
+                        # raw-fraction punycode) even though
+                        # the browser carries the folded
+                        # then composed form. UTS46 maps
+                        # before it normalizes, so accept
+                        # the NFC of the per-character
+                        # folded fraction-expanded form
+                        # (folded per character as the case
+                        # arm does, so a trailing Σ folds
+                        # to σ, not ς), under the same
+                        # no-small-form, no-joiner and bidi
+                        # gates as the case and NFC arms
+                        # above; a label with only one of
+                        # the two properties is unchanged,
+                        # as the earlier arms handle it.
+                        or (
+                            not any(
+                                ord(c) in _small_form_map
+                                for c in label
+                            )
+                            and _frac_remapped
+                            == _frac_sf_unicodedata.normalize(
+                                "NFC",
+                                "".join(
+                                    c.lower()
+                                    for c in label.translate(
+                                        _fraction_excl_map
+                                    )
+                                ),
+                            )
+                            and chr(0x200C) not in label
+                            and chr(0x200D) not in label
+                        )
                         or _frac_remapped
                         == label.translate(_fraction_excl_map).translate(
                             _greek_extended_remap
