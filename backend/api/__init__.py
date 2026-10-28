@@ -5139,6 +5139,89 @@ def _encode_idna(host: str) -> str | None:
                     + list(range(0xFBB2, 0xFBC2))
                     + [0x1ECAC, 0x1ECB0, 0x1ED2E]
                 )
+                # ZWNJ (U+200C) in a gap label: browsers carry
+                # it only under its CONTEXTJ rule, which the
+                # single-character remap below cannot judge
+                # (it raises without neighbours). Verified
+                # against Node's WHATWG parser, the rule as
+                # implemented is: some dual-joining letter
+                # precedes the ZWNJ in the same label, and
+                # some joining letter follows it in the same
+                # label. A right-joining-only prefix fails
+                # ("ا‌م", "د‌م", "ا؈‌م" are all rejected),
+                # a dual-joining letter anywhere earlier
+                # suffices ("م؈و‌م" carries), a digit,
+                # Hebrew letter, Latin letter or gap symbol
+                # alone after it fails ("م؈‌1", "م؈‌א",
+                # "م؈‌a", "م؈م‌؈" are all rejected), and a
+                # mapped symbol's expansion letters count
+                # on both sides ("م؈‌﷼", "؈﷼‌م" carry).
+                # The ranges below are those two sets,
+                # derived by probing Node over every letter
+                # with bidi class R/AL in U+0590-U+0900,
+                # U+FB50-U+FE00 and U+FE70-U+FF00 as the
+                # prefix of "<letter>‌م" (dual set) and as
+                # the follower in "م؈‌<letter>" (joining
+                # set); the dual set is a subset of the
+                # joining set, as dual-joining letters are
+                # joining letters, and presentation forms
+                # classify by their mapped letter, since
+                # the probes map before judging context.
+                # ZWJ (U+200D) is not in either set and
+                # stays barred: it needs a preceding virama.
+                _emoji_gap_zwnj_dual = (
+                    (1568, 1568), (1574, 1574), (1576, 1576),
+                    (1578, 1582), (1587, 1599), (1601, 1607),
+                    (1609, 1610), (1646, 1647), (1656, 1671),
+                    (1690, 1727), (1729, 1730), (1740, 1740),
+                    (1742, 1742), (1744, 1745), (1786, 1788),
+                    (1791, 1791), (1810, 1812), (1818, 1821),
+                    (1823, 1831), (1833, 1833), (1835, 1835),
+                    (1837, 1838), (1870, 1880), (1884, 1894),
+                    (2128, 2131), (2133, 2133), (2208, 2208),
+                    (2210, 2217), (64338, 64385),
+                    (64398, 64419), (64422, 64429),
+                    (64467, 64470), (64484, 64602),
+                    (64605, 64605), (64612, 64753),
+                    (64757, 64827), (64848, 64911),
+                    (64914, 64967), (65008, 65017),
+                    (65161, 65164), (65167, 65170),
+                    (65173, 65192), (65201, 65260),
+                    (65263, 65276),
+                )
+                _emoji_gap_zwnj_join = (
+                    (1568, 1568), (1570, 1599), (1601, 1610),
+                    (1646, 1647), (1649, 1651), (1653, 1747),
+                    (1749, 1749), (1774, 1775), (1786, 1788),
+                    (1791, 1791), (1808, 1808), (1810, 1839),
+                    (1869, 1894), (2128, 2133), (2208, 2208),
+                    (2210, 2220), (64336, 64433),
+                    (64467, 64605), (64612, 64753),
+                    (64757, 64829), (64848, 64911),
+                    (64914, 64967), (65008, 65017),
+                    (65153, 65276),
+                )
+
+                def _emoji_zwnj_context_ok(_zlabel):
+                    for _zi, _zch in enumerate(_zlabel):
+                        if _zch != "\u200c":
+                            continue
+                        if not any(
+                            _lo <= ord(_pc) <= _hi
+                            for _pc in _zlabel[:_zi]
+                            for (_lo, _hi)
+                            in _emoji_gap_zwnj_dual
+                        ):
+                            return False
+                        if not any(
+                            _lo <= ord(_fc) <= _hi
+                            for _fc in _zlabel[_zi + 1:]
+                            for (_lo, _hi)
+                            in _emoji_gap_zwnj_join
+                        ):
+                            return False
+                    return True
+
                 # Per-character remap stability for the new arm
                 # below: the whole-label remap above raises on
                 # a gap symbol, so it cannot gate the arm, but
@@ -5147,13 +5230,18 @@ def _encode_idna(host: str) -> str | None:
                 # must remap to itself (this bars UTS46-mapped
                 # letters, and the remap-rejected U+0888 /
                 # U+FBC2, exactly as browsers reject those
-                # mixes). A character whose single-character
-                # remap raises (e.g. a joiner, whose CONTEXTJ
-                # rule needs neighbours) fails the arm, so
-                # ZWNJ mixes stay for a later iteration.
+                # mixes). A ZWNJ is judged by its label
+                # context instead of its single-character
+                # remap (which raises without neighbours);
+                # any other character whose single-character
+                # remap raises fails the arm.
                 try:
                     _emoji_gap_remap_ok = all(
                         ord(c) in _emoji_al_gap
+                        or (
+                            c == "\u200c"
+                            and _emoji_zwnj_context_ok(label)
+                        )
                         or _idna.uts46_remap(
                             c, std3_rules=False, transitional=False
                         )
@@ -5179,22 +5267,33 @@ def _encode_idna(host: str) -> str | None:
                 # whose space makes browsers reject the
                 # mix, and the remap-rejected U+0888 /
                 # U+FBC2, which browsers reject in RTL
-                # mixes); a single-character remap that
-                # raises (e.g. a joiner) fails the arm, so
-                # ZWNJ mixes stay for a later iteration.
-                # The arm below gates on the raw label, and
-                # the raw gates imply the mapped gates here:
-                # an expansion adds only strong-RTL letters,
-                # so first/last bidi, the digit-mix bar and
-                # the per-char classes all carry over to the
-                # mapped label, which is what the arm
-                # punycodes when this check holds.
+                # mixes). A ZWNJ keeps itself as its part
+                # (its single-character remap raises without
+                # neighbours) and its context is judged on
+                # the mapped label below, so an expansion
+                # letter can supply the context a raw
+                # symbol cannot ("م؈‌﷼" carries via the
+                # mapped "ریال"); any other character
+                # whose single-character remap raises fails
+                # the arm. The arm below gates on the raw
+                # label, and the raw gates imply the mapped
+                # gates here: an expansion adds only
+                # strong-RTL letters, so first/last bidi,
+                # the digit-mix bar and the per-char
+                # classes all carry over to the mapped
+                # label, which is what the arm punycodes
+                # when this check holds.
                 try:
                     _emoji_gap_mapped_parts = [
                         c
                         if ord(c) in _emoji_al_gap
-                        else _idna.uts46_remap(
-                            c, std3_rules=False, transitional=False
+                        else (
+                            c
+                            if c == "\u200c"
+                            else _idna.uts46_remap(
+                                c, std3_rules=False,
+                                transitional=False
+                            )
                         )
                         for c in label
                     ]
@@ -5203,6 +5302,9 @@ def _encode_idna(host: str) -> str | None:
                     )
                     _emoji_gap_mapped_ok = (
                         _emoji_gap_mapped_label != label
+                        and _emoji_zwnj_context_ok(
+                            _emoji_gap_mapped_label
+                        )
                         and any(
                             ord(c) in _emoji_al_gap for c in label
                         )
@@ -5229,6 +5331,12 @@ def _encode_idna(host: str) -> str | None:
                 except (UnicodeError, ValueError):
                     _emoji_gap_mapped_label = label
                     _emoji_gap_mapped_ok = False
+                # ZWNJ context on the raw label, for the
+                # gate below: a mapped label's context is
+                # already enforced inside
+                # _emoji_gap_mapped_ok above, so the gate
+                # admits a ZWNJ on either check.
+                _emoji_gap_zwnj_ok = _emoji_zwnj_context_ok(label)
                 if (
                     _emoji_remapped == label
                     # A mark at the label start is barred here:
@@ -5396,8 +5504,10 @@ def _encode_idna(host: str) -> str | None:
                         # strong-RTL (R/AL), a last character
                         # that is strong-RTL, a European or
                         # Arabic-Indic digit, or a nonspacing
-                        # mark, no Latin letter, no joiner or
-                        # space, no mixed European and
+                        # mark, no Latin letter, no space, no
+                        # joiner except a context-valid ZWNJ
+                        # (see the sets above; ZWJ stays
+                        # barred), no mixed European and
                         # Arabic-Indic digits, and the
                         # per-character remap check above, plus
                         # the explicit U+0888 / U+FBC2 exclusion
@@ -5412,8 +5522,8 @@ def _encode_idna(host: str) -> str | None:
                         # first/last gates bar them at the edges
                         # ("م؈☀", "☀؈م" are browser-rejected);
                         # ASCII punctuation beyond the hyphen
-                        # ("+", ",") and ZWNJ mixes are left for
-                        # later iterations, as are non-ASCII
+                        # ("+", ",") is left for later
+                        # iterations, as are non-ASCII
                         # European digits, which browsers
                         # reject in this class.
                         # Either the raw label is remap-stable
@@ -5495,6 +5605,26 @@ def _encode_idna(host: str) -> str | None:
                                 == "Nd"
                                 and _emoji_unicodedata.bidirectional(c)
                                 == "AN"
+                            )
+                            or (
+                                # A context-valid ZWNJ (see
+                                # the sets above): the
+                                # first/last gates already
+                                # bar it at the edges, and
+                                # the raw/mapped context
+                                # checks bar the
+                                # right-joining-only,
+                                # digit-only and
+                                # follower-less shapes
+                                # browsers reject. ZWJ
+                                # stays barred: it is in
+                                # neither set, so it still
+                                # fails this gate.
+                                ord(c) == 0x200C
+                                and (
+                                    _emoji_gap_zwnj_ok
+                                    or _emoji_gap_mapped_ok
+                                )
                             )
                             for c in label
                         )
