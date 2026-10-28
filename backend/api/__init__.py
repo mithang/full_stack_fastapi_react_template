@@ -5137,10 +5137,21 @@ def _encode_idna(host: str) -> str | None:
                         # small-form member so a plain
                         # fraction-plus-case label ("Ω¼b",
                         # a separate class) is unchanged,
-                        # on no joiner so the pre-existing
-                        # joiner behaviour is not extended,
                         # and the bidi gate above still
-                        # rejects an RTL mix ("م¼﹐b").
+                        # rejects an RTL mix ("م¼﹐b"). A
+                        # small-form case joiner mix whose
+                        # first joiner is virama-preceded
+                        # ("क\u094d\u200d﹐b¼Σ" ->
+                        # "xn--,b14-ood182fhla666mioa",
+                        # verified against Node's WHATWG
+                        # parser) is now carried too: this
+                        # candidate no longer has its own
+                        # no-joiner check, since the outer
+                        # main gate above already bars a
+                        # label whose first joiner is not
+                        # virama-preceded, so a bad-first-
+                        # joiner mix still returns None
+                        # as before.
                         or (
                             any(
                                 ord(c) in _small_form_map
@@ -5153,8 +5164,6 @@ def _encode_idna(host: str) -> str | None:
                                     _fraction_excl_map
                                 ).translate(_small_form_map)
                             )
-                            and "\u200c" not in label
-                            and "\u200d" not in label
                         )
                         # A label mixing a fraction with a
                         # carried small form and a decomposed
@@ -5170,9 +5179,12 @@ def _encode_idna(host: str) -> str | None:
                         # even though the browser carries the
                         # composed form. Accept the NFC of
                         # that chained form, under the same
-                        # small-form-member, no-joiner and
-                        # bidi gates as the case candidate
-                        # above; a label that is also
+                        # small-form-member and bidi gates
+                        # as the case candidate above
+                        # (which now relies on the outer
+                        # main gate for joiners) plus this
+                        # arm's own no-joiner gate; a label
+                        # that is also
                         # uppercase ("A\u0308¼﹐b", combined
                         # case+NFC) needs its own arm and
                         # is unchanged by this one.
@@ -5213,9 +5225,12 @@ def _encode_idna(host: str) -> str | None:
                         # character as the case arm does,
                         # so a trailing Σ folds to σ, not
                         # ς), under the same small-form-
-                        # member, no-joiner and bidi gates
-                        # as the case and NFC candidates
-                        # above; a plain fraction-plus-case
+                        # member and bidi gates as the case
+                        # and NFC candidates above (the
+                        # case arm now relies on the outer
+                        # main gate for joiners, while this
+                        # arm keeps its own no-joiner gate);
+                        # a plain fraction-plus-case
                         # label ("Ω¼b") or plain fraction-
                         # plus-NFC label ("mu\u0308nchen¼b")
                         # has no small-form member and is
