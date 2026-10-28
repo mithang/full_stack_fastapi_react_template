@@ -5971,7 +5971,7 @@ def _encode_idna(host: str) -> str | None:
                     )
                 elif "_" not in label:
                     encoded_labels.append(_idna.encode(label).decode("ascii"))
-                elif any(ord(c) > 127 for c in label) and _frac_main_bidi_ok and not _frac_asis_presentation_rtl_mix:
+                elif any(ord(c) > 127 for c in label) and _frac_main_bidi_ok and _frac_main_joiner_ok and not _frac_asis_presentation_rtl_mix:
                     # The bidi gate above also bars this
                     # raw fallback, for the same reason as
                     # the as-is arm above: a label the main
@@ -5983,6 +5983,23 @@ def _encode_idna(host: str) -> str | None:
                     # handler returns None, as the
                     # browser's rejection requires; labels
                     # passing the gate behave as before.
+                    # The joiner gate bars it for the
+                    # same reason: the main gate
+                    # rejects a fraction label whose
+                    # first joiner is not
+                    # virama-preceded (iteration 755),
+                    # but an underscore mix
+                    # ("a¼b‍_", "_a¼b‍", "a¼_‍b")
+                    # otherwise fell through here as
+                    # the raw-fraction punycode, a
+                    # form no browser origin could
+                    # carry. Gated out, it reaches
+                    # the else arm below and returns
+                    # None; a virama-preceded first
+                    # joiner ("x\u094d\u200c¼b_")
+                    # still passes, as do fraction
+                    # underscore labels without a
+                    # joiner.
                     encoded_labels.append(
                         "xn--" + label.encode("punycode").decode("ascii")
                     )
