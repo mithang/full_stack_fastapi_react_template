@@ -46,7 +46,18 @@ class StorageSettingsRepository(BaseRepository[StorageSettings], AuditLogReposit
             return result.id
         
         logger.info(f"Updating existing setting for provider: {setting.provider.value}")
-        
+
+        # Masked secrets round-trip: GET serializes aws_access_key /
+        # aws_secret_key / azure_connection_string as "****", and the
+        # settings form pre-fills from that response, so a save that
+        # changes only region/is_enabled resubmits "****". Treat it as
+        # "unchanged" on update instead of overwriting the live secret
+        # with the literal placeholder (which would silently break
+        # storage auth). A genuinely new secret is any other value.
+        for field in ("aws_access_key", "aws_secret_key", "azure_connection_string"):
+            if getattr(setting, field) == "****":
+                setattr(setting, field, getattr(existing, field))
+
         result = await super().update(id=str(existing.id), data=setting.model_dump())
         logger.info(f"Update result: {result.id} document(s) modified.")
         is_enabled_change = existing.is_enabled != setting.is_enabled
