@@ -37,6 +37,7 @@ async def list_plans(
 
 @router.get("/plans/{plan_id:path}", summary="Retrieve a plan details", response_model=PlanDto)
 async def get_plan(
+    response: Response,
     plan_id: str,
     current_user_optional: CurrentUserOptional,
     billing_service: BillingRecordService = Depends(get_billing_record_service)
@@ -45,6 +46,13 @@ async def get_plan(
     if current_user_optional and current_user_optional.tenant_id:
         scope = "tenant"
 
+    # The detail is scope-dependent (host vs tenant), like the plan
+    # list hardened in the previous iteration, so it must not be
+    # served from a browser or proxy cache: a cached 200 could show
+    # one scope's plan to another user after an account switch on a
+    # shared machine, or hide a freshly updated plan.
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
     return await billing_service.get_plan(plan_id=plan_id, scope=scope)
 
 
