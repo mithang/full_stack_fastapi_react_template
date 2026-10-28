@@ -5284,11 +5284,25 @@ def _encode_idna(host: str) -> str | None:
                         # so a trailing Σ folds to σ, not
                         # ς), under the same small-form-
                         # member and bidi gates as the case
-                        # and NFC candidates above (the
-                        # case arm now relies on the outer
-                        # main gate for joiners, while this
-                        # arm keeps its own no-joiner gate);
-                        # a plain fraction-plus-case
+                        # and NFC candidates above (which
+                        # now rely on the outer main gate
+                        # for joiners, as this arm now
+                        # does too). A small-form
+                        # case+NFC joiner mix whose first
+                        # joiner is virama-preceded
+                        # ("क\u094d\u200dMU\u0308NCHEN¼﹐b" ->
+                        # "xn--mnchen14,b-9db889v2ua616w2xa",
+                        # verified against Node's WHATWG
+                        # parser) is now carried too:
+                        # this candidate no longer has
+                        # its own no-joiner check, since
+                        # the outer main gate above
+                        # already bars a label whose
+                        # first joiner is not
+                        # virama-preceded, so a
+                        # bad-first-joiner mix still
+                        # returns None as before; a plain
+                        # fraction-plus-case
                         # label ("Ω¼b") or plain fraction-
                         # plus-NFC label ("mu\u0308nchen¼b")
                         # has no small-form member and is
@@ -5308,8 +5322,6 @@ def _encode_idna(host: str) -> str | None:
                                     ).translate(_small_form_map)
                                 ),
                             )
-                            and "\u200c" not in label
-                            and "\u200d" not in label
                         )
                         # A label mixing a fraction with an
                         # uppercase letter but no small form
