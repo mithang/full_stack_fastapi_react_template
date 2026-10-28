@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 
 from api.core.container import get_audit_logs_service, get_passkey_service
 from api.domain.dtos.audit_logs_dto import AuditLogDto
@@ -13,6 +13,7 @@ router.tags = ["Manage Security"]
 
 @router.get("/passkeys", response_model=list[RegisteredPasskeyCredentialsDto], status_code=200)
 async def get_registered_passkeys(
+    response: Response,
     current_user: CurrentUser,
     passkey_service: PasskeyService = Depends(get_passkey_service),
     audit_log_service: AuditLogsService = Depends(get_audit_logs_service)
@@ -21,7 +22,16 @@ async def get_registered_passkeys(
     """
     Endpoint to retrieve registered passkeys for the current user.
     """
-    
+    # This GET writes a read audit log and returns the user's passkey
+    # credentials, so it must never be served from a browser or proxy
+    # cache: a cached 200 would replay without running the handler,
+    # silently skipping the audit entry for a credential read — the
+    # same no-store hardening as the state-changing GETs in the
+    # account controller (logout, magic-link validation) and the
+    # tenant check_dns GET. Payload and audit content unchanged.
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+
     passkeys = await passkey_service.get_registered_passkeys(email=current_user.email)
     res = [RegisteredPasskeyCredentialsDto(**pk.model_dump()) for pk in passkeys]
     await audit_log_service.create_audit_log(
