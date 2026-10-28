@@ -4970,15 +4970,28 @@ def _encode_idna(host: str) -> str | None:
                         # fraction-plus-dash-plus-case or
                         # fraction-plus-small-form-plus-case
                         # label keeps its existing handling,
-                        # on no joiner so the pre-existing
-                        # joiner behaviour is not extended,
                         # and on a non-mark first character
                         # so the plain fraction branch's
                         # mark-first over-emission is not
                         # extended to this class, as with
                         # the triple arm above; the bidi
                         # gate above still rejects an RTL
-                        # mix ("م¼︱﹐b"). NFC and as-is
+                        # mix ("م¼︱﹐b"). A triple case
+                        # joiner mix whose first joiner
+                        # is virama-preceded
+                        # ("क\u094d\u200d¼︱bΣ﹐c" ->
+                        # "xn--14b,c-ide446g2ma040occaw2a",
+                        # verified against Node's WHATWG
+                        # parser) is now carried too:
+                        # this candidate no longer has
+                        # its own no-joiner check, since
+                        # the outer main gate above
+                        # already bars a label whose
+                        # first joiner is not
+                        # virama-preceded, so a
+                        # bad-first-joiner mix still
+                        # returns None as before. NFC
+                        # and as-is
                         # combinations with a mapped dash
                         # plus a small form plus case need
                         # their own arms and are unchanged
@@ -5001,8 +5014,6 @@ def _encode_idna(host: str) -> str | None:
                                     _small_form_map
                                 )
                             )
-                            and "\u200c" not in label
-                            and "\u200d" not in label
                             and _frac_sf_unicodedata.category(
                                 label[0]
                             )[0]
@@ -5033,8 +5044,9 @@ def _encode_idna(host: str) -> str | None:
                         # bidi gates as the triple and case
                         # candidates above, plus this arm's
                         # own no-joiner gate (the triple
-                        # plain arm above now relies on
-                        # the outer main gate for joiners);
+                        # plain and case arms above now
+                        # rely on the outer main gate
+                        # for joiners);
                         # a label that is also
                         # uppercase ("MU\u0308NCHEN¼︱b﹐c",
                         # combined case+NFC) is carried by
@@ -5094,8 +5106,9 @@ def _encode_idna(host: str) -> str | None:
                         # the triple, case and NFC candidates
                         # above, plus this arm's own
                         # no-joiner gate (the triple plain
-                        # arm above now relies on the outer
-                        # main gate for joiners); a label
+                        # and case arms above now rely on
+                        # the outer main gate for
+                        # joiners); a label
                         # with
                         # only one of case or decomposition
                         # keeps its existing handling, as
