@@ -557,8 +557,19 @@ class RedisCacheMiddleware(BaseHTTPMiddleware):
                 media_type=content_type,
             )
 
-        # Cache only 200 OK + JSON responses
-        if response.status_code == 200  and "application/json" in content_type:
+        # Cache only 200 OK + JSON responses, and never a response whose
+        # handler explicitly asked not to be stored: the no-store sweep
+        # (e.g. /me, tenant/user/role lists) marks sensitive GETs with
+        # Cache-Control: no-store so no cache may serve a stale copy
+        # after an account switch or an update, and this server-side
+        # Redis layer must honour that directive rather than defeat it
+        # by caching the same body anyway. Entries written before a
+        # handler gained no-store still expire on their own TTL.
+        if (
+            response.status_code == 200
+            and "application/json" in content_type
+            and "no-store" not in response.headers.get("cache-control", "").lower()
+        ):
             # Preserve the handler's headers on cache hits: the hit path
             # above already restores cached["headers"], but nothing ever
             # stored them, so every hit silently dropped them. Never
