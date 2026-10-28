@@ -53,6 +53,7 @@ async def list_roles(
 async def search_role_by_name(
     response: Response,
     name: str,
+    current_user: CurrentUser,
     _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.ROLE_VIEW_ONLY])),
     service: RoleService = Depends(get_role_service)
 ):
@@ -62,7 +63,13 @@ async def search_role_by_name(
     # switch, or hide freshly created/updated roles.
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
-    roles = await service.search_role_by_name(name)
+    # Scope to the caller's tenant, the same rule as the GET /roles/
+    # list: tenant requests normally hit the tenant database
+    # (TenantMiddleware), but a tenant user calling without a tenant DB
+    # selected (no X-Tenant-ID/subdomain) would otherwise search the
+    # host database's full role table. Host callers (tenant_id None)
+    # keep the global view.
+    roles = await service.search_role_by_name(name, tenant_id=current_user.tenant_id)
     return [RoleDto(**(await role.to_serializable_dict())) for role in roles]
 
 @router.post("/", response_model=CreateRoleResponseDto, status_code=status.HTTP_201_CREATED)

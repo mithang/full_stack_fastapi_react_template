@@ -34,12 +34,23 @@ class RoleService:
             raise RoleNotFoundException(role_id=name)
         return existing
 
-    async def search_role_by_name(self, name: str) -> list[Role]:
+    async def search_role_by_name(self, name: str, tenant_id: str | PydanticObjectId | None = None) -> list[Role]:
         # Escape the user-supplied name: it is a literal role name, not a
         # pattern, so unescaped metacharacters (e.g. ".*", "[") previously
         # changed the match semantics or errored on an invalid pattern.
         # Escaping keeps the case-insensitive substring match intact.
-        return await self.role_repository.search({"name": {"$regex": re.escape(name), "$options": "i"}})
+        # Tenant callers see only their tenant's roles; host callers
+        # (tenant_id None) keep the global view, the same scope rule as
+        # list_roles. A malformed tenant id cannot match any role, so
+        # fail closed with an empty list rather than falling back to
+        # the unscoped search.
+        query: dict = {"name": {"$regex": re.escape(name), "$options": "i"}}
+        if tenant_id:
+            try:
+                query["tenant_id"] = PydanticObjectId(tenant_id)
+            except Exception:
+                return []
+        return await self.role_repository.search(query)
 
     async def get_role_by_id(self, role_id: str) -> Role:
         existing = await self.role_repository.get(id=role_id)
