@@ -1,5 +1,5 @@
 from typing import Dict, Optional
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Response, status
 
 from api.common.dtos.download_dto import DownloadResponseDto
 from api.common.dtos.worker_dto import WorkerPayloadDto
@@ -29,6 +29,7 @@ router.tags = ["Audit Logs"]
 
 @router.get("/", response_model=AuditLogListDto, status_code=status.HTTP_200_OK)
 async def list_audit_logs(
+    response: Response,
     current_user: CurrentUser,
     limit: int = Query(10, ge=1, le=100),
     # Bound skip as well as limit: the repository keeps a deque of
@@ -40,6 +41,11 @@ async def list_audit_logs(
     action: Optional[AuditActionType] = None,
     log_service: AuditLogsService = Depends(get_audit_logs_service)
 ):
+    # Audit entries are tenant-scoped admin data: a browser/proxy-cached
+    # 200 could serve one tenant's audit trail to another admin after an
+    # account switch, or hide freshly written entries. Never cache it.
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
     tenant_id = str(current_user.tenant_id) if current_user.tenant_id else None
     return await log_service.read_audit_logs(tenant_id=tenant_id, limit=limit, skip=skip, action=action)
 
