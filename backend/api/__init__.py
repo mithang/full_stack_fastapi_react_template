@@ -3689,7 +3689,25 @@ def _encode_idna(host: str) -> str | None:
                 # as-is form, and labels combining it with a
                 # fraction keep the fraction branch's behaviour
                 # above.
-                _excl_remapped = label.translate(_double_excl_map)
+                # Browsers remap an enclosed or parenthesized
+                # CJK member first (㈀ -> "(ᄀ)", ㉄ -> "問",
+                # ㉐ -> "pte", ㋿ -> "令和"), but this branch
+                # punycoded the label raw, so a ‼ mix never
+                # matched ("㈀‼" -> helper "xn--!!-gb5a",
+                # browser "xn--()!!-qir"). Translate through
+                # the enclosed and parenthesized tables the
+                # as-is branch already uses; the tables' key
+                # domains are disjoint and their outputs are
+                # not members of either table, so labels
+                # without such a member are unchanged, and
+                # browser-rejected U+321F (in neither table)
+                # keeps its existing behaviour for separate
+                # assessment.
+                _excl_remapped = (
+                    label.translate(_double_excl_map)
+                    .translate(_enclosed_cjk_remap)
+                    .translate(_parenthesized_cjk_remap)
+                )
                 if any(ord(c) > 127 for c in _excl_remapped):
                     encoded_labels.append(
                         "xn--"
