@@ -1,6 +1,6 @@
 from typing import List
 from beanie import PydanticObjectId
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from api.common.exceptions import NotFoundException
 from api.common.utils import get_logger
 from api.core.container import get_storage_settings_service
@@ -24,8 +24,15 @@ router.tags = ["Storage Settings"]
 
 @router.get("/", response_model=List[AvailableStorageProviderDto], response_model_exclude_none=True)
 async def get_storage_settings(
+    response: Response,
     setting_service: StorageSettingsService = Depends(get_storage_settings_service)
 ):
+    # Tenant storage configuration (masked secrets included): a
+    # browser/proxy-cached 200 could serve one tenant's storage
+    # settings to another admin after an account switch, or hide
+    # freshly updated settings — same class as the SSO list fix.
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
     res = await setting_service.get_storages()
     return [s.model_dump(exclude_none=True) for s in res]
 
