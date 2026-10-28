@@ -4863,6 +4863,49 @@ def _encode_idna(host: str) -> str | None:
                             _excl_dash_stable = None
                         if _excl_dash_stable == _excl_dash:
                             _excl_remapped = _excl_dash
+                # A space separator (Unicode category Zs:
+                # U+0020, U+00A0, U+2000-U+200A, U+202F,
+                # U+205F, U+3000) in a double-exclamation
+                # label is browser-rejected under
+                # WHATWG/UTS46 — the pipeline deliberately
+                # leaves an interior space alone, since
+                # the URL parser fails host parsing on it
+                # instead of removing it — yet this branch
+                # emitted a ‼ mix raw ("a‼ b" -> "a!! b",
+                # and a punycode form for every other Zs
+                # member, e.g. "a‼ b" -> "xn--a!!b-xea"),
+                # a form no browser origin could carry.
+                # Reject here, before the bidi gate,
+                # mirroring the as-is branch's fix
+                # (iteration 713), checked on the
+                # remapped form actually punycoded: no
+                # translation in this branch introduces
+                # a Zs character (none appears as a value
+                # in the ‼, enclosed, parenthesized,
+                # square, FB29 or Greek Extended tables,
+                # and the NFC/mapped-dash arms already
+                # skip space labels via their ZC guards),
+                # so the check is complete, and raising
+                # returns None for the whole host, as for
+                # other rejected labels. Labels without a
+                # space separator are unchanged. ZERO WIDTH
+                # NON-JOINER U+200C and ZERO WIDTH JOINER
+                # U+200D are deliberately NOT rejected
+                # here: they are ContextJ-valid in some
+                # ‼ mixes the browser carries and this
+                # branch already matches ("م‼‌م" with
+                # ZWNJ, "क्‍‼b" with ZWJ after a virama),
+                # so a blanket joiner reject would
+                # regress them; only the never-valid
+                # space separators are gated, and the
+                # Latin-joiner over-emissions ("a‼‌b",
+                # "a‼‍b") keep their existing behaviour
+                # for a ContextJ-aware assessment.
+                if any(
+                    _excl_unicodedata.category(c) == "Zs"
+                    for c in _excl_remapped
+                ):
+                    raise ValueError("space separator double-exclamation")
                 _excl_bidi = [
                     (
                         "L"
