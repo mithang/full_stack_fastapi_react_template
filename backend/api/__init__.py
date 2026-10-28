@@ -4179,6 +4179,30 @@ def _encode_idna(host: str) -> str | None:
                     raise ValueError("rejected small form as-is")
                 import unicodedata as _asis_rtl_unicodedata
 
+                # A mark-first label is browser-rejected under
+                # UTS46, yet this branch punycoded an as-is
+                # mix raw ("́©b" -> "xn--b-mca31p", and the
+                # same shape for every combining, spacing and
+                # enclosing mark first, "́©" likewise), a form
+                # no browser origin could carry. Reject here,
+                # before the bidi gate, mirroring the
+                # dot-leader and small-form fixes above: no
+                # translation in this branch introduces a
+                # leading mark (no value in the as-is, double
+                # exclamation, FB29, Greek Extended, enclosed,
+                # kangxi, parenthesized, CJK compat, square or
+                # Hebrew presentation tables starts with a
+                # mark, and the mapped-dash/small-form and NFC
+                # forms below cannot gain one), so checking
+                # the raw label's first character is complete,
+                # and raising returns None for the whole host,
+                # as for other rejected labels. Labels whose
+                # first character is not a mark are unchanged,
+                # and mark-first labels without an as-is member
+                # already fall through to None elsewhere.
+                if _asis_rtl_unicodedata.category(label[0])[0] == "M":
+                    raise ValueError("mark-first as-is")
+
                 _asis_translated = (
                     label.translate(_asis_map)
                     .translate(_double_excl_map)
