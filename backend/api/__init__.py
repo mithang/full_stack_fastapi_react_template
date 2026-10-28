@@ -2638,7 +2638,12 @@ def _encode_idna(host: str) -> str | None:
         # A symbol mix such as "a﹐b©" likewise fails this
         # gate's character check and keeps its existing
         # behaviour in the branches below (the as-is branch
-        # already carries it). A label failing
+        # already carries it). ASCII _hyph_punct members are
+        # admitted alongside letters, digits, hyphen and
+        # underscore: WHATWG domain parsing carries them through
+        # a label, so a small-form mix such as "münchen﹐b!" is
+        # carried ("münchen,b!") while a space mix still fails
+        # the character check and keeps returning None. A label failing
         # any part keeps its existing behaviour in the
         # branches below, since this gate only widens the
         # small-form branch's condition and never raises.
@@ -2657,6 +2662,7 @@ def _encode_idna(host: str) -> str | None:
                 c
                 in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
                 or ord(c) in _small_form_map
+                or c in _hyph_punct
                 or (
                     ord(c) > 127
                     and _sf_unicodedata.category(c)[0] in "LMN"
@@ -2767,6 +2773,7 @@ def _encode_idna(host: str) -> str | None:
                 c
                 in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
                 or ord(c) in _small_form_map
+                or c in _hyph_punct
                 or (
                     ord(c) > 127
                     and _case_unicodedata.category(c)[0] in "LMN"
@@ -2838,6 +2845,7 @@ def _encode_idna(host: str) -> str | None:
                         c
                         in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
                         or ord(c) in _small_form_map
+                        or c in _hyph_punct
                         for c in label
                     )
                     or _sf_mix_ok(label)
