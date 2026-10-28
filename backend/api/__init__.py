@@ -5242,6 +5242,16 @@ def _encode_idna(host: str) -> str | None:
                             c == "\u200c"
                             and _emoji_zwnj_context_ok(label)
                         )
+                        # MONGOLIAN TODO SOFT HYPHEN U+1806:
+                        # browsers carry it raw in RTL labels
+                        # ("م؈᠆م"), but the `idna` package's
+                        # single-character remap raises on it,
+                        # so it is treated as remap-stable
+                        # here, like the ZWNJ context clause
+                        # above; the first/last gates below
+                        # still bar it at the edges, where
+                        # browsers reject it ("᠆؈م", "م؈᠆").
+                        or ord(c) == 0x1806
                         or _idna.uts46_remap(
                             c, std3_rules=False, transitional=False
                         )
@@ -5278,11 +5288,16 @@ def _encode_idna(host: str) -> str | None:
                 # the arm. The arm below gates on the raw
                 # label, and the raw gates imply the mapped
                 # gates here: an expansion adds only
-                # strong-RTL letters, so first/last bidi,
-                # the digit-mix bar and the per-char
+                # strong-RTL letters or a dash (see the
+                # mapped-dash clause below), so first/last
+                # bidi, the digit-mix bar and the per-char
                 # classes all carry over to the mapped
                 # label, which is what the arm punycodes
-                # when this check holds.
+                # when this check holds. (A mapped dash
+                # sits mid-label in every admitted case:
+                # a mapped dash at an edge fails the raw
+                # first/last gates, since its raw bidi
+                # class is ON or ES.)
                 try:
                     _emoji_gap_mapped_parts = [
                         c
@@ -5322,6 +5337,24 @@ def _encode_idna(host: str) -> str | None:
                                     not in (0x0888, 0xFBC2)
                                     for mc in _part
                                 )
+                            )
+                            # A UTS46-mapped dash: PRESENTATION
+                            # FORM FOR VERTICAL EM DASH U+FE31
+                            # and SMALL EM DASH U+FE58 map to
+                            # EM DASH, U+FE32 to EN DASH, and
+                            # SMALL HYPHEN-MINUS U+FE63 to "-",
+                            # so a gap label containing one
+                            # fell through even though browsers
+                            # carry the mapped form ("م؈﹘م" ->
+                            # "م؈—م", "م؈﹣م" -> "م؈-م").
+                            # The raw label's first/last gates
+                            # below still bar a mapped dash at
+                            # the edges, where browsers reject
+                            # it ("﹣؈م", "م؈﹣").
+                            or (
+                                len(_part) == 1
+                                and _emoji_unicodedata.category(_part)
+                                == "Pd"
                             )
                             for c, _part in zip(
                                 label, _emoji_gap_mapped_parts
@@ -5584,6 +5617,34 @@ def _encode_idna(host: str) -> str | None:
                                 # here would emit a form no
                                 # browser origin could carry.
                                 and ord(c) not in (0x0888, 0xFBC2)
+                            )
+                            or (
+                                # A dash-punctuation character
+                                # (general category Pd) in a gap
+                                # label: browsers carry such
+                                # dashes raw mid-label ("م؈⸗م",
+                                # "م؈֊م", "م؈᐀م"), while the
+                                # gate above admitted no Pd
+                                # character, so they fell
+                                # through to None. The first/
+                                # last gates above still bar a
+                                # dash at the edges, where
+                                # browsers reject it ("⸗؈م",
+                                # "م؈⸗") — except the bidi-R
+                                # dashes MAQAF U+05BE and YEZIDI
+                                # HYPHENATION MARK U+10EAD, which
+                                # browsers carry at the edges
+                                # too ("־؈م", "م؈𐺭") and which
+                                # pass those gates as R. OBLIQUE
+                                # HYPHEN U+2E5D is excluded: it
+                                # is carried standalone and in
+                                # LTR mixes, but browsers reject
+                                # it in every RTL mix ("م؈⹝م"),
+                                # like U+0888/U+FBC2 above.
+                                ord(c) > 127
+                                and _emoji_unicodedata.category(c)
+                                == "Pd"
+                                and ord(c) != 0x2E5D
                             )
                             or (
                                 ord(c) > 127
