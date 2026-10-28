@@ -1,12 +1,13 @@
 from typing import Annotated, List
 from beanie import PydanticObjectId
 from fastapi import APIRouter, Depends, Query, Response, status
-from api.common.exceptions import InvalidOperationException
+from api.common.exceptions import ForbiddenException, InvalidOperationException
 from api.common.utils import get_logger
 from api.domain.dtos.role_dto import CreateRoleDto, CreateRoleResponseDto, RoleDto, RoleListDto, UpdateRoleDto
 from api.core.container import get_role_service, get_user_service
 from api.domain.enum.permission import Permission
 from api.infrastructure.security.current_user import CurrentUser
+from api.interfaces.middlewares.tenant_middleware import get_tenant_id
 from api.interfaces.security.role_checker import check_permissions_for_current_role
 from api.usecases.role_service import RoleService
 from api.usecases.user_service import UserService
@@ -15,6 +16,22 @@ from api.usecases.user_service import UserService
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/roles", tags=["Roles"])
+
+
+def _assert_create_scope(current_user: CurrentUser, request_tenant_id) -> None:
+    # Create-in-wrong-DB guard, mirroring the banner (iteration 869),
+    # SSO, and branding guards: tenancy is per-database, so a tenant
+    # caller creating on the host DB (no X-Tenant-ID/subdomain,
+    # request scope None) would plant a role in the host DB that host
+    # callers then see in their global list. Legitimate tenant role
+    # creation happens in the caller's own tenant DB, where the
+    # middleware scope equals their tenant id, and host callers
+    # (tenant_id None) are unaffected. A mismatched scope fails closed
+    # rather than stamping a record into the wrong DB.
+    if current_user.tenant_id is not None and (
+        request_tenant_id is None or str(request_tenant_id) != str(current_user.tenant_id)
+    ):
+        raise ForbiddenException("Role cannot be created outside your tenant's scope.")
 
 
 @router.get("/", response_model=RoleListDto)
@@ -75,9 +92,21 @@ async def search_role_by_name(
 @router.post("/", response_model=CreateRoleResponseDto, status_code=status.HTTP_201_CREATED)
 async def create_role(
     data: CreateRoleDto,
+    current_user: CurrentUser,
     service: RoleService = Depends(get_role_service),
-    _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.ROLE_READ_AND_WRITE_ONLY]))
-):  
+    _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.ROLE_READ_AND_WRITE_ONLY])),
+    request_tenant_id = Depends(get_tenant_id)
+):
+    _assert_create_scope(current_user, request_tenant_id)
+    # Stamp server-side from the authenticated caller, as the branding
+    # routes do: the DTO's tenant_id is client-supplied, so trusting
+    # it would let any caller stamp a role with another tenant's id
+    # (or None). The legitimate frontend sends no tenant_id at all,
+    # so tenant callers previously created unstamped roles that their
+    # own tenant-filtered list then hid from them, while host callers
+    # saw them in the global view. Host callers (tenant_id None) keep
+    # the historic unstamped creation.
+    data.tenant_id = current_user.tenant_id
     new_user_id = await service.create_role(data)
     return CreateRoleResponseDto(id=str(new_user_id))
 
