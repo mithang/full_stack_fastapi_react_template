@@ -46,7 +46,7 @@ class BrandingService:
             branding.logo_url = await self.file_service.get_file_url(file_key=branding.logo_url)
         return branding
     
-    async def update_branding(self, id: str, data: UpdateBrandingDto, tenant_id: str | PydanticObjectId | None = None) -> None:
+    async def update_branding(self, id: str, data: UpdateBrandingDto, tenant_id: str | PydanticObjectId | None = None, request_tenant_id: str | PydanticObjectId | None = None) -> None:
         # Scope to the caller's tenant, mirroring the banner PUT fix:
         # the branding routes are FULL_ACCESS-gated with no tenant
         # check, and branding is a singleton in the current DB, so a
@@ -65,12 +65,34 @@ class BrandingService:
         # document, not via get_branding(), which would also resolve
         # the logo URL through the file service for no benefit here.
         existing = await self.branding_repository.get_branding()
-        if existing is not None and not _caller_may_access(existing.tenant_id, tenant_id):
+        # Legacy-claim case: a branding created via the old logo path
+        # was stamped tenant_id None, so the scope check below refuses
+        # its tenant caller any update — while create refuses a second
+        # record, leaving the tenant permanently locked out of editing
+        # their own branding. A None-stamped singleton is only claimed
+        # when the request was actually routed to the caller's own
+        # tenant DB (request scope equals caller tenant): on the host
+        # DB the same None stamp is the host branding and stays
+        # blocked for tenant callers, and a mismatched request scope
+        # (e.g. another tenant's X-Tenant-ID) stays blocked too. The
+        # claim restamps the record with the caller's tenant, so the
+        # deadlock heals on the first update instead of persisting.
+        claim_legacy = (
+            existing is not None
+            and existing.tenant_id is None
+            and tenant_id is not None
+            and request_tenant_id is not None
+            and str(request_tenant_id) == str(tenant_id)
+        )
+        if existing is not None and not claim_legacy and not _caller_may_access(existing.tenant_id, tenant_id):
             raise BrandingException("Branding not found.")
         try:
             # Log the id only: the full DTO carries contact_info PII.
             logger.debug(f"Updating branding with ID {id}")
-            updated = await self.branding_repository.update_branding(id, Branding(**data.model_dump(exclude_unset=True, exclude_none=True), app_name=data.identity.app_name))
+            payload = data.model_dump(exclude_unset=True, exclude_none=True)
+            if claim_legacy:
+                payload["tenant_id"] = tenant_id
+            updated = await self.branding_repository.update_branding(id, Branding(**payload, app_name=data.identity.app_name))
         except Exception as e:
             # Log the detail server-side only: the ApiBaseException
             # handler returns the message verbatim, so str(e) here would

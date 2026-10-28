@@ -53,7 +53,7 @@ async def update_branding(
         data.tenant_id = current_user.tenant_id
         branding = await branding_service.create_branding(data=data)
     else:
-        await branding_service.update_branding(id=str(branding.id), data=data, tenant_id=current_user.tenant_id)
+        await branding_service.update_branding(id=str(branding.id), data=data, tenant_id=current_user.tenant_id, request_tenant_id=request_tenant_id)
 
 @router.patch("/{branding_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def partial_update_branding(
