@@ -141,8 +141,17 @@ async def register(
 
 @router.get("/me", response_model=MeResponseDto, status_code=status.HTTP_200_OK)
 async def read_users_me(
+    response: Response,
     current_user: CurrentUser
 ):
+    # /me returns the authenticated user's identity, role, and
+    # subscription, and is fetched on every protected navigation, so it
+    # must never be served from a browser or proxy cache: a cached 200
+    # could serve the previous user's identity after logout or an
+    # account switch, or a stale role after a role change. Same
+    # no-store hardening as the other GETs in this controller.
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
     return current_user
 
 
