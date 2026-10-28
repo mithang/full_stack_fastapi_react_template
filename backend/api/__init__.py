@@ -5032,10 +5032,12 @@ def _encode_idna(host: str) -> str | None:
                 # host — including multi-label hosts ("😀.example",
                 # "‼﬩.😀", where the other label already encodes).
                 # Punycode the label directly when every character
-                # is an ASCII letter, digit or hyphen, or a
+                # is an ASCII letter, digit or hyphen, a
                 # non-ASCII symbol (general categories So/Sk, which
                 # covers emoji, dingbats and miscellaneous symbols
-                # including skin-tone modifiers), the UTS46 remap
+                # including skin-tone modifiers), or a non-ASCII
+                # letter mixed with such a symbol (\"münchen☀\",
+                # \"中☀\"), the UTS46 remap
                 # leaves the label unchanged (this rejects
                 # characters browsers map elsewhere, e.g. a
                 # parenthesized letter -> "(a)", or a UTS46-mapped
@@ -5085,6 +5087,30 @@ def _encode_idna(host: str) -> str | None:
                                 not in ("R", "AL", "AN")
                                 or ord(c) == 0x0888
                             )
+                        )
+                        or (
+                            # A non-ASCII letter mixed with an
+                            # emoji/symbol (\"münchen☀\" ->
+                            # \"xn--mnchen-3ya7296e\", \"中☀\" ->
+                            # \"xn--k3h518l\"): the strict path
+                            # below rejects the symbol, so such
+                            # a label fell through to None even
+                            # though browsers carry the raw
+                            # label punycoded. The
+                            # remap-unchanged condition above
+                            # already bars UTS46-mapped letters
+                            # (\"µ\" -> \"μ\", \"K\" -> \"k\"), and
+                            # strong-RTL letters stay barred
+                            # here, as with the symbols, so an
+                            # emoji/RTL mix still falls through
+                            # to None as browsers reject it;
+                            # combining marks and joiners still
+                            # fail this gate, unchanged.
+                            ord(c) > 127
+                            and _emoji_unicodedata.category(c)[0]
+                            == "L"
+                            and _emoji_unicodedata.bidirectional(c)
+                            not in ("R", "AL", "AN")
                         )
                         for c in label
                     )
