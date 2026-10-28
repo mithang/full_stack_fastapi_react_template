@@ -47,10 +47,18 @@ async def create_new_session(current_user: CurrentUser):
 @router.get("/sessions/{session_id}", response_model=List[AIHistoriesDto])
 async def get_single_session(
     current_user: CurrentUser,
+    response: Response,
     session_id: str,
     ai_service: LocalAIService = Depends(get_local_ai_service),
 
 ):
+    # Private per-user chat history: never let a browser/proxy cache serve a
+    # stale session transcript (or one belonging to a previous user on a
+    # shared machine) instead of running the handler. Same no-store
+    # hardening as get_history above; the server-side Redis bypass for
+    # this route does not stop browser/proxy caching.
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
     return await ai_service.get_histories_by_session_id(current_user.id, session_id)
 
 @router.delete("/sessions/{session_id}", status_code=status.HTTP_202_ACCEPTED)
