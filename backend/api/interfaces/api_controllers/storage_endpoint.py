@@ -97,7 +97,11 @@ async def reset_storage(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Tenant ID is missing in the current user context.")
 
         await setting_service.reset_storage(storage_id=storage_id, updated_by_user_id=current_user.id, tenant_id=PydanticObjectId(current_user.tenant_id))
-        return status.HTTP_201_CREATED
+        # The route declares 204 No Content, so return that code: the
+        # previous 201 return value mismatched the decorator (the only
+        # such mismatch in the controllers) and was misleading to
+        # readers, even though the wire status was already 204.
+        return status.HTTP_204_NO_CONTENT
     except HTTPException:
         raise
     except (NotFoundException, Exception) as e:
