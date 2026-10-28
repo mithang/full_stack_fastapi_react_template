@@ -6,6 +6,7 @@ from api.core.exceptions import BrandingException
 from api.domain.dtos.branding_dto import IdentityDto, UpdateBrandingDto
 from api.domain.enum.permission import Permission
 from api.infrastructure.security.current_user import CurrentUser
+from api.interfaces.middlewares.tenant_middleware import get_tenant_id
 from api.interfaces.security.role_checker import check_permissions_for_current_role
 from api.usecases.branding_service import BrandingService
 from api.usecases.file_service import FileService
@@ -15,11 +16,32 @@ logger = get_logger(__name__)
 router = APIRouter(prefix="/brandings", dependencies=[Depends(check_permissions_for_current_role(required_permissions=[Permission.FULL_ACCESS]))])
 router.tags = ["Branding"]
 
+
+def _assert_create_scope(current_user: CurrentUser, request_tenant_id) -> None:
+    # Branding create-when-none guard, closing the residual squat case
+    # left open by the update scoping (iteration 866): branding is a
+    # singleton in the current DB and create refuses a second record,
+    # and there is no branding delete endpoint, so a tenant caller
+    # creating on the host DB (no X-Tenant-ID/subdomain, request scope
+    # None) would permanently occupy the host branding slot with a
+    # tenant-stamped record the host could never replace — and the
+    # host branding GET would then serve that tenant's branding.
+    # Legitimate tenant creation happens in the caller's own tenant
+    # DB, where the middleware scope equals their tenant id, and host
+    # callers (tenant_id None) are unaffected. A mismatched scope
+    # fails closed rather than stamping a record into the wrong DB.
+    if current_user.tenant_id is not None and (
+        request_tenant_id is None or str(request_tenant_id) != str(current_user.tenant_id)
+    ):
+        raise BrandingException("Branding cannot be created outside your tenant's scope.")
+
+
 @router.post("/", status_code=status.HTTP_204_NO_CONTENT)
 async def update_branding(
     current_user: CurrentUser,
     data: UpdateBrandingDto,
-    branding_service: BrandingService = Depends(get_deps(BrandingService))
+    branding_service: BrandingService = Depends(get_deps(BrandingService)),
+    request_tenant_id = Depends(get_tenant_id)
 ):
 
     # Do not log the full DTO: it carries contact_info (PII) and the
@@ -27,6 +49,7 @@ async def update_branding(
     logger.debug(f"Update branding called for tenant: {current_user.tenant_id}")
     branding = await branding_service.get_branding()
     if branding is None:
+        _assert_create_scope(current_user, request_tenant_id)
         data.tenant_id = current_user.tenant_id
         branding = await branding_service.create_branding(data=data)
     else:
@@ -61,7 +84,8 @@ async def upload_logo(
     current_user: CurrentUser,
     file: UploadFile,
     branding_service: BrandingService = Depends(get_deps(BrandingService)),
-    file_service: FileService = Depends(get_deps(FileService))
+    file_service: FileService = Depends(get_deps(FileService)),
+    request_tenant_id = Depends(get_tenant_id)
 ):
     # The frontend caps logos at 5 MB, but a direct API call bypasses
     # it, so enforce the same cap server-side before the file reaches
@@ -91,6 +115,10 @@ async def upload_logo(
     logger.debug(f"Logo uploaded successfully with key: {key}")
     branding = await branding_service.get_branding()
     if branding is None:
+        # Same create-scope guard as the POST route: a logo-first
+        # creation by a tenant caller on the host DB would squat the
+        # singleton slot just as a POST creation would.
+        _assert_create_scope(current_user, request_tenant_id)
         # Stamp the logo-first creation with the caller's tenant, as
         # the POST route does: without it the record is host-stamped
         # (tenant_id None) and the update scope check in
