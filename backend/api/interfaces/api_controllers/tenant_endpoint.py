@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Response, status
 
 from api.common.dtos.worker_dto import WorkerPayloadDto
 from api.common.exceptions import ApiBaseException, InvalidOperationException
@@ -183,10 +183,20 @@ async def update_tenant_dns_record(
 @router.get("/{tenant_id}/check_dns", response_model=UpdateTenantResponseDto, status_code=status.HTTP_200_OK)
 async def check_dns_status(
     tenant_id: str,
+    response: Response,
     current_user: CurrentUser,
     tenant_service: TenantService = Depends(get_tenant_service),
     _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.HOST_MANAGE_TENANTS, Permission.MANAGE_TENANT_SETTINGS]))
 ):
+    # This GET enqueues a Celery DNS-update job (for tenants in
+    # activation-progress or failed status) and returns a status message
+    # that changes as activation proceeds, so it must never be served
+    # from a browser or proxy cache: a cached 200 would report a stale
+    # status and skip the enqueue the admin just requested. Same
+    # no-store hardening as the state-changing GETs in the account
+    # controller (logout, magic-link validation, SSO callback).
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
     tenant_doc = await tenant_service.get_tenant_by_id(tenant_id)
     payload=WorkerPayloadDto[dict[str, str]](
         label="update-tenant-dns",
