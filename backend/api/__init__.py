@@ -3282,6 +3282,64 @@ def _encode_idna(host: str) -> str | None:
                                     "NFC", _frac_recovered
                                 )
                             )
+                            # A label mixing a fraction with a
+                            # UTS46-mapped dash and a carried
+                            # small form plus an as-is mark
+                            # ("a¼︱b﹐c᫏" -> "a1⁄4—b,c᫏",
+                            # verified against Node's WHATWG
+                            # parser): the whole-label remap
+                            # raises on the as-is mark, so the
+                            # per-character recovery above
+                            # expands the fraction, maps the
+                            # dash and translates the small
+                            # form, but this gate lacked the
+                            # mapped-dash+small-form candidate
+                            # the main gate already has, so it
+                            # fell through to the raw-fraction
+                            # punycode instead of the browser's
+                            # form. Accept the
+                            # fraction-expanded form further
+                            # translated through the mapped-dash
+                            # table and the small-form map,
+                            # gated on both members so a plain
+                            # fraction-plus-dash or
+                            # fraction-plus-small-form recovery
+                            # label keeps its existing handling;
+                            # as with the small-form candidates
+                            # above, the candidate is gated on
+                            # the recovered form already being
+                            # NFC, so a decomposed mix
+                            # ("mu\u0308nchen¼︱b﹐c᫏") is left
+                            # unchanged and needs its own
+                            # normalizing arm, and joiner labels
+                            # never reach it because the recovery
+                            # above already raises on a joiner;
+                            # an RTL mix ("م¼︱﹐b᫏") that reaches
+                            # the main gate below is rejected by
+                            # its bidi check and now returns
+                            # None, matching the browser,
+                            # instead of its previous raw
+                            # fallback emission.
+                            or (
+                                any(
+                                    ord(c) in _mapped_dash
+                                    for c in label
+                                )
+                                and any(
+                                    ord(c) in _small_form_map
+                                    for c in label
+                                )
+                                and _frac_recovered
+                                == label.translate(
+                                    _fraction_excl_map
+                                ).translate(_mapped_dash).translate(
+                                    _small_form_map
+                                )
+                                and _frac_recovered
+                                == _frac_rec_unicodedata.normalize(
+                                    "NFC", _frac_recovered
+                                )
+                            )
                         )
                         if any(
                             ord(c)
