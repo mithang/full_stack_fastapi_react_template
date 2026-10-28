@@ -2516,6 +2516,78 @@ def _encode_idna(host: str) -> str | None:
                 # should. Without this guard the new fraction
                 # entries above would extend that over-emission
                 # to every new vulgar fraction ("⅓ " likewise).
+                # A label mixing a fraction with a Hebrew
+                # Alphabetic Presentation Form ("ا¼יִ" ->
+                # "ا1⁄4יִ" -> "xn--14-ijd1mmp505k"): the
+                # whole-label remap expands both, so it equals
+                # neither the fraction-only expansion nor its
+                # Greek/as-is forms, and the label fell through
+                # to None (or, with an as-is symbol, to the
+                # raw-fraction punycode in the as-is branch
+                # below). Accept the fraction-expanded form
+                # further translated through
+                # _hebrew_presentation_remap, but only under
+                # the RTL gates the fraction RTL branch below
+                # uses, checked on the remapped form: the
+                # first character must be strong RTL, the last
+                # non-mark strong RTL or a digit, European
+                # and Arabic-Indic digits must not mix, and
+                # every character must be strong RTL, a digit,
+                # a neutral or an underscore — so a
+                # digit-led ("¼יִ"), Latin-led ("a¼יִ"),
+                # mixed-digit ("ا¼יִ١") or Latin-trailing
+                # ("ا¼יִa") label still falls through to None
+                # as the browser rejects it, and a trailing
+                # underscore ("ا¼יִ_") keeps its existing
+                # underscore-path behaviour. The candidate is
+                # identity for labels without a Hebrew
+                # presentation form, so those are unaffected
+                # (the plain fraction candidate below already
+                # accepts them, and this alternative can only
+                # add acceptance where the gates pass).
+                _frac_hebrew_end = None
+                if _frac_remapped is not None:
+                    for _c in reversed(_frac_remapped):
+                        if _arb_unicodedata.bidirectional(_c) != "NSM":
+                            _frac_hebrew_end = (
+                                _arb_unicodedata.bidirectional(_c)
+                            )
+                            break
+                _frac_hebrew_ok = (
+                    _frac_remapped is not None
+                    and _frac_remapped
+                    == label.translate(_fraction_excl_map).translate(
+                        _hebrew_presentation_remap
+                    )
+                    and _arb_unicodedata.bidirectional(_frac_remapped[0])
+                    in ("R", "AL")
+                    and _frac_hebrew_end in ("R", "AL", "EN", "AN")
+                    and not (
+                        any(
+                            _arb_unicodedata.bidirectional(c) == "EN"
+                            for c in _frac_remapped
+                        )
+                        and any(
+                            _arb_unicodedata.bidirectional(c) == "AN"
+                            for c in _frac_remapped
+                        )
+                    )
+                    and all(
+                        c == "_"
+                        or _arb_unicodedata.bidirectional(c)
+                        in (
+                            "R",
+                            "AL",
+                            "EN",
+                            "AN",
+                            "ON",
+                            "ET",
+                            "CS",
+                            "NSM",
+                        )
+                        for c in _frac_remapped
+                    )
+                )
                 if (
                     _frac_remapped is not None
                     and " " not in label
@@ -2534,6 +2606,7 @@ def _encode_idna(host: str) -> str | None:
                         == label.translate(_fraction_excl_map)
                         .translate(_asis_map)
                         .translate(_greek_extended_remap)
+                        or _frac_hebrew_ok
                     )
                 ):
                     if any(ord(c) > 127 for c in _frac_remapped):
