@@ -3503,6 +3503,8 @@ def _encode_idna(host: str) -> str | None:
                         for c in label
                     )
                 )
+                import unicodedata as _frac_sf_unicodedata
+
                 if (
                     _frac_remapped is not None
                     and " " not in label
@@ -3553,6 +3555,86 @@ def _encode_idna(host: str) -> str | None:
                             == label.translate(
                                 _fraction_excl_map
                             ).translate(_small_form_map)
+                            and "\u200c" not in label
+                            and "\u200d" not in label
+                        )
+                        # A label mixing a fraction with a
+                        # carried small form and an uppercase
+                        # letter ("Ω¼﹐b" -> "ω1⁄4,b" ->
+                        # "xn--14,b-fpd1684b", "a¼﹐bΣ" ->
+                        # "a1⁄4,bσ", verified against Node's
+                        # WHATWG parser): the whole-label
+                        # remap case-folds as well as
+                        # expanding both, so it equals
+                        # neither the plain fraction
+                        # candidate above nor the small-form
+                        # candidate above, and the label fell
+                        # through to None (or, for an
+                        # underscore mix, to a wrong
+                        # raw-fraction punycode) even though
+                        # the browser carries the folded
+                        # form. Accept the fraction-expanded
+                        # form further translated through
+                        # the small-form map and then folded
+                        # per character (as the plain
+                        # small-form case arm does, so a
+                        # trailing Σ folds to σ, not ς).
+                        # It is still anchored to the real
+                        # UTS46 remap, and it is gated on a
+                        # small-form member so a plain
+                        # fraction-plus-case label ("Ω¼b",
+                        # a separate class) is unchanged,
+                        # on no joiner so the pre-existing
+                        # joiner behaviour is not extended,
+                        # and the bidi gate above still
+                        # rejects an RTL mix ("م¼﹐b").
+                        or (
+                            any(
+                                ord(c) in _small_form_map
+                                for c in label
+                            )
+                            and _frac_remapped
+                            == "".join(
+                                c.lower()
+                                for c in label.translate(
+                                    _fraction_excl_map
+                                ).translate(_small_form_map)
+                            )
+                            and "\u200c" not in label
+                            and "\u200d" not in label
+                        )
+                        # A label mixing a fraction with a
+                        # carried small form and a decomposed
+                        # mark ("mu\u0308nchen¼﹐b" ->
+                        # "münchen1⁄4,b", verified against
+                        # Node's WHATWG parser): UTS46 maps
+                        # before it normalizes, so the
+                        # whole-label remap equals the NFC
+                        # of the fraction-expanded,
+                        # small-form-translated form, which
+                        # matches neither candidate above,
+                        # and the label fell through to None
+                        # even though the browser carries the
+                        # composed form. Accept the NFC of
+                        # that chained form, under the same
+                        # small-form-member, no-joiner and
+                        # bidi gates as the case candidate
+                        # above; a label that is also
+                        # uppercase ("A\u0308¼﹐b", combined
+                        # case+NFC) needs its own arm and
+                        # is unchanged by this one.
+                        or (
+                            any(
+                                ord(c) in _small_form_map
+                                for c in label
+                            )
+                            and _frac_remapped
+                            == _frac_sf_unicodedata.normalize(
+                                "NFC",
+                                label.translate(
+                                    _fraction_excl_map
+                                ).translate(_small_form_map),
+                            )
                             and "\u200c" not in label
                             and "\u200d" not in label
                         )
