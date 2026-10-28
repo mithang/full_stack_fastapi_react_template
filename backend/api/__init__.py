@@ -4129,6 +4129,58 @@ def _encode_idna(host: str) -> str | None:
                     .translate(_square_cjk_remap)
                     .translate(_hebrew_presentation_remap)
                 )
+                # The mapped-dash exception, mirroring the
+                # hyphen-edge branch's: a label mixing an
+                # as-is form with a UTS46-mapped dash
+                # (U+FE31/U+FE58 to EM DASH, U+FE32 to EN
+                # DASH, U+FE63 to "-") previously punycoded
+                # the raw dash here, since this branch runs
+                # before the hyphen-edge branch and never
+                # expanded it, so such a label never matched
+                # ("©︱b" -> helper "xn--b-mca6285q",
+                # browser "xn--b-mca342v"; "©﹣b" ->
+                # helper "xn--b-mca6795q", browser
+                # "xn---b-sda"). Accept the mapped form
+                # only when translating the translated form
+                # through _mapped_dash reproduces its UTS46
+                # remap exactly (so a label mixing a mapped
+                # dash with any other UTS46-mapped character
+                # keeps its existing behaviour) and the
+                # mapped form is itself remap-stable; the
+                # bidi gate and the punycode below then run
+                # against the form actually punycoded. The
+                # mapped dashes share their targets' bidi
+                # classes (ON for U+FE31/U+FE32/U+FE58 to
+                # EM/EN DASH, ES for U+FE63 to "-"), so the
+                # gate sees the same classes either way and
+                # browser-rejected mixes ("©︱م", "م︱©")
+                # still fall through to None. A remap
+                # failure likewise keeps the existing form.
+                _asis_mapped = _asis_translated.translate(
+                    _mapped_dash
+                )
+                if _asis_mapped != _asis_translated:
+                    try:
+                        _asis_remapped = _idna.uts46_remap(
+                            _asis_translated,
+                            std3_rules=False,
+                            transitional=False,
+                        )
+                    except (UnicodeError, ValueError):
+                        _asis_remapped = None
+                    if _asis_remapped == _asis_mapped:
+                        try:
+                            _asis_mapped_stable = (
+                                _idna.uts46_remap(
+                                    _asis_mapped,
+                                    std3_rules=False,
+                                    transitional=False,
+                                )
+                            )
+                        except (UnicodeError, ValueError):
+                            _asis_mapped_stable = None
+                        if _asis_mapped_stable == _asis_mapped:
+                            _asis_translated = _asis_mapped
                 # An Arabic presentation form carried as-is
                 # (_punycode_arabic_presentation_as_is) in an
                 # as-is label is invisible to this gate as
