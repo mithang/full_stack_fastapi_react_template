@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 
 from api.core.container import get_billing_record_service
 from api.domain.dtos.billing_dto import InvoiceListDto
@@ -21,9 +21,16 @@ router.tags = ["Stripe - Invoices"]
 
 @router.get("/", summary="List invoices", response_model=InvoiceListDto)
 async def list_invoices(
+    response: Response,
     current_user: CurrentUser,
     billing_service: BillingRecordService = Depends(get_billing_record_service)
 ):
+    # Financial records: a browser/proxy-cached 200 could serve one
+    # tenant's invoices to another admin after an account switch, or
+    # hide freshly written invoices — same class as the /checkouts/all
+    # fix in the previous iteration.
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
     scope = "host"
     if current_user.tenant_id:
         scope = "tenant"
