@@ -5047,8 +5047,9 @@ def _encode_idna(host: str) -> str | None:
                 # Arabic-Indic (so an emoji/RTL mix such as "😀م",
                 # which browsers reject, still falls through to
                 # None, as do joiner sequences, whose Cf characters
-                # fail the character gate, and mark-first labels,
-                # whose marks fail it too) — except ARABIC RAISED
+                # fail the character gate; combining marks are
+                # admitted below except at the label start,
+                # where browsers reject them) — except ARABIC RAISED
                 # ROUND DOT U+0888, the one strong-RTL symbol
                 # browsers carry in every position (verified
                 # against Node's WHATWG parser: standalone,
@@ -5061,6 +5062,17 @@ def _encode_idna(host: str) -> str | None:
                 # host changes.
                 import unicodedata as _emoji_unicodedata
 
+                # WHATWG URL serialization NFC-normalizes the
+                # label during IDNA processing, so a decomposed
+                # letter+mark sequence ("e\u0301☀") serializes
+                # as its composed form ("é☀") and Hangul jamo
+                # compose to syllables — while the gate below
+                # saw only the raw label and rejected every mark.
+                # Normalize here, before the remap check and the
+                # gate, so both see the browser's form; labels
+                # already in NFC are unchanged.
+                label = _emoji_unicodedata.normalize("NFC", label)
+
                 try:
                     _emoji_remapped = _idna.uts46_remap(
                         label, std3_rules=False, transitional=False
@@ -5069,6 +5081,14 @@ def _encode_idna(host: str) -> str | None:
                     _emoji_remapped = None
                 if (
                     _emoji_remapped == label
+                    # A mark at the label start is barred here:
+                    # browsers reject mark-first labels, and the
+                    # mark arm below would otherwise admit them.
+                    # (NFC cannot compose a leading mark away,
+                    # since it has no preceding starter, so this
+                    # check on the normalized label is exact.)
+                    and _emoji_unicodedata.category(label[0])[0]
+                    != "M"
                     and any(
                         ord(c) > 127
                         and _emoji_unicodedata.category(c)
@@ -5103,12 +5123,36 @@ def _encode_idna(host: str) -> str | None:
                             # strong-RTL letters stay barred
                             # here, as with the symbols, so an
                             # emoji/RTL mix still falls through
-                            # to None as browsers reject it;
-                            # combining marks and joiners still
-                            # fail this gate, unchanged.
+                            # to None as browsers reject it.
+                            # Combining marks are admitted by
+                            # the mark arm below (except at the
+                            # label start, barred above); joiners
+                            # still fail this gate, unchanged.
                             ord(c) > 127
                             and _emoji_unicodedata.category(c)[0]
                             == "L"
+                            and _emoji_unicodedata.bidirectional(c)
+                            not in ("R", "AL", "AN")
+                        )
+                        or (
+                            # A combining mark mixed with an
+                            # emoji/symbol: browsers carry such a
+                            # label ("q\u0301☀" ->
+                            # "xn--q-xbb199x" where no composition
+                            # applies, "☀\u0301" likewise, Mc/Me
+                            # marks likewise), so it fell through
+                            # to None before for the same reason
+                            # as the letter mixes above. Marks
+                            # keep the strong-RTL bar, as with
+                            # letters and symbols, so an
+                            # emoji/RTL mix still falls through
+                            # to None as browsers reject it; a
+                            # mark at the label start is barred
+                            # by the condition above, and joiners
+                            # (Cf) still fail this gate.
+                            ord(c) > 127
+                            and _emoji_unicodedata.category(c)[0]
+                            == "M"
                             and _emoji_unicodedata.bidirectional(c)
                             not in ("R", "AL", "AN")
                         )
