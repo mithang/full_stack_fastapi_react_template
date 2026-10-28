@@ -2516,12 +2516,28 @@ def _encode_idna(host: str) -> str | None:
         # digit-mixed RTL label, an edge dash on an RTL
         # label) still falls through to None exactly as
         # before. Excluded here: U+002D and U+2010-U+2015
-        # and U+FF0D, which already match; U+FE31, U+FE32,
-        # U+FE58 and U+FE63, which UTS46 maps to another dash
-        # (a separate, mapped class); U+1806, whose UTS46
+        # and U+FF0D, which already match; U+1806, whose UTS46
         # remap raises (a separate class); and U+2E5D,
         # which browsers reject in an RTL label even though
         # the gates below would otherwise admit it.
+        # UTS46-mapped dashes are a separate set, handled
+        # in the hyphen-edge branch below rather than here:
+        # PRESENTATION FORM FOR VERTICAL EM DASH U+FE31
+        # and SMALL EM DASH U+FE58 map to EM DASH, U+FE32
+        # to EN DASH, and SMALL HYPHEN-MINUS U+FE63 to
+        # "-", so a label carrying one fell through to None
+        # (or, for underscore labels, punycoded raw) while
+        # browsers carry the mapped form ("a︱b" ->
+        # "xn--ab-71t", "a﹣b" -> "a-b", "م︱م" ->
+        # "xn--hhba439q", verified against Node's WHATWG
+        # parser). The hyphen-edge branch admits them in
+        # its trigger and accepts the remapped form only
+        # when it differs from the label by exactly these
+        # mappings, so no other UTS46 mapping can ride
+        # along; its existing gates then run on the mapped
+        # form, so a browser-rejected shape (an RTL edge
+        # dash, a mark-first label, a space mix) still
+        # falls through to None exactly as before.
         _dash_punct = frozenset(
             chr(cp)
             for cp in (
@@ -2539,6 +2555,14 @@ def _encode_idna(host: str) -> str | None:
                 0x10EAD,
             )
         )
+        # UTS46-mapped dashes, as a codepoint -> mapped form
+        # table for str.translate (see the hyphen-edge branch).
+        _mapped_dash = {
+            0xFE31: "\u2014",
+            0xFE32: "\u2013",
+            0xFE58: "\u2014",
+            0xFE63: "-",
+        }
         encoded_labels = []
         for label in host.split("."):
             if not label:
@@ -4839,6 +4863,7 @@ def _encode_idna(host: str) -> str | None:
                 or label.strip(_hyph_punct).endswith("-")
                 or any(c in _hyph_punct for c in label)
                 or any(c in _dash_punct for c in label)
+                or any(ord(c) in _mapped_dash for c in label)
             ) and any(ord(c) > 127 for c in label):
                 # A non-ASCII label with a leading or trailing
                 # hyphen: WHATWG URL serialization punycodes it
@@ -4946,6 +4971,38 @@ def _encode_idna(host: str) -> str | None:
                             _hyph_stable = None
                         if _hyph_stable == _hyph_nfc:
                             _hyph_form = _hyph_nfc
+                # The mapped-dash exception, mirroring the
+                # NFC exception above: a label whose UTS46
+                # remap differs from the label only by the
+                # _mapped_dash mappings (U+FE31/U+FE58 to EM
+                # DASH, U+FE32 to EN DASH, U+FE63 to "-")
+                # is punycoded in its mapped form, which is
+                # what browsers carry. Accept it only when
+                # translating the label through _mapped_dash
+                # reproduces the remap exactly (so a label
+                # mixing a mapped dash with any other
+                # UTS46-mapped character keeps its existing
+                # behaviour) and the mapped form is itself
+                # remap-stable; every gate below then runs
+                # against the form actually punycoded.
+                if _hyph_form is None and _hyph_remapped is not None:
+                    _hyph_mapped = label.translate(_mapped_dash)
+                    if (
+                        _hyph_mapped != label
+                        and _hyph_mapped == _hyph_remapped
+                    ):
+                        try:
+                            _hyph_mapped_stable = (
+                                _idna.uts46_remap(
+                                    _hyph_mapped,
+                                    std3_rules=False,
+                                    transitional=False,
+                                )
+                            )
+                        except (UnicodeError, ValueError):
+                            _hyph_mapped_stable = None
+                        if _hyph_mapped_stable == _hyph_mapped:
+                            _hyph_form = _hyph_mapped
                 # The RTL-label alternative to the character
                 # gate below, mirroring the underscore
                 # fallback's UTS46 bidi gate: a label whose
@@ -4966,6 +5023,21 @@ def _encode_idna(host: str) -> str | None:
                 # before. The gate runs on the form actually
                 # punycoded, and a label with no strong-RTL
                 # first character ("١!م", "1!م") fails it.
+                # It also bars three codepoints browsers
+                # reject in every RTL mix even though the
+                # category gate above would admit them:
+                # OBLIQUE HYPHEN U+2E5D (excluded from
+                # _dash_punct for exactly this reason, but a
+                # label reaching the gate via another dash
+                # still admitted it, e.g. "م⸗⹝م" and, with
+                # the mapped-dash exception above,
+                # "م︱⹝م"), and the strong-RTL symbols
+                # ARABIC RAISED ROUND DOT U+0888 and
+                # ARABIC PRESENTATION FORM U+FBC2 (barred
+                # in RTL mixes by the gap-symbol branch for
+                # the same reason). Their Latin mixes keep
+                # their existing behaviour: the non-RTL gate
+                # below, not this gate, decides those.
                 _hyph_rtl_ok = False
                 if _hyph_form is not None:
                     _hyph_rtl_bidi = [
@@ -4980,6 +5052,10 @@ def _encode_idna(host: str) -> str | None:
                         and not (
                             "EN" in _hyph_rtl_bidi
                             and "AN" in _hyph_rtl_bidi
+                        )
+                        and not any(
+                            ord(c) in (0x2E5D, 0x0888, 0xFBC2)
+                            for c in _hyph_form
                         )
                         and all(
                             c
@@ -5002,6 +5078,9 @@ def _encode_idna(host: str) -> str | None:
                         or _hyph_form.strip(_hyph_punct).endswith("-")
                         or any(c in _hyph_punct for c in _hyph_form)
                         or any(c in _dash_punct for c in _hyph_form)
+                        or any(
+                            ord(c) in _mapped_dash for c in label
+                        )
                     )
                     and _hyph_unicodedata.category(_hyph_form[0])[0]
                     != "M"
@@ -5024,10 +5103,22 @@ def _encode_idna(host: str) -> str | None:
                         or _hyph_rtl_ok
                     )
                 ):
-                    encoded_labels.append(
-                        "xn--"
-                        + _hyph_form.encode("punycode").decode("ascii")
-                    )
+                    # A mapped form that became pure ASCII
+                    # (a U+FE63 label, e.g. "a﹣b" -> "a-b")
+                    # is passed through verbatim, as browsers
+                    # carry it; every other admitted form is
+                    # punycoded. Existing identity/NFC forms
+                    # are non-ASCII here, so they are
+                    # unchanged.
+                    if any(ord(c) > 127 for c in _hyph_form):
+                        encoded_labels.append(
+                            "xn--"
+                            + _hyph_form.encode("punycode").decode(
+                                "ascii"
+                            )
+                        )
+                    else:
+                        encoded_labels.append(_hyph_form)
                 elif "_" not in label:
                     encoded_labels.append(
                         _idna.encode(label).decode("ascii")
