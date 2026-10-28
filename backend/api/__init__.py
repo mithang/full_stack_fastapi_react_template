@@ -3227,6 +3227,43 @@ def _encode_idna(host: str) -> str | None:
                         .translate({0xFB29: "+"})
                         .translate(_square_cjk_remap)
                         # A label mixing a fraction with a
+                        # double exclamation mark, U+FB29, a
+                        # square CJK member and an enclosed
+                        # CJK member, a parenthesized CJK
+                        # member, or a CJK Compatibility
+                        # Ideograph ("¼‼﬩㍱㊣" ->
+                        # "1⁄4!!+hpa正"): the whole-label
+                        # remap expands all five, so it
+                        # equals none of the candidates
+                        # above, and the label fell through
+                        # to None even though the browser
+                        # carries the remapped form. The
+                        # square candidate above covers the
+                        # square members and the enclosed
+                        # candidate above covers the enclosed
+                        # members, but neither covers their
+                        # combination. Accept the
+                        # fraction-expanded form further
+                        # translated through the FB29 map,
+                        # the square table and the three CJK
+                        # remap tables; their key domains
+                        # are disjoint from each other and
+                        # from the fraction table, so the
+                        # chained form is identity for
+                        # labels without such a member. It
+                        # is still anchored to the real
+                        # UTS46 remap: any other remapped
+                        # character fails every candidate
+                        # and falls through unchanged, as
+                        # before.
+                        or _frac_remapped
+                        == label.translate(_fraction_excl_map)
+                        .translate({0xFB29: "+"})
+                        .translate(_square_cjk_remap)
+                        .translate(_enclosed_cjk_remap)
+                        .translate(_parenthesized_cjk_remap)
+                        .translate(_cjk_compat_remap)
+                        # A label mixing a fraction with a
                         # double exclamation mark, U+FB29 and
                         # a Greek Extended member ("¼‼﬩ά" ->
                         # "1⁄4!!+ά"): the whole-label remap
