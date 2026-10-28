@@ -8465,10 +8465,11 @@ def _encode_idna(host: str) -> str | None:
                 # the doubly-translated form only when it
                 # is exactly the remap (so a label mixing
                 # a mapped dash and a small form with any
-                # other UTS46-mapped character — a case
-                # fold, a decomposed form needing NFC, a
+                # other UTS46-mapped character — a
+                # decomposed form needing NFC, a
                 # browser-rejected small form — keeps its
-                # existing behaviour) and it is itself
+                # existing behaviour; a case fold is
+                # handled by the case arm below) and it is itself
                 # remap-stable; every gate below then
                 # runs against the form actually
                 # punycoded. Gated on both a mapped-dash
@@ -8519,6 +8520,70 @@ def _encode_idna(host: str) -> str | None:
                             == _hyph_dash_sf_form
                         ):
                             _hyph_form = _hyph_dash_sf_form
+                            _hyph_dash_sf = True
+                # The case-folding variant of the
+                # mapped-dash+small-form exception
+                # above: a label mixing a UTS46-mapped
+                # dash with a carried small form and an
+                # uppercase letter ("a︱b﹐cΣ" ->
+                # "a—b,cσ" -> "xn--ab,c-ood4064b",
+                # "A︱B﹐CΣ" -> the same form, verified
+                # against Node's WHATWG parser) fell
+                # through to None because its remap is
+                # the folded form, not the
+                # doubly-translated form. Accept the
+                # per-character-folded doubly-translated
+                # form only when it is exactly the remap
+                # (so a label mixing a mapped dash and
+                # a small form with a case fold plus any
+                # other UTS46-mapped character — a
+                # decomposed form needing NFC, a
+                # browser-rejected small form — keeps
+                # its existing behaviour) and it is
+                # itself remap-stable; every gate below
+                # then runs against the form actually
+                # punycoded. Gated on both a mapped-dash
+                # and a small-form member, as the arm
+                # above, and _hyph_dash_sf is set here
+                # too, so a virama-preceded-first-joiner
+                # case mix ("क\\u094d\\u200d︱b﹐cΣ" ->
+                # "xn--b,c-szc029dvja227kvba", verified
+                # against Node's WHATWG parser) is
+                # carried under the first-joiner gate
+                # below, while a bad-first-joiner case
+                # mix still returns None as before.
+                if _hyph_form is None and _hyph_remapped is not None:
+                    _hyph_dash_sf_case_form = "".join(
+                        c.lower()
+                        for c in label.translate(
+                            _mapped_dash
+                        ).translate(_small_form_map)
+                    )
+                    if (
+                        _hyph_dash_sf_case_form != label
+                        and any(
+                            ord(c) in _mapped_dash for c in label
+                        )
+                        and any(
+                            ord(c) in _small_form_map for c in label
+                        )
+                        and _hyph_dash_sf_case_form == _hyph_remapped
+                    ):
+                        try:
+                            _hyph_dash_sf_case_stable = (
+                                _idna.uts46_remap(
+                                    _hyph_dash_sf_case_form,
+                                    std3_rules=False,
+                                    transitional=False,
+                                )
+                            )
+                        except (UnicodeError, ValueError):
+                            _hyph_dash_sf_case_stable = None
+                        if (
+                            _hyph_dash_sf_case_stable
+                            == _hyph_dash_sf_case_form
+                        ):
+                            _hyph_form = _hyph_dash_sf_case_form
                             _hyph_dash_sf = True
                 # The U+1806 exception, mirroring the
                 # mapped-dash exception above: MONGOLIAN TODO
