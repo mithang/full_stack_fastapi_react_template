@@ -2845,6 +2845,49 @@ def _encode_idna(host: str) -> str | None:
                         )
                     )
                 )
+                # The main gate above still passes a
+                # fraction label mixing an as-is Arabic
+                # presentation form with a strong-RTL
+                # character: this Python's data gives
+                # U+FBC2 an AL class, so it satisfies the
+                # first/last/allowed checks ("ا¼﯂",
+                # "ا¼﯂م", "م¼﯂"), and the ornate
+                # parentheses U+FD3E/U+FD3F are ON, so a
+                # mid-label one passes too ("ا¼﷾م",
+                # "م¼﷾ا", "ا¼﷾1") — yet browsers treat
+                # these forms as Latin-class letters in an
+                # RTL label and reject it, so the main arm
+                # emitted a raw-fraction punycode no
+                # browser origin could carry. Bar the gate
+                # for the mix, mirroring the as-is branch's
+                # Latin mapping and the fallback mix below:
+                # a presentation member alongside a
+                # strong-RTL character outside the set.
+                # Excepted: U+FDFD, which browsers carry
+                # in exactly these shapes ("ا¼ﯽ",
+                # "ا¼ﯽم", "م¼ﯽ1"), and labels with no
+                # strong-RTL character outside the set
+                # ("¼﯂", "a¼﯂"), for which the mix is
+                # false and the gate is unchanged.
+                _frac_main_bidi_asis_latin_mix = (
+                    _frac_remapped is not None
+                    and any(
+                        ord(c) in _punycode_arabic_presentation_as_is
+                        and ord(c) != 0xFDFD
+                        for c in _frac_remapped
+                    )
+                    and any(
+                        ord(c)
+                        not in _punycode_arabic_presentation_as_is
+                        and _arb_unicodedata.bidirectional(c)
+                        in ("R", "AL", "AN")
+                        for c in _frac_remapped
+                    )
+                )
+                _frac_main_bidi_ok = (
+                    _frac_main_bidi_ok
+                    and not _frac_main_bidi_asis_latin_mix
+                )
                 # A fraction label mixing an as-is Arabic
                 # presentation form with a strong-RTL
                 # character outside that form set: the
