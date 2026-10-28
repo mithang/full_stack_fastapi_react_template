@@ -279,10 +279,19 @@ async def update_tenant(
 
 @router.get("/{tenant_id}/features", response_model=list[FeatureDto], status_code=status.HTTP_200_OK)
 async def get_tenant_features(
+    response: Response,
     tenant_id: str,
     tenant_service: TenantService = Depends(get_tenant_service),
     _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.HOST_MANAGE_TENANTS]))
 ):
+    # This GET returns one tenant's feature enablement, so it must never be
+    # served from a browser or proxy cache: a cached 200 could hide a
+    # freshly toggled feature, or serve one tenant's features to another
+    # host admin after an account switch on a shared machine — the same
+    # no-store hardening as the /tenants/ list GET above. Response is
+    # already imported in this module.
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
     return await tenant_service.get_features_by_tenant_id(tenant_id)
     
 @router.patch("/{tenant_id}/update_feature", response_model=UpdateTenantResponseDto, status_code=status.HTTP_200_OK)
