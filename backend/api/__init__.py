@@ -3244,6 +3244,42 @@ def _encode_idna(host: str) -> str | None:
                         encoded_labels.append(
                             _idna.encode(label).decode("ascii")
                         )
+                    elif (
+                        label.startswith("_") or label.endswith("_")
+                    ) and any(
+                        _frac_rtl_unicodedata.bidirectional(c)
+                        in ("R", "AL", "AN")
+                        for c in (_frac_rtl_remapped or label)
+                    ):
+                        # An underscore-edge label the RTL
+                        # gate above just rejected: UTS46
+                        # requires an RTL label to start
+                        # with a strong-RTL character and
+                        # end with a strong-RTL character
+                        # or a digit, so a label starting
+                        # or ending with "_" (bidi class
+                        # ON, a neutral) while containing
+                        # a strong-RTL or Arabic-Indic
+                        # character is browser-rejected
+                        # ("ا¼ﯽم_" / "_ا¼ﯽم" /
+                        # "ا¼ﺚم_" / "ا¼©ﺚ_"), yet this
+                        # raw fallback punycoded it raw,
+                        # a form no browser origin could
+                        # carry. Raise, so the outer
+                        # handler returns None for the
+                        # whole host, mirroring the
+                        # generic underscore fallback's
+                        # "rtl underscore edge" rule,
+                        # which this earlier branch
+                        # bypassed. Mid-label underscores
+                        # are untouched ("ا¼ﯽ_م" /
+                        # "ا¼ﯽم_م" still match), as are
+                        # labels with no R/AL/AN
+                        # character, for which the gate
+                        # above already decides.
+                        raise ValueError(
+                            "fraction presentation underscore edge"
+                        )
                     elif any(ord(c) > 127 for c in label):
                         encoded_labels.append(
                             "xn--"
