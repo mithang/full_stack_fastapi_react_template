@@ -181,6 +181,16 @@ async def update_tenant_dns_record(
     _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.HOST_MANAGE_TENANTS, Permission.MANAGE_TENANT_SETTINGS]))
 ):
     tenant = await tenant_service.get_tenant_by_id(tenant_id)
+    # Tenant callers may only update their own tenant's DNS: the
+    # permission gate above also admits MANAGE_TENANT_SETTINGS, so without
+    # this a tenant admin could pass any tenant_id and overwrite another
+    # tenant's custom_domain / is_active and enqueue its DNS-update job.
+    # Host callers (tenant_id None) keep the global view. A cross-tenant id
+    # raises the same 404 as an unknown id, so a probe cannot distinguish
+    # the two — mirroring the check_dns scoping from iteration 856, and
+    # the check runs before any write or job enqueue.
+    if current_user.tenant_id is not None and str(tenant.id) != current_user.tenant_id:
+        raise TenantNotFoundException(tenant_id)
     if tenant.custom_domain_status == "activation-progress":
         return UpdateTenantResponseDto(
             message="Your previous custom domain update is still in progress. Please wait until it is processed."
