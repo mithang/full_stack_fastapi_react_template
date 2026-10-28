@@ -111,10 +111,21 @@ class UserService:
         # await auth_service.send_activation_email(welcome_email) 
         return user_id
 
-    async def update_user(self, user_id: str, user_data: UpdateUserDto) -> User | None:
+    async def update_user(self, user_id: str, user_data: UpdateUserDto, tenant_id: str | PydanticObjectId | None = None) -> User | None:
         """Update user by ID. Returns updated User model. Raises UserNotFoundException if user does not exist."""
         existing = await self.user_repository.get(id=user_id)
-        if existing is None:
+        if existing is None or not _caller_may_access(existing.tenant_id, tenant_id):
+            # Scope to the caller's tenant, mirroring delete_user():
+            # the detail read, list and delete were already scoped,
+            # but this update was not, so a tenant admin with
+            # USER_READ_AND_WRITE_ONLY (or role-assign permission)
+            # could rewrite any other tenant's user by id — name,
+            # role, or avatar. A cross-tenant id now answers with
+            # the same 404 as an unknown id; host callers
+            # (tenant_id None) and callers that omit tenant_id keep
+            # the unscoped behaviour, and self-access is unaffected
+            # since the caller's tenant_id comes from their own
+            # record, which carries that same tenant_id.
             raise UserNotFoundException(user_id)
         # Todo: Refactor email update logic or check if email is being updated
         # existing_email = user_data.email

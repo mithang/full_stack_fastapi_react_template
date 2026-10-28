@@ -117,7 +117,7 @@ async def update_user(
     # role id already on the target) is allowed so full-DTO clients
     # echoing the current role are not broken.
     if data.role_id is not None:
-        existing_user = await service.get_user_by_id(user_id)
+        existing_user = await service.get_user_by_id(user_id, tenant_id=current_user.tenant_id)
         if str(existing_user.role_id) != data.role_id:
             # A real role change on one's own record is self-assignment
             # by another route, so it is barred exactly like assign_role
@@ -137,7 +137,7 @@ async def update_user(
             )
             if not can_assign_roles:
                 raise ForbiddenException("Only users with role assignment permission can change a user's role.")
-    user_doc = await service.update_user(user_id=user_id, user_data=data)
+    user_doc = await service.update_user(user_id=user_id, user_data=data, tenant_id=current_user.tenant_id)
     serialized_user = await user_doc.to_serializable_dict()
     return UserDto(**serialized_user)
 
@@ -196,6 +196,7 @@ async def delete_user(
 @router.put("/{user_id}/update_profile_picture", response_model=UserProfileImageUpdateDto, status_code=status.HTTP_202_ACCEPTED)
 async def update_profile_picture(
     user_id: str,
+    current_user: CurrentUser,
     file: UploadFile = File(...),
     _bool: bool = Depends(check_permissions_for_current_role(
         required_permissions=[Permission.USER_READ_AND_WRITE_ONLY, Permission.USER_SELF_READ_AND_WRITE_ONLY],
@@ -231,9 +232,9 @@ async def update_profile_picture(
     # a working avatar with a zero-byte object.
     if size == 0:
         raise InvalidOperationException("Profile picture must not be empty.")
-    await user_service.get_user_by_id(user_id)
+    await user_service.get_user_by_id(user_id, tenant_id=current_user.tenant_id)
     file_location = await file_service.upload_file(file)
-    await user_service.update_user(user_id=user_id, user_data=UpdateUserDto(image_url=file_location))
+    await user_service.update_user(user_id=user_id, user_data=UpdateUserDto(image_url=file_location), tenant_id=current_user.tenant_id)
     return UserProfileImageUpdateDto(image_url=file_location)
 
 
@@ -248,11 +249,11 @@ async def patch_user(
     if str(current_user.id) == user_id:
         raise ForbiddenException("Users cannot assign a role to themselves.")
     
-    exsisting_user = await user_service.get_user_by_id(user_id)
+    exsisting_user = await user_service.get_user_by_id(user_id, tenant_id=current_user.tenant_id)
     if str(exsisting_user.role_id) == role_update.role_id:
         raise InvalidOperationException("User already has this role assigned")
     
-    user = await user_service.update_user(user_id=user_id, user_data=UpdateUserDto(role_id=role_update.role_id))
+    user = await user_service.update_user(user_id=user_id, user_data=UpdateUserDto(role_id=role_update.role_id), tenant_id=current_user.tenant_id)
     user_doc = await user.to_serializable_dict()
     return UserDto(**user_doc)
   
@@ -267,10 +268,10 @@ async def remove_user_role(
 ):
     if str(current_user.id) == user_id:
         raise ForbiddenException("Users cannot remove a role from themselves.")
-    exsisting_user = await user_service.get_user_by_id(user_id)
+    exsisting_user = await user_service.get_user_by_id(user_id, tenant_id=current_user.tenant_id)
     if str(exsisting_user.role_id) != role_update.role_id:
         raise InvalidOperationException("User does not have this role assigned")
     
-    user = await user_service.update_user(user_id=user_id, user_data=UpdateUserDto(role_id=None))
+    user = await user_service.update_user(user_id=user_id, user_data=UpdateUserDto(role_id=None), tenant_id=current_user.tenant_id)
     user_doc = await user.to_serializable_dict()
     return UserDto(**user_doc)
