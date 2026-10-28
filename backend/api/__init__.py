@@ -2517,7 +2517,8 @@ def _encode_idna(host: str) -> str | None:
         # label) still falls through to None exactly as
         # before. Excluded here: U+002D and U+2010-U+2015
         # and U+FF0D, which already match; U+1806, whose UTS46
-        # remap raises (a separate class); and U+2E5D,
+        # remap raises and which the hyphen-edge branch
+        # handles via its own exception below; and U+2E5D,
         # which browsers reject in an RTL label even though
         # the gates below would otherwise admit it.
         # UTS46-mapped dashes are a separate set, handled
@@ -4864,6 +4865,7 @@ def _encode_idna(host: str) -> str | None:
                 or any(c in _hyph_punct for c in label)
                 or any(c in _dash_punct for c in label)
                 or any(ord(c) in _mapped_dash for c in label)
+                or any(ord(c) == 0x1806 for c in label)
             ) and any(ord(c) > 127 for c in label):
                 # A non-ASCII label with a leading or trailing
                 # hyphen: WHATWG URL serialization punycodes it
@@ -5003,6 +5005,47 @@ def _encode_idna(host: str) -> str | None:
                             _hyph_mapped_stable = None
                         if _hyph_mapped_stable == _hyph_mapped:
                             _hyph_form = _hyph_mapped
+                # The U+1806 exception, mirroring the
+                # mapped-dash exception above: MONGOLIAN TODO
+                # SOFT HYPHEN U+1806 is category Pd, but its
+                # UTS46 remap raises InvalidCodepoint, so a
+                # label carrying one fell through to None
+                # while browsers punycode it raw ("a᠆b" ->
+                # "xn--ab-h0o", "م᠆م" -> "xn--hhba847k",
+                # verified against Node's WHATWG parser).
+                # Accept the raw label only when the remap
+                # raised (so this fires for no other label)
+                # and substituting every U+1806 with "-"
+                # remaps to itself, proving no other
+                # character in the label needs a UTS46
+                # mapping or is disallowed (a label mixing
+                # U+1806 with another mapped character, e.g.
+                # "aK᠆b", keeps its existing behaviour);
+                # every gate below then runs against the
+                # raw form actually punycoded, so a
+                # browser-rejected shape (an RTL edge dash,
+                # a Latin/RTL mix, a mark-first label, a
+                # space mix, a European/Arabic-Indic digit
+                # mix) still falls through to None exactly
+                # as before.
+                if (
+                    _hyph_form is None
+                    and _hyph_remapped is None
+                    and "\u1806" in label
+                ):
+                    _hyph_1806_sub = label.replace("\u1806", "-")
+                    try:
+                        _hyph_1806_sub_remapped = (
+                            _idna.uts46_remap(
+                                _hyph_1806_sub,
+                                std3_rules=False,
+                                transitional=False,
+                            )
+                        )
+                    except (UnicodeError, ValueError):
+                        _hyph_1806_sub_remapped = None
+                    if _hyph_1806_sub_remapped == _hyph_1806_sub:
+                        _hyph_form = label
                 # The RTL-label alternative to the character
                 # gate below, mirroring the underscore
                 # fallback's UTS46 bidi gate: a label whose
@@ -5081,6 +5124,7 @@ def _encode_idna(host: str) -> str | None:
                         or any(
                             ord(c) in _mapped_dash for c in label
                         )
+                        or any(ord(c) == 0x1806 for c in label)
                     )
                     and _hyph_unicodedata.category(_hyph_form[0])[0]
                     != "M"
