@@ -8450,6 +8450,80 @@ def _encode_idna(host: str) -> str | None:
                                 == _hyph_mapped_nfc
                             ):
                                 _hyph_form = _hyph_mapped_nfc
+                    # The case-folding + NFC-normalizing
+                    # variant of the mapped-dash exception,
+                    # composing the case handling of the
+                    # mapped-dash+small-form case arm
+                    # with the NFC arm above: a label
+                    # mixing a UTS46-mapped dash with an
+                    # uppercase letter and a decomposed
+                    # form, but no small form
+                    # ("a\u0301\ufe31bc\u03a3" ->
+                    # "\u00e1\u2014bc\u03c3" ->
+                    # "xn--bc-lia860ar94c", verified
+                    # against Node's WHATWG parser) fell
+                    # through to None because its remap
+                    # is the NFC form of the
+                    # per-character-folded mapped-dash
+                    # translation, so it matched neither
+                    # the mapped-dash arm (which neither
+                    # folds nor normalizes) nor the NFC
+                    # arm above (which normalizes but
+                    # does not fold). Accept the NFC form
+                    # of the folded translation only when
+                    # it is exactly the remap (so a label
+                    # mixing a mapped dash with a case
+                    # fold plus a decomposed form plus
+                    # any other UTS46-mapped character —
+                    # a browser-rejected small form, a
+                    # space — keeps its existing
+                    # behaviour, for a separate arm) and
+                    # it is itself remap-stable; every
+                    # gate below then runs against the
+                    # form actually punycoded. No
+                    # small-form gate is needed: a
+                    # small-form member would change
+                    # the remap, so the exact-equality
+                    # check already excludes that class
+                    # (it keeps the dash+small-form
+                    # case+NFC arm below). _hyph_dash_sf
+                    # is not set here, so a joiner mix
+                    # of this arm keeps its existing
+                    # behaviour under the character gate
+                    # below.
+                    if _hyph_form is None:
+                        _hyph_mapped_case_nfc = (
+                            _hyph_unicodedata.normalize(
+                                "NFC",
+                                "".join(
+                                    c.lower()
+                                    for c in label.translate(
+                                        _mapped_dash
+                                    )
+                                ),
+                            )
+                        )
+                        if (
+                            _hyph_mapped_case_nfc
+                            == _hyph_remapped
+                        ):
+                            try:
+                                _hyph_mapped_case_nfc_stable = (
+                                    _idna.uts46_remap(
+                                        _hyph_mapped_case_nfc,
+                                        std3_rules=False,
+                                        transitional=False,
+                                    )
+                                )
+                            except (UnicodeError, ValueError):
+                                _hyph_mapped_case_nfc_stable = (
+                                    None
+                                )
+                            if (
+                                _hyph_mapped_case_nfc_stable
+                                == _hyph_mapped_case_nfc
+                            ):
+                                _hyph_form = _hyph_mapped_case_nfc
                 # The mapped-dash+small-form exception,
                 # mirroring the mapped-dash exception
                 # above: a label mixing a UTS46-mapped
