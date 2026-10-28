@@ -1,10 +1,12 @@
 from typing import List
 from fastapi import APIRouter, Depends, Response, status
 from api.common.utils import get_logger
+from api.common.exceptions import ForbiddenException
 from api.core.container import get_sso_settings_service
 from api.domain.dtos.sso_settings_dto import CreateSSOSettingsDto, ReadSSOSettingsDto, SSOSettingsListDto, SSOSettingsResponseDto, UpdateSSOSettingsDto
 from api.domain.enum.permission import Permission
 from api.infrastructure.security.current_user import CurrentUser
+from api.interfaces.middlewares.tenant_middleware import get_tenant_id
 from api.interfaces.security.role_checker import check_permissions_for_current_role
 from api.usecases.sso_settings_service import SSOSettingsService
 
@@ -12,6 +14,25 @@ from api.usecases.sso_settings_service import SSOSettingsService
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/ssos", tags=["SSO Settings"], dependencies=[Depends(check_permissions_for_current_role(required_permissions=[Permission.FULL_ACCESS]))])
+
+
+def _assert_create_scope(current_user: CurrentUser, request_tenant_id) -> None:
+    # Create-in-wrong-DB guard, mirroring the branding singleton guard
+    # (iteration 867): SSO login resolves a provider by first match in
+    # the current DB (sso_settings_service.get_provider, no tenant
+    # filter), so a tenant caller creating on the host DB (no
+    # X-Tenant-ID/subdomain, request scope None) would plant an SSO
+    # configuration — attacker-chosen client id/secret and redirect
+    # URI — that host SSO logins could then pick up for that provider
+    # if the host has no setting for it yet. Legitimate tenant SSO
+    # creation happens in the caller's own tenant DB, where the
+    # middleware scope equals their tenant id, and host callers
+    # (tenant_id None) are unaffected. A mismatched scope fails closed
+    # rather than stamping a record into the wrong DB.
+    if current_user.tenant_id is not None and (
+        request_tenant_id is None or str(request_tenant_id) != str(current_user.tenant_id)
+    ):
+        raise ForbiddenException("SSO settings cannot be created outside your tenant's scope.")
 
 @router.get("/", response_model=SSOSettingsListDto, response_model_exclude_none=True)
 async def list(
@@ -69,8 +90,10 @@ async def get_sso_settings_by_id(
 async def create_sso_settings(
     current_user: CurrentUser,
     sso_settings: CreateSSOSettingsDto,
-    sso_settings_service: SSOSettingsService = Depends(get_sso_settings_service)
+    sso_settings_service: SSOSettingsService = Depends(get_sso_settings_service),
+    request_tenant_id = Depends(get_tenant_id)
 ):
+    _assert_create_scope(current_user, request_tenant_id)
     sso_settings.tenant_id = current_user.tenant_id if current_user.tenant_id else None
     await sso_settings_service.create_sso_settings(sso_settings)
     return SSOSettingsResponseDto(message="SSO settings created successfully")
