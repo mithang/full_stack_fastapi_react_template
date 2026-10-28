@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Response, status
 
 from api.core.container import get_notification_banner_service
 from api.domain.dtos.notification_settings_dto import CreateNotificationBannerSettingDto, NotificationBannerSettingDto
@@ -15,8 +15,17 @@ router.tags = ["Notifications"]
 
 @router.get("/banner", description="Get the current notification banner information.", response_model=NotificationBannerSettingDto, status_code=status.HTTP_200_OK)
 async def get_notification_banner(
+    response: Response,
     notification_banner_service: NotificationBannerService = Depends(get_notification_banner_service)
 ):
+    # The banner is tenant settings data that admins edit, so it must
+    # not be served from a browser or proxy cache: a cached 200 could
+    # keep showing a disabled/old banner after an update, or show one
+    # tenant's banner to another user after an account switch on a
+    # shared machine — the same no-store hardening as the tenant list
+    # and Stripe settings GETs.
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
     return await notification_banner_service.get_banner_setting()
 
 @router.post("/banner", description="Create a new notification banner setting.", response_model=None, status_code=status.HTTP_201_CREATED)
