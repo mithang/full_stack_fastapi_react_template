@@ -2849,6 +2849,53 @@ def _encode_idna(host: str) -> str | None:
                         == label.translate(_fraction_excl_map)
                         .translate(_asis_map)
                         .translate(_square_cjk_remap)
+                        # A label mixing a fraction with both
+                        # a square CJK member and an enclosed
+                        # CJK member, a parenthesized CJK
+                        # member, or a CJK Compatibility
+                        # Ideograph ("¼㍱㊣" -> "1⁄4hpa正"):
+                        # the whole-label remap expands all
+                        # three, so it equals none of the
+                        # candidates above, and the label
+                        # fell through to None even though
+                        # the browser carries the remapped
+                        # form. Accept the fraction-expanded
+                        # form further translated through the
+                        # square table and the three CJK
+                        # remap tables; their key domains
+                        # are disjoint, so the chained form
+                        # covers single- and combined-class
+                        # labels alike, and is identity for
+                        # labels without such a member. The
+                        # Greek and as-is variants below
+                        # cover the same combinations the
+                        # enclosed and square candidates
+                        # above already cover, for the same
+                        # reason. It is still anchored to
+                        # the real UTS46 remap: any other
+                        # remapped character fails every
+                        # candidate and falls through
+                        # unchanged, as before.
+                        or _frac_remapped
+                        == label.translate(_fraction_excl_map)
+                        .translate(_square_cjk_remap)
+                        .translate(_enclosed_cjk_remap)
+                        .translate(_parenthesized_cjk_remap)
+                        .translate(_cjk_compat_remap)
+                        or _frac_remapped
+                        == label.translate(_fraction_excl_map)
+                        .translate(_greek_extended_remap)
+                        .translate(_square_cjk_remap)
+                        .translate(_enclosed_cjk_remap)
+                        .translate(_parenthesized_cjk_remap)
+                        .translate(_cjk_compat_remap)
+                        or _frac_remapped
+                        == label.translate(_fraction_excl_map)
+                        .translate(_asis_map)
+                        .translate(_square_cjk_remap)
+                        .translate(_enclosed_cjk_remap)
+                        .translate(_parenthesized_cjk_remap)
+                        .translate(_cjk_compat_remap)
                         or _frac_hebrew_ok
                     )
                 ):
