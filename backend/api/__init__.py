@@ -4681,6 +4681,26 @@ def _encode_idna(host: str) -> str | None:
                     for c in label
                 ):
                     raise ValueError("rejected small form double-exclamation")
+                # A mark-first label is browser-rejected under
+                # UTS46, yet this branch punycoded a ‼ mix
+                # raw ("́‼b" -> "xn--!!b-jdc", and the
+                # same shape for every combining, spacing and
+                # enclosing mark first, "́‼" likewise), a form
+                # no browser origin could carry. Reject here,
+                # before the bidi gate, mirroring the as-is
+                # branch's mark-first fix (iteration 711):
+                # no translation in this branch introduces a
+                # leading mark (none appears as a value in
+                # the ‼, enclosed, parenthesized, square,
+                # FB29 or Greek Extended tables), so checking
+                # the raw label's first character is complete,
+                # and raising returns None for the whole host,
+                # as for other rejected labels. Labels whose
+                # first character is not a mark are unchanged.
+                import unicodedata as _excl_mark_unicodedata
+
+                if _excl_mark_unicodedata.category(label[0])[0] == "M":
+                    raise ValueError("mark-first double-exclamation")
                 _excl_remapped = (
                     label.translate(_double_excl_map)
                     .translate(_enclosed_cjk_remap)
