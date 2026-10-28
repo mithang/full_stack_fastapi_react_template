@@ -10,12 +10,27 @@ from api.usecases.tenant_service import TenantService
 
 logger = get_logger(__name__)
 
+
+def _caller_may_access(record_tenant_id: PydanticObjectId | None, caller_tenant_id: str | PydanticObjectId | None) -> bool:
+    # Single-record scope rule, mirroring list(): host callers
+    # (tenant_id None) may access any record; a tenant caller may
+    # access only records stamped with their own tenant_id. A
+    # malformed caller id cannot match any record, so it fails closed.
+    if caller_tenant_id is None:
+        return True
+    try:
+        caller_oid = PydanticObjectId(caller_tenant_id)
+    except Exception:
+        return False
+    return record_tenant_id == caller_oid
+
+
 class SSOSettingsService:
     def __init__(self, sso_settings_provider_repository: SSOSettingsProviderRepository, tenant_service: TenantService):
         self.sso_settings_provider_repository: SSOSettingsProviderRepository = sso_settings_provider_repository
         self.tenant_service: TenantService = tenant_service
 
-    async def get_sso_settings_by_id(self, id: str) -> ReadSSOSettingsDto:
+    async def get_sso_settings_by_id(self, id: str, tenant_id: str | PydanticObjectId | None = None) -> ReadSSOSettingsDto:
         res = await self.sso_settings_provider_repository.get_by_id(id)
         if res is None:
             # BaseRepository.get returns None for a malformed id (iteration 328)
@@ -23,6 +38,15 @@ class SSOSettingsService:
             # AttributeError and surface as a 500 for a tampered SSO id —
             # or for a well-formed but unknown id, which previously also
             # reached this line. Map both to the clean 404 instead.
+            raise NotFoundException("SSOSettings", id)
+        if not _caller_may_access(res.tenant_id, tenant_id):
+            # Cross-tenant read: same 404 as an unknown id, so probing
+            # another tenant's id reveals neither its existence nor its
+            # masked client id / redirect URIs. Host callers
+            # (tenant_id None) keep the global view, the same scope
+            # rule as list() — and a host-stamped record (tenant_id
+            # None) is not visible to a tenant caller, matching the
+            # list filter which only returns the caller's own rows.
             raise NotFoundException("SSOSettings", id)
         return ReadSSOSettingsDto(**res.model_dump(exclude={"client_secret": True}))
 
@@ -37,7 +61,7 @@ class SSOSettingsService:
         if updated is None:
             raise NotFoundException("SSOSettings", id)
 
-    async def update_sso_settings(self, id: str, sso_settings: UpdateSSOSettingsDto) -> None:
+    async def update_sso_settings(self, id: str, sso_settings: UpdateSSOSettingsDto, tenant_id: str | PydanticObjectId | None = None) -> None:
         # Repository.update() returns None when no document matches (and
         # BaseRepository.get returns None for a malformed id), so an
         # update of an unknown SSO settings id previously returned 204
@@ -54,6 +78,11 @@ class SSOSettingsService:
         # masked string, which would silently break SSO login. A
         # genuinely new credential differs from its own masked form.
         existing = await self.sso_settings_provider_repository.get_by_id(id)
+        if existing is not None and not _caller_may_access(existing.tenant_id, tenant_id):
+            # Cross-tenant write: same 404 as an unknown id (and raised
+            # before any write), so probing another tenant's id reveals
+            # nothing and cannot overwrite its live credentials.
+            raise NotFoundException("SSOSettings", id)
         if existing is not None:
             for field in ("client_id", "client_secret"):
                 submitted = getattr(sso_settings, field)
@@ -76,7 +105,14 @@ class SSOSettingsService:
         res = await self.sso_settings_provider_repository.create_sso_settings(SSOSettings(**sso_settings.model_dump()))
         return str(res)
     
-    async def delete_sso_settings(self, id: str) -> bool:
+    async def delete_sso_settings(self, id: str, tenant_id: str | PydanticObjectId | None = None) -> bool:
+        # Cross-tenant delete must be indistinguishable from deleting an
+        # unknown id: BaseRepository.delete returns False for unknown
+        # ids, so return False here too (without deleting) rather than
+        # a 404, which would confirm the record exists to the prober.
+        existing = await self.sso_settings_provider_repository.get_by_id(id)
+        if existing is None or not _caller_may_access(existing.tenant_id, tenant_id):
+            return False
         return await self.sso_settings_provider_repository.delete_sso_settings(id)
     
     async def list(self, tenant_id: str | None = None) -> SSOSettingsListDto:

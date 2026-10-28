@@ -52,6 +52,7 @@ async def get_available_sso_providers(
 async def get_sso_settings_by_id(
     response: Response,
     sso_id: str,
+    current_user: CurrentUser,
     sso_settings_service: SSOSettingsService = Depends(get_sso_settings_service)
 ):
     # Single SSO record, same sensitivity as the list endpoint
@@ -60,7 +61,9 @@ async def get_sso_settings_by_id(
     # hide freshly updated settings.
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
-    return await sso_settings_service.get_sso_settings_by_id(sso_id)
+    # Tenant-scoped like the list: a tenant caller reading another
+    # tenant's id gets the same 404 as an unknown id.
+    return await sso_settings_service.get_sso_settings_by_id(sso_id, tenant_id=current_user.tenant_id)
 
 @router.post("/", response_model=SSOSettingsResponseDto, status_code=status.HTTP_201_CREATED)
 async def create_sso_settings(
@@ -75,16 +78,18 @@ async def create_sso_settings(
 @router.delete("/{sso_id}", response_model=bool)
 async def delete_sso_settings(
     sso_id: str,
+    current_user: CurrentUser,
     sso_settings_service: SSOSettingsService = Depends(get_sso_settings_service)
 ):
-    return await sso_settings_service.delete_sso_settings(sso_id)
+    return await sso_settings_service.delete_sso_settings(sso_id, tenant_id=current_user.tenant_id)
 
 
 @router.patch("/{sso_id}", response_model=None, status_code=status.HTTP_204_NO_CONTENT)
 async def update_sso_settings(
     sso_id: str,
     sso_settings: UpdateSSOSettingsDto,
+    current_user: CurrentUser,
     sso_settings_service: SSOSettingsService = Depends(get_sso_settings_service)
 ):
-    await sso_settings_service.update_sso_settings(sso_id, sso_settings)
+    await sso_settings_service.update_sso_settings(sso_id, sso_settings, tenant_id=current_user.tenant_id)
     return None
