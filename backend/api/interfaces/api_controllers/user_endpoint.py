@@ -20,6 +20,7 @@ router = APIRouter(prefix="/users", tags=["Users"])
 @router.get("/", response_model=UserListDto)
 async def list_users(
     response: Response,
+    current_user: CurrentUser,
     # The frontend only ever requests limit 10, but a direct API call
     # passed limit/skip straight into the DB query unbounded, so a
     # single request could dump the whole user table (limit=1000000)
@@ -38,7 +39,14 @@ async def list_users(
     # GET below.
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
-    return await service.list_users(skip=skip, limit=limit)
+    # Scope to the caller's tenant: tenant requests normally hit the
+    # tenant database (TenantMiddleware), but a tenant user calling
+    # without a tenant DB selected (no X-Tenant-ID/subdomain) would
+    # otherwise read the host database's full user table — names and
+    # emails of every tenant's users. Host callers (tenant_id None)
+    # keep the global view, the same scope rule as the dashboard
+    # metrics and the invoices/products lists.
+    return await service.list_users(skip=skip, limit=limit, tenant_id=current_user.tenant_id)
 
 
 @router.post("/", response_model=CreateUserResponseDto, status_code=status.HTTP_201_CREATED)

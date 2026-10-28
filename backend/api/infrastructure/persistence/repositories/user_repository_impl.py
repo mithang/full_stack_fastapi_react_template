@@ -14,9 +14,14 @@ class UserRepository(BaseRepository[User], AuditLogRepository):
     def __init__(self):
         super().__init__(User)
 
-    async def list (self, skip: int = 0, limit: int = 10) -> UserListDto:
-        docs = await self.model.find_all().skip(skip).limit(limit).to_list()
-        total = await self.model.count()
+    async def list (self, skip: int = 0, limit: int = 10, tenant_id: PydanticObjectId | None = None) -> UserListDto:
+        # Tenant-scoped listing: the filter applies to both the page
+        # and the total, so pagination metadata (total/has_next) does
+        # not leak another tenant's user count. No filter means the
+        # historic global view (host callers).
+        query = {"tenant_id": tenant_id} if tenant_id is not None else {}
+        docs = await self.model.find(query).skip(skip).limit(limit).to_list()
+        total = await self.model.find(query).count()
         result = UserListDto(
             users=[await doc.to_serializable_dict() for doc in docs],
             skip=skip,

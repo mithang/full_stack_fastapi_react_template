@@ -26,8 +26,18 @@ class UserService:
         logger.info("Initialized.")
 
 
-    async def list_users(self, skip: int = 0, limit: int = 10) -> UserListDto:
-        return await self.user_repository.list(skip=skip, limit=limit)
+    async def list_users(self, skip: int = 0, limit: int = 10, tenant_id: str | None = None) -> UserListDto:
+        # Tenant callers see only their tenant's users; host callers
+        # (tenant_id None) keep the global view. A malformed tenant id
+        # cannot match any user, so fail closed with an empty page
+        # rather than falling back to the unscoped list.
+        tenant_oid = None
+        if tenant_id:
+            try:
+                tenant_oid = PydanticObjectId(tenant_id)
+            except Exception:
+                return UserListDto(users=[], skip=skip, limit=limit, total=0, has_previous=skip > 0, has_next=False)
+        return await self.user_repository.list(skip=skip, limit=limit, tenant_id=tenant_oid)
 
     async def find_by_email(self, email: EmailStr) -> User:
         """Find user by email. Returns User model. Raises UserNotFoundException if not found."""
