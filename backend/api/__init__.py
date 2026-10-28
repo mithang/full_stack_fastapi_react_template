@@ -3685,6 +3685,84 @@ def _encode_idna(host: str) -> str | None:
                             and "\u200c" not in label
                             and "\u200d" not in label
                         )
+                        # A label mixing a fraction with an
+                        # uppercase letter but no small form
+                        # ("Ω¼b" -> "ω1⁄4b" ->
+                        # "xn--14b-e0c0757a", "a¼bΣ" ->
+                        # "a1⁄4bσ", verified against Node's
+                        # WHATWG parser): the whole-label
+                        # remap case-folds as well as
+                        # expanding the fraction, so it
+                        # equals neither the plain fraction
+                        # candidate above nor any other
+                        # candidate, and the label fell
+                        # through to None (or, for an
+                        # underscore mix, to a wrong
+                        # raw-fraction punycode) even though
+                        # the browser carries the folded
+                        # form. Accept the fraction-expanded
+                        # form folded per character (as the
+                        # small-form case arm does, so a
+                        # trailing Σ folds to σ, not ς).
+                        # It is still anchored to the real
+                        # UTS46 remap, and it is gated on no
+                        # small-form member so the
+                        # small-form arms above keep their
+                        # own handling (including the
+                        # rejected small form), on no joiner
+                        # so the pre-existing plain-fraction
+                        # joiner behaviour is not extended,
+                        # and the bidi gate above still
+                        # rejects an RTL mix ("م¼b").
+                        or (
+                            not any(
+                                ord(c) in _small_form_map
+                                for c in label
+                            )
+                            and _frac_remapped
+                            == "".join(
+                                c.lower()
+                                for c in label.translate(
+                                    _fraction_excl_map
+                                )
+                            )
+                            and chr(0x200C) not in label
+                            and chr(0x200D) not in label
+                        )
+                        # A label mixing a fraction with a
+                        # decomposed mark but no small form
+                        # ("mu\u0308nchen¼b" ->
+                        # "münchen1⁄4b", verified against
+                        # Node's WHATWG parser): UTS46 maps
+                        # before it normalizes, so the
+                        # whole-label remap equals the NFC
+                        # of the fraction-expanded form,
+                        # which matches neither candidate
+                        # above, and the label fell through
+                        # to None even though the browser
+                        # carries the composed form. Accept
+                        # the NFC of that form, under the
+                        # same no-small-form, no-joiner and
+                        # bidi gates as the case candidate
+                        # above; a label that is also
+                        # uppercase ("MU\u0308NCHEN¼b",
+                        # combined case+NFC) needs its own
+                        # arm and is unchanged by this one.
+                        or (
+                            not any(
+                                ord(c) in _small_form_map
+                                for c in label
+                            )
+                            and _frac_remapped
+                            == _frac_sf_unicodedata.normalize(
+                                "NFC",
+                                label.translate(
+                                    _fraction_excl_map
+                                ),
+                            )
+                            and chr(0x200C) not in label
+                            and chr(0x200D) not in label
+                        )
                         or _frac_remapped
                         == label.translate(_fraction_excl_map).translate(
                             _greek_extended_remap
