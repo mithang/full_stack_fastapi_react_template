@@ -243,15 +243,27 @@ async def patch_user(
     user_id: str, role_update: UserRoleUpdateRequestDto,
     current_user: CurrentUser,
     _: bool = Depends(check_permissions_for_current_role([Permission.USER_ROLE_ASSIGN_OR_REMOVE_ONLY])),
-    user_service: UserService = Depends(get_user_service)
+    user_service: UserService = Depends(get_user_service),
+    role_service: RoleService = Depends(get_role_service)
 
 ):
     if str(current_user.id) == user_id:
         raise ForbiddenException("Users cannot assign a role to themselves.")
-    
+
     exsisting_user = await user_service.get_user_by_id(user_id, tenant_id=current_user.tenant_id)
     if str(exsisting_user.role_id) == role_update.role_id:
         raise InvalidOperationException("User already has this role assigned")
+
+    # The target user is scoped to the caller's tenant above, but the role
+    # itself was not: update_user() stores any role_id verbatim, and
+    # permission checks resolve a user's role by id with no tenant scope
+    # (UserAccessManagement.get_role_detail), so a tenant admin could
+    # assign another tenant's ADMIN role (FULL_ACCESS) to their own user
+    # and gain those permissions in their own tenant. Verify the role
+    # belongs to the caller's tenant first; a foreign or unknown id
+    # answers with the same 404 as an unknown role, and host callers
+    # (tenant_id None) keep the global view, matching get_role_by_id.
+    await role_service.get_role_by_id(role_id=role_update.role_id, tenant_id=current_user.tenant_id)
     
     user = await user_service.update_user(user_id=user_id, user_data=UpdateUserDto(role_id=role_update.role_id), tenant_id=current_user.tenant_id)
     user_doc = await user.to_serializable_dict()
