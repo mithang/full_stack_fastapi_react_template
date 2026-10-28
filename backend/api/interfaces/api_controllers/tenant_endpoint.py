@@ -25,10 +25,19 @@ router = APIRouter(prefix="/tenants", tags=["Tenants"])
 
 @router.get("/", response_model=TenantListDto, status_code=status.HTTP_200_OK)
 async def list_tenants(
+    response: Response,
     skip: int = Query(0, ge=0, le=10000), limit: int = Query(10, ge=1, le=100),
     service: TenantService = Depends(get_tenant_service),
     _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.HOST_MANAGE_TENANTS]))    
 ):
+    # This GET returns the host-admin tenant list, so it must never be
+    # served from a browser or proxy cache: a cached 200 could hide a
+    # freshly created or deleted tenant, or serve one host admin's list
+    # to another after an account switch on a shared machine — the same
+    # no-store hardening as the /users/{user_id} and /configurations/stripe
+    # GETs. Response is already imported in this module.
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
     return await service.list_tenants(skip=skip, limit=limit)
 
 @router.post("/", response_model=CreateTenantResponseDto, status_code=status.HTTP_201_CREATED)
