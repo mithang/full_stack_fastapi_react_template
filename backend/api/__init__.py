@@ -2782,6 +2782,51 @@ def _encode_idna(host: str) -> str | None:
                 return False
             return _case_remapped == _case_translated
 
+        # The combined case-fold + NFC small-form mix arm:
+        # a label that is BOTH uppercase and decomposed (e.g.
+        # "MU\u0308NCHEN\uFE50b") fails both arms above — the
+        # NFC arm's exact-remap check rejects the uppercase
+        # form, and the case arm's folded form is still
+        # decomposed, so its exact-remap check rejects it too
+        # — and it fell through to None (or, for an
+        # underscore mix, to a wrong raw punycode), while
+        # browsers map then normalize and carry it
+        # ("MU\u0308NCHEN\uFE50b" -> "xn--mnchen,b-65a",
+        # verified against Node's WHATWG parser). UTS46
+        # maps before it normalizes, so this arm folds
+        # per character (as the case arm does, so a
+        # trailing Σ still folds to σ, not ς) and then
+        # NFC-normalizes, admitting the label only when
+        # BOTH transforms change it (so pure case and pure
+        # decomposed labels keep their existing arms) and
+        # the combined form passes the _sf_mix_ok gate
+        # (which re-checks the mark-first, bidi and
+        # character conditions and the exact remap on the
+        # combined form), and the NFC of the folded
+        # translated form equals the translation of the
+        # combined form, so the body below punycodes
+        # exactly the gated form. A label failing any part
+        # keeps its existing behaviour below, since this
+        # arm only widens the small-form branch's condition
+        # and never raises.
+        def _sf_case_nfc_ok(_lab: str) -> bool:
+            import unicodedata as _cn_unicodedata
+
+            _folded = "".join(c.lower() for c in _lab)
+            if _folded == _lab:
+                return False
+            _combined = _cn_unicodedata.normalize("NFC", _folded)
+            if _combined == _folded:
+                return False
+            if not _sf_mix_ok(_combined):
+                return False
+            return (
+                _cn_unicodedata.normalize(
+                    "NFC", _folded.translate(_small_form_map)
+                )
+                == _combined.translate(_small_form_map)
+            )
+
         encoded_labels = []
         for label in host.split("."):
             if not label:
@@ -2798,6 +2843,7 @@ def _encode_idna(host: str) -> str | None:
                     or _sf_mix_ok(label)
                     or _sf_nfc_ok(label)
                     or _sf_case_ok(label)
+                    or _sf_case_nfc_ok(label)
                 )
             ):
                 # A plain small-form label: every non-ASCII
@@ -2816,7 +2862,11 @@ def _encode_idna(host: str) -> str | None:
                 # the browser), or the _sf_case_ok arm
                 # above (an uppercase "Ω﹐b" is now
                 # carried in its case-folded form,
-                # matching the browser).
+                # matching the browser), or the
+                # _sf_case_nfc_ok arm above (a combined
+                # "MU\u0308NCHEN﹐b" is now carried in its
+                # case-folded then NFC form, matching
+                # the browser).
                 # Translate, then
                 # pass a pure-ASCII result through unchanged
                 # and punycode any other result directly, as
@@ -2839,6 +2889,13 @@ def _encode_idna(host: str) -> str | None:
                 elif _sf_case_ok(label):
                     _sf_mapped = "".join(
                         c.lower() for c in label
+                    ).translate(_small_form_map)
+                elif _sf_case_nfc_ok(label):
+                    import unicodedata as _sf_cn_unicodedata
+
+                    _sf_mapped = _sf_cn_unicodedata.normalize(
+                        "NFC",
+                        "".join(c.lower() for c in label),
                     ).translate(_small_form_map)
                 if any(ord(c) > 127 for c in _sf_mapped):
                     encoded_labels.append(
