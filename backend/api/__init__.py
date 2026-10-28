@@ -2845,6 +2845,47 @@ def _encode_idna(host: str) -> str | None:
                         )
                     )
                 )
+                # A fraction label mixing an as-is Arabic
+                # presentation form with a strong-RTL
+                # character outside that form set: the
+                # recovery gate above bars exactly this
+                # mix (its allowed-character check admits
+                # no strong-RTL character alongside a
+                # presentation form), and browsers reject
+                # it too — but when recovery fails,
+                # _frac_remapped is None, so
+                # _frac_main_bidi_ok above is vacuously
+                # true and the raw as-is and underscore
+                # fallbacks below fired anyway, emitting
+                # the raw-fraction punycode for a label
+                # no browser origin could carry ("ا¼﯃᫏",
+                # "م¼﯃᫏", "٣¼﯃᫏", "¼﯃᫏م",
+                # "ا¼﯃᫏_", "ا¼﯃᫏x" — all
+                # browser-rejected). Bar both fallbacks
+                # for the mix, so it reaches the strict
+                # arm, which rejects the fraction and
+                # returns None; labels without a
+                # presentation form, or with one but no
+                # strong-RTL character outside the set
+                # ("¼﯃᫏", "¼﯃᫏_", "a¼﯃᫏"), are
+                # unaffected, and a presentation member
+                # that is itself strong RTL in this
+                # Python's data (U+FBC2, AL) does not
+                # count against the label on its own.
+                _frac_asis_presentation_rtl_mix = (
+                    any(
+                        ord(c)
+                        in _punycode_arabic_presentation_as_is
+                        for c in label
+                    )
+                    and any(
+                        ord(c)
+                        not in _punycode_arabic_presentation_as_is
+                        and _arb_unicodedata.bidirectional(c)
+                        in ("R", "AL", "AN")
+                        for c in label
+                    )
+                )
                 if (
                     _frac_remapped is not None
                     and " " not in label
@@ -3171,7 +3212,7 @@ def _encode_idna(host: str) -> str | None:
                     ord(c) in _punycode_arabic_presentation_b
                     or ord(c) in _punycode_arabic_presentation_a
                     for c in label
-                ) and _frac_main_bidi_ok:
+                ) and _frac_main_bidi_ok and not _frac_asis_presentation_rtl_mix:
                     # The bidi gate above also bars this
                     # raw fallback: without it a label the
                     # main gate just rejected ("ا¼©") fell
@@ -3203,7 +3244,7 @@ def _encode_idna(host: str) -> str | None:
                     )
                 elif "_" not in label:
                     encoded_labels.append(_idna.encode(label).decode("ascii"))
-                elif any(ord(c) > 127 for c in label) and _frac_main_bidi_ok:
+                elif any(ord(c) > 127 for c in label) and _frac_main_bidi_ok and not _frac_asis_presentation_rtl_mix:
                     # The bidi gate above also bars this
                     # raw fallback, for the same reason as
                     # the as-is arm above: a label the main
