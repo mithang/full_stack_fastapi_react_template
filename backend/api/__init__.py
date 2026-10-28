@@ -5939,7 +5939,7 @@ def _encode_idna(host: str) -> str | None:
                     ord(c) in _punycode_arabic_presentation_b
                     or ord(c) in _punycode_arabic_presentation_a
                     for c in label
-                ) and _frac_main_bidi_ok and not _frac_asis_presentation_rtl_mix:
+                ) and _frac_main_bidi_ok and _frac_main_joiner_ok and not _frac_asis_presentation_rtl_mix:
                     # The bidi gate above also bars this
                     # raw fallback: without it a label the
                     # main gate just rejected ("ا¼©") fell
@@ -5952,6 +5952,22 @@ def _encode_idna(host: str) -> str | None:
                     # host, as the browser's rejection
                     # requires. Labels passing the gate
                     # behave as before.
+                    # The joiner gate bars it for the
+                    # same reason as the underscore arm
+                    # below (iteration 756): the main
+                    # gate rejects a fraction label
+                    # whose first joiner is not
+                    # virama-preceded, but an as-is mix
+                    # ("℃¼b‍", "©¼b‍") otherwise fell
+                    # through here as the raw-fraction
+                    # punycode, a form no browser origin
+                    # could carry. Gated out, it falls
+                    # through to the strict arm below,
+                    # which rejects the fraction and
+                    # returns None; a virama-preceded
+                    # first joiner still passes, as do
+                    # as-is fraction labels without a
+                    # joiner.
                     # An as-is label mixed with an Arabic
                     # Presentation Form is excluded here: the
                     # browser either rejects the mix under the
