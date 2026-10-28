@@ -139,8 +139,16 @@ async def search_by_subdomain(
 @router.get("/check_subdomain/{subdomain}", response_model=SubdomainAvailabilityDto, status_code=status.HTTP_200_OK)
 async def check_subdomain_availability(
     subdomain: Subdomain,
+    response: Response,
     service: TenantService = Depends(get_tenant_service)
 ):
+    # This GET reports whether a subdomain is taken, so it must never
+    # be served from a browser or proxy cache: a cached 200 could
+    # report a subdomain as available after it was just registered
+    # (or as taken after it was freed) — the same no-store hardening
+    # as the search_by_subdomain GET above.
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
     try: 
         await service.find_by_subdomain(subdomain)
         is_available = False
