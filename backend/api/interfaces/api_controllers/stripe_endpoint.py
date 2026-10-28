@@ -13,7 +13,7 @@ from api.infrastructure.security.current_user import CurrentUser
 from api.interfaces.security.role_checker import check_permissions_for_current_role
 from api.usecases.billing_record_service import BillingRecordService
 from api.usecases.stripe_setting_service import StripeSettingService
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
 from api.core.config import settings
 from api.core.exceptions import StripeSettingsNotFoundException
@@ -65,9 +65,16 @@ async def configure_stripe_setting(
 
 @router.get("/stripe", response_model=StripeSettingDto, status_code=status.HTTP_200_OK)
 async def get_stripe_settings(
+    response: Response,
     current_user: CurrentUser,
     stripe_setting_service: StripeSettingService = Depends(get_stripe_setting_service),
 ):
+    # Tenant payment settings: a browser/proxy-cached 200 could serve
+    # one tenant's Stripe configuration to another admin after an
+    # account switch, or hide a freshly updated configuration — same
+    # class as the /invoices, /checkouts/all, and /ssos/ fixes.
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
     if not current_user.tenant_id:
         raise InvalidOperationException(
             "Tenant context is required to get Stripe settings."
