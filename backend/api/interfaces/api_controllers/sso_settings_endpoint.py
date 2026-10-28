@@ -1,5 +1,5 @@
 from typing import List
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Response, status
 from api.common.utils import get_logger
 from api.core.container import get_sso_settings_service
 from api.domain.dtos.sso_settings_dto import CreateSSOSettingsDto, ReadSSOSettingsDto, SSOSettingsListDto, SSOSettingsResponseDto, UpdateSSOSettingsDto
@@ -15,8 +15,16 @@ router = APIRouter(prefix="/ssos", tags=["SSO Settings"], dependencies=[Depends(
 
 @router.get("/", response_model=SSOSettingsListDto, response_model_exclude_none=True)
 async def list(
+    response: Response,
     sso_settings_service: SSOSettingsService = Depends(get_sso_settings_service)
 ):
+    # SSO configuration (masked client secrets included): a
+    # browser/proxy-cached 200 could serve one tenant's SSO settings
+    # to another admin after an account switch, or hide freshly
+    # updated settings — same class as the /invoices fix in the
+    # previous iteration.
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
     return await sso_settings_service.list()
 
 @router.get("/available-providers", response_model=List)
