@@ -2585,10 +2585,85 @@ def _encode_idna(host: str) -> str | None:
             0xFE58: "\u2014",
             0xFE63: "-",
         }
+        # UTS46-mapped small forms that browsers carry in a plain
+        # label (no fraction, as-is, double-exclamation or other
+        # special member): U+FE50 -> ",", U+FE51 -> U+3001,
+        # U+FE54 -> ";", U+FE57 -> "!", U+FE59 -> "(",
+        # U+FE5A -> ")", U+FE5B -> "{", U+FE5C -> "}",
+        # U+FE5D -> U+3014, U+FE5E -> U+3015, U+FE60 -> "&",
+        # U+FE61 -> "*", U+FE62 -> "+", U+FE66 -> "=",
+        # U+FE69 -> "$" (verified against Node's WHATWG
+        # parser). The strict IDNA2008 path rejects them all
+        # and the `idna` package's UTS46 processing rejects
+        # them too, so such a label fell through to None and
+        # never matched — except an underscore mix, which the
+        # underscore fallback below punycoded raw
+        # ("a﹐b_c" -> "xn--ab_c-lh9x", browser "a,b_c").
+        # The browser-rejected small forms (U+FE52, U+FE53,
+        # U+FE55, U+FE56, U+FE5F) are deliberately not in
+        # this table, and neither are the mapped dashes
+        # (U+FE31/U+FE32/U+FE58/U+FE63), which keep the
+        # hyphen-edge branch's handling below.
+        _small_form_map = {
+            0xFE50: ",",
+            0xFE51: "\u3001",
+            0xFE54: ";",
+            0xFE57: "!",
+            0xFE59: "(",
+            0xFE5A: ")",
+            0xFE5B: "{",
+            0xFE5C: "}",
+            0xFE5D: "\u3014",
+            0xFE5E: "\u3015",
+            0xFE60: "&",
+            0xFE61: "*",
+            0xFE62: "+",
+            0xFE66: "=",
+            0xFE69: "$",
+        }
         encoded_labels = []
         for label in host.split("."):
             if not label:
                 encoded_labels.append(label)
+            elif (
+                any(ord(c) in _small_form_map for c in label)
+                and all(
+                    c
+                    in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
+                    or ord(c) in _small_form_map
+                    for c in label
+                )
+            ):
+                # A plain small-form label: every non-ASCII
+                # character is a carried small form (the gate
+                # above), so no fraction, as-is,
+                # double-exclamation, emoji, RTL or other
+                # special-branch member can ride along, and
+                # a label mixing a small form with any other
+                # non-ASCII character keeps its existing
+                # behaviour below (e.g. "münchen﹐b" and
+                # "a﹐b©" are unchanged). Translate, then
+                # pass a pure-ASCII result through unchanged
+                # and punycode any other result directly, as
+                # the underscore fallback does for its labels
+                # ("a﹐b" -> "a,b", "a﹑b" -> "xn--ab-o13a",
+                # "a﹐b﹑c" -> "xn--a,bc-nw3c", all verified
+                # against Node's WHATWG parser). A label
+                # containing a space or any other ASCII
+                # character outside letters, digits, hyphen
+                # and underscore fails the gate above and
+                # keeps its existing behaviour, matching the
+                # browser's rejection of such mixes.
+                _sf_mapped = label.translate(_small_form_map)
+                if any(ord(c) > 127 for c in _sf_mapped):
+                    encoded_labels.append(
+                        "xn--"
+                        + _sf_mapped.encode("punycode").decode(
+                            "ascii"
+                        )
+                    )
+                else:
+                    encoded_labels.append(_sf_mapped)
             elif any(ord(c) in _fraction_map for c in label):
                 # Remap the label and punycode the remapped form
                 # directly, as the FB29 branch does for its
