@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Response, status
 from fastapi.params import Query
 
 from api.core.container import get_product_service
@@ -22,10 +22,19 @@ router.tags = ["Stripe - Products"]
 
 @router.get("/", summary="List Products", response_model=ProductListDto)
 async def list_products(
+    response: Response,
     current_user: CurrentUser,
     product_service: ProductService = Depends(get_product_service),
     active: bool = Query(default=True, description="Filter active products, defaults to True")
 ):
+    # The list is scope-dependent (tenant vs host) and changes when
+    # products are created/updated/deleted, so it must not be served
+    # from a browser or proxy cache: a cached 200 could show one
+    # tenant's products to another tenant after an account switch on a
+    # shared machine, or hide a freshly created product — the same
+    # no-store hardening as the GET /permissions/ list.
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
     scope = "tenant" if current_user.tenant_id else "host"
     return await product_service.list_products(scope=scope, show_active=active)
 
