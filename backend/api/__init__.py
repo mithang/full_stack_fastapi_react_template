@@ -3142,6 +3142,31 @@ def _encode_idna(host: str) -> str | None:
                         or _frac_remapped
                         == label.translate(_fraction_excl_map)
                         .translate({0xFB29: "+"})
+                        # A label mixing a fraction with a
+                        # double exclamation mark, U+FB29 and
+                        # an as-is expansion form ("¼‼﬩℃" ->
+                        # "1⁄4!!+°c"): the whole-label remap
+                        # expands all four, so it equals none
+                        # of the candidates above, and the
+                        # label fell through to the as-is
+                        # branch's raw-fraction form
+                        # ("¼‼﬩°c") instead of the browser's
+                        # remapped form. Accept the
+                        # fraction-expanded form further
+                        # translated through the FB29 map and
+                        # the as-is map; their key domains
+                        # are disjoint from each other and
+                        # from the fraction table, so the
+                        # chained form is identity for labels
+                        # without such a member. It is still
+                        # anchored to the real UTS46 remap:
+                        # any other remapped character fails
+                        # every candidate and falls through
+                        # unchanged, as before.
+                        or _frac_remapped
+                        == label.translate(_fraction_excl_map)
+                        .translate({0xFB29: "+"})
+                        .translate(_asis_map)
                         # A label mixing a fraction with an
                         # enclosed CJK member, a parenthesized
                         # CJK member, or a CJK Compatibility
