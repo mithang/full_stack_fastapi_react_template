@@ -35,6 +35,28 @@ def _assert_create_scope(current_user: CurrentUser, request_tenant_id) -> None:
         raise ForbiddenException("SSO settings cannot be created outside your tenant's scope.")
 
 
+def _assert_read_scope(current_user: CurrentUser, request_tenant_id) -> None:
+    # Read-in-wrong-DB guard, mirroring the create/update guards
+    # above and the roles get guard (iteration 929): list() and
+    # get_sso_settings_by_id() already scope results to the
+    # caller's tenant stamp, but nothing checks which database
+    # served the request. So a tenant caller reading on the host
+    # DB (no X-Tenant-ID/subdomain, request scope None) could
+    # still read tenant-stamped SSO settings sitting in the host
+    # DB (e.g. planted before the create guard) — masked client
+    # ids, redirect URIs, and scopes. Legitimate tenant SSO reads
+    # happen in the caller's own tenant DB, where the middleware
+    # scope equals their tenant id, and host callers (tenant_id
+    # None) are unaffected. A mismatched scope fails closed
+    # before any read, so it also leaks no existence signal via
+    # the 404. The static /available-providers catalogue carries
+    # no tenant data and is left unguarded.
+    if current_user.tenant_id is not None and (
+        request_tenant_id is None or str(request_tenant_id) != str(current_user.tenant_id)
+    ):
+        raise ForbiddenException("SSO settings cannot be read outside your tenant's scope.")
+
+
 def _assert_update_scope(current_user: CurrentUser, request_tenant_id) -> None:
     # Update/delete-in-wrong-DB guard, mirroring the create guard
     # above and the notification-banner update guard (iteration
@@ -62,8 +84,10 @@ def _assert_update_scope(current_user: CurrentUser, request_tenant_id) -> None:
 async def list(
     response: Response,
     current_user: CurrentUser,
-    sso_settings_service: SSOSettingsService = Depends(get_sso_settings_service)
+    sso_settings_service: SSOSettingsService = Depends(get_sso_settings_service),
+    request_tenant_id = Depends(get_tenant_id)
 ):
+    _assert_read_scope(current_user, request_tenant_id)
     # SSO configuration (masked client secrets included): a
     # browser/proxy-cached 200 could serve one tenant's SSO settings
     # to another admin after an account switch, or hide freshly
@@ -98,8 +122,10 @@ async def get_sso_settings_by_id(
     response: Response,
     sso_id: str,
     current_user: CurrentUser,
-    sso_settings_service: SSOSettingsService = Depends(get_sso_settings_service)
+    sso_settings_service: SSOSettingsService = Depends(get_sso_settings_service),
+    request_tenant_id = Depends(get_tenant_id)
 ):
+    _assert_read_scope(current_user, request_tenant_id)
     # Single SSO record, same sensitivity as the list endpoint
     # above: a browser/proxy-cached 200 could serve one tenant's
     # SSO settings to another admin after an account switch, or
