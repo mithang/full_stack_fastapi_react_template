@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from api.common.exceptions import ForbiddenException, NotFoundException
 from api.common.utils import get_logger
 from api.core.container import get_storage_settings_service
-from api.domain.dtos.storage_settings_dto import AvailableStorageProviderDto, StorageSettingsDto
+from api.domain.dtos.storage_settings_dto import AvailableStorageProviderDto, ConfigureStorageSettingsDto
 from api.domain.entities.storage_settings import StorageProvider
 from api.domain.enum.permission import Permission
 from api.infrastructure.security.current_user import CurrentUser
@@ -106,7 +106,7 @@ def _assert_create_scope(current_user: CurrentUser, request_tenant_id) -> None:
 
 @router.post("/configure", status_code=status.HTTP_201_CREATED)
 async def configure_storage(
-    configuration: StorageSettingsDto,
+    configuration: ConfigureStorageSettingsDto,
     current_user: CurrentUser,
     setting_service: StorageSettingsService = Depends(get_storage_settings_service),
     request_tenant_id=Depends(get_tenant_id),
