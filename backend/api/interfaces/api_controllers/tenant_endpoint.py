@@ -82,6 +82,27 @@ def _assert_feature_update_scope(current_user: CurrentUser, request_tenant_id) -
     ):
         raise ForbiddenException("Tenant features cannot be updated outside your tenant's scope.")
 
+
+def _assert_trial_activation_scope(current_user: CurrentUser, request_tenant_id) -> None:
+    # Same wrong-DB class as _assert_feature_update_scope (iteration
+    # 924) but for the tenant trial activation PATCH: the stamp check
+    # in activate_trial_plan only compares against the record the
+    # request's database returned, so a tenant caller activating on
+    # the host DB (no X-Tenant-ID/subdomain, request scope None)
+    # could still create a Stripe trial subscription for a tenant
+    # record sitting in the host DB (e.g. planted before the create
+    # guard) and overwrite its subscription_id, while the real tenant
+    # DB record is untouched. Legitimate trial activations happen in
+    # the host DB (the frontend caller is the host-admin dialog) or
+    # in the caller's own tenant DB, where the middleware scope equals
+    # their tenant id (the frontend ApiClient sends X-Tenant-ID), and
+    # host callers (tenant_id None) are unaffected. A mismatched scope
+    # fails closed before any read, Stripe, or billing work.
+    if current_user.tenant_id is not None and (
+        request_tenant_id is None or str(request_tenant_id) != str(current_user.tenant_id)
+    ):
+        raise ForbiddenException("Trial plan cannot be activated outside your tenant's scope.")
+
 @router.get("/", response_model=TenantListDto, status_code=status.HTTP_200_OK)
 async def list_tenants(
     response: Response,
@@ -510,6 +531,7 @@ async def activate_trial_plan(
     # caller is the host-admin tenant-subscription dialog, so
     # legitimate callers already hold this permission.
     _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.HOST_MANAGE_TENANTS])),
+    request_tenant_id = Depends(get_tenant_id)
 ):
     # The HOST_MANAGE_TENANTS gate also admits FULL_ACCESS holders (see
     # UserAccessManagement), and every tenant's seeded ADMIN role holds
@@ -520,7 +542,14 @@ async def activate_trial_plan(
     # id forms normalize, mirroring the PUT/DELETE/update_feature/
     # features scoping; the check runs before any Stripe or billing
     # work. Unknown ids behave as before (get_tenant_by_id already
-    # raises TenantNotFoundException).
+    # raises TenantNotFoundException). The stamp check below alone
+    # does not stop the wrong-DB case: it compares against the record
+    # the request's database returned, so a tenant caller on the host
+    # DB could still activate a trial for a planted host-DB record
+    # with a matching id. This scope guard fails closed before any
+    # read, Stripe, or billing work, mirroring update_feature
+    # (iteration 924).
+    _assert_trial_activation_scope(current_user, request_tenant_id)
     tenant = await tenant_service.get_tenant_by_id(tenant_id)
     if current_user.tenant_id is not None and str(tenant.id) != current_user.tenant_id:
         raise TenantNotFoundException(tenant_id)
