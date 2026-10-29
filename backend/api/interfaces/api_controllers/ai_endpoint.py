@@ -43,6 +43,28 @@ def _assert_create_scope(current_user: CurrentUser, request_tenant_id) -> None:
     ):
         raise ForbiddenException("AI chat history cannot be saved outside your tenant's scope.")
 
+
+def _assert_read_scope(current_user: CurrentUser, request_tenant_id) -> None:
+    # Read/delete-in-wrong-DB guard, mirroring the invoice/product
+    # guards: history reads and session delete are keyed by user_id
+    # only (LocalAIService.get_user_sessions /
+    # get_histories_by_session_id / delete_session) in the current
+    # DB, with no tenant filter. So a tenant caller without a tenant
+    # DB selected (no X-Tenant-ID/subdomain, hitting the host DB)
+    # would read — and could delete — host-DB rows matching their
+    # user id (normally empty, but a user-id collision across DBs
+    # would leak another user's chat history), instead of their own
+    # tenant history. Legitimate tenant history calls carry
+    # X-Tenant-ID (ai-chat.tsx sends it whenever a tenant is
+    # selected), so the middleware scope equals their tenant id;
+    # host callers (tenant_id None) are unaffected. The delete
+    # endpoint reuses this guard: the failure mode (acting on the
+    # wrong DB's rows) is identical to the reads.
+    if current_user.tenant_id is not None and (
+        request_tenant_id is None or str(request_tenant_id) != str(current_user.tenant_id)
+    ):
+        raise ForbiddenException("AI chat history cannot be accessed outside your tenant's scope.")
+
 @router.get("/models", response_model=List[AIModelInfoDto])
 async def get_models(
     response: Response,
@@ -60,7 +82,9 @@ async def get_history(
     current_user: CurrentUser,
     response: Response,
     ai_service: LocalAIService = Depends(get_local_ai_service),
+    request_tenant_id = Depends(get_tenant_id),
 ):
+    _assert_read_scope(current_user, request_tenant_id)
     # Private per-user chat history: never let a browser/proxy cache serve a
     # stale session list (or one belonging to a previous user on a shared
     # machine) instead of running the handler.
@@ -87,8 +111,10 @@ async def get_single_session(
     response: Response,
     session_id: str,
     ai_service: LocalAIService = Depends(get_local_ai_service),
+    request_tenant_id = Depends(get_tenant_id),
 
 ):
+    _assert_read_scope(current_user, request_tenant_id)
     # Private per-user chat history: never let a browser/proxy cache serve a
     # stale session transcript (or one belonging to a previous user on a
     # shared machine) instead of running the handler. Same no-store
@@ -103,7 +129,9 @@ async def delete_session(
     current_user: CurrentUser,
     session_id: str,
     ai_service: LocalAIService = Depends(get_local_ai_service),
+    request_tenant_id = Depends(get_tenant_id),
 ):
+    _assert_read_scope(current_user, request_tenant_id)
     await ai_service.delete_session(current_user.id, session_id)
     return status.HTTP_202_ACCEPTED
 
