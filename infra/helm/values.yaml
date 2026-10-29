@@ -105,8 +105,11 @@ env:
       secretKeyRef:
         name: app-secrets
         key: smtp-mail-from
-  - name: BASE_URL
-    value: "https://your-app.example.com"
+  # The backend reads HOST_MAIN_DOMAIN (see backend/.env.example), not
+  # BASE_URL: it gates tenant-subdomain validation and SSO redirects.
+  # Keep this in sync with the ingress host above.
+  - name: HOST_MAIN_DOMAIN
+    value: "your-app.example.com"
 
 # Health checks
 livenessProbe:
