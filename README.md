@@ -311,7 +311,7 @@ To use the Stripe payment features, you need to configure your Stripe account:
 
         # Configure your default app admin credentials.
         ADMIN_EMAIL=admin@example.com
-        ADMIN_PASSWORD=Test@123!
+        ADMIN_PASSWORD=change-me-to-a-strong-password
 
         # SMTP Email settings
         SMTP_HOST="localhost"
