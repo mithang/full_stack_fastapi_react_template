@@ -7,7 +7,13 @@ class RecurringDto(BaseModel):
    usage_type: Literal["licensed", "metered"] = Field(default="licensed", description="Configures how the quantity per period should be determined. Can be either metered or licensed. licensed automatically bills the quantity set when adding it to a subscription. metered aggregates the total usage based on usage records. Defaults to licensed.")
    
 class CreatePricingDto(BaseModel):
-   currency: str = Field(default="eur", description="Currency code, e.g., 'usd'")
+   # ISO currency codes are always 3 letters and the sibling plan/stripe
+   # currency fields are already capped to exactly 3; an uncapped value
+   # here was passed verbatim to Stripe prices.create_async and failed
+   # only there. A short/long code now fails FastAPI validation (422)
+   # before any Stripe call. The response DTO is deliberately left
+   # uncapped so a pre-existing stored price can still be read.
+   currency: str = Field(default="eur", min_length=3, max_length=3, description="Currency code, e.g., 'usd'")
    unit_amount: int = Field(..., description="A positive integer in cents (or 0 for a free price) representing how much to charge. One of unit_amount, unit_amount_decimal, or custom_unit_amount is required, unless billing_scheme=tiered.")
    product: str = Field(..., description="The ID of the product this price is associated with")
    active: bool = Field(default=True, description="Whether the price is active or not")
