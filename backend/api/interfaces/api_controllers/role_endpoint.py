@@ -34,6 +34,26 @@ def _assert_create_scope(current_user: CurrentUser, request_tenant_id) -> None:
         raise ForbiddenException("Role cannot be created outside your tenant's scope.")
 
 
+def _assert_delete_scope(current_user: CurrentUser, request_tenant_id) -> None:
+    # Delete-in-wrong-DB guard, mirroring the update guard above and
+    # the notification-banner/SSO/storage delete guards (iterations
+    # 902-904): the service already refuses a record stamped for
+    # another tenant, but it does not check which database served
+    # the request. So a tenant caller deleting on the host DB (no
+    # X-Tenant-ID/subdomain, request scope None) could still delete
+    # a tenant-stamped role sitting in the host DB (e.g. planted
+    # before the create guard), removing a role that host callers
+    # resolve by id with no tenant scope. Legitimate tenant role
+    # deletes happen in the caller's own tenant DB, where the
+    # middleware scope equals their tenant id, and host callers
+    # (tenant_id None) are unaffected. A mismatched scope fails
+    # closed before any delete.
+    if current_user.tenant_id is not None and (
+        request_tenant_id is None or str(request_tenant_id) != str(current_user.tenant_id)
+    ):
+        raise ForbiddenException("Role cannot be deleted outside your tenant's scope.")
+
+
 def _assert_update_scope(current_user: CurrentUser, request_tenant_id) -> None:
     # Update-in-wrong-DB guard, mirroring the create guard above and
     # the notification-banner/SSO/storage update guards (iterations
@@ -173,8 +193,10 @@ async def delete_role(
     current_user: CurrentUser,
     service: RoleService = Depends(get_role_service),
     user_service: UserService = Depends(get_user_service),
-    _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.ROLE_DELETE_ONLY]))
+    _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.ROLE_DELETE_ONLY])),
+    request_tenant_id = Depends(get_tenant_id),
 ):
+    _assert_delete_scope(current_user, request_tenant_id)
     # Scope check before the assigned-users check: the service raises
     # the same 404 for a cross-tenant id as for an unknown id, so the
     # "cannot delete" error below cannot confirm another tenant's role
