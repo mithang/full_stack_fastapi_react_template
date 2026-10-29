@@ -1,5 +1,14 @@
+import html
+
+
 def activation_template_html(user_first_name: str, activation_link: str) -> str:
     """HTML email template for account activation."""
+    # The resend-activation caller supplies first_name freely (plain str,
+    # no character validation) and the recipient is the account holder,
+    # not the caller — so an unescaped name would let a permissioned
+    # caller inject arbitrary HTML into another user's inbox. Escape it;
+    # the activation link itself is server-generated and untouched.
+    user_first_name = html.escape(user_first_name or "")
     return f"""
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <h2 style="color: #333;">Welcome to Full-Stack FastAPI React Template</h2>
