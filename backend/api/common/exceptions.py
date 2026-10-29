@@ -76,14 +76,28 @@ class ForbiddenException(ApiBaseException):
 class AuthenticationFailedException(ApiBaseException):
     """Authentication failed."""
     def __init__(self, message: str = "Authentication failed."):
-        super().__init__(message)
+        # Same handler-logging premise as ForbiddenException above:
+        # no raise sites exist today, but the base takes caller-built
+        # messages directly, so flatten CR/LF here to keep any future
+        # caller embedding a raw identifier from re-opening the
+        # log-forging vector.
+        safe_message = str(message).replace("\r", " ").replace("\n", " ")
+        super().__init__(safe_message)
 
 
 class AwsException(ApiBaseException):
     def __init__(self, message: str):
-        super().__init__(message)
+        # Same premise: today's call sites go through the sanitizing
+        # S3StorageException subclass, but the base takes caller-built
+        # messages directly, so flatten CR/LF here to keep any future
+        # direct caller from re-opening the vector.
+        safe_message = str(message).replace("\r", " ").replace("\n", " ")
+        super().__init__(safe_message)
 
 class AzureException(ApiBaseException):
     def __init__(self, message: str):
-        super().__init__(message)
+        # Same premise as AwsException above, for the Azure subclass
+        # (AzureBlobStorageException) and any future direct caller.
+        safe_message = str(message).replace("\r", " ").replace("\n", " ")
+        super().__init__(safe_message)
 
