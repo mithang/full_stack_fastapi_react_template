@@ -59,10 +59,14 @@ _SECURITY_HEADERS = {
     # SPA has no WebXR use and no XR dependency, so no immersive
     # flow exists to break; a compromised script could otherwise
     # start an immersive session for spoofing or fingerprinting).
+    # Idle detection is disabled for the same reason (verified by
+    # grep: the SPA never uses IdleDetector, so no idle-presence
+    # flow exists to break; a compromised script could otherwise
+    # learn when the user is away from the keyboard).
     # Clipboard-write is a separate directive and is deliberately left
     # alone, as are the WebAuthn directives: passkey login/registration
     # must keep working, including USB/BLE/NFC authenticators.
-    b"permissions-policy": b"camera=(), microphone=(), geolocation=(), payment=(), clipboard-read=(), display-capture=(), fullscreen=(), accelerometer=(), gyroscope=(), magnetometer=(), xr-spatial-tracking=()",
+    b"permissions-policy": b"camera=(), microphone=(), geolocation=(), payment=(), clipboard-read=(), display-capture=(), fullscreen=(), accelerometer=(), gyroscope=(), magnetometer=(), xr-spatial-tracking=(), idle-detection=()",
 }
 
 
