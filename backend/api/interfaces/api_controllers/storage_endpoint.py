@@ -1,13 +1,14 @@
 from typing import List
 from beanie import PydanticObjectId
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from api.common.exceptions import NotFoundException
+from api.common.exceptions import ForbiddenException, NotFoundException
 from api.common.utils import get_logger
 from api.core.container import get_storage_settings_service
 from api.domain.dtos.storage_settings_dto import AvailableStorageProviderDto, StorageSettingsDto
 from api.domain.entities.storage_settings import StorageProvider
 from api.domain.enum.permission import Permission
 from api.infrastructure.security.current_user import CurrentUser
+from api.interfaces.middlewares.tenant_middleware import get_tenant_id
 from api.interfaces.security.role_checker import check_permissions_for_current_role
 from api.usecases.storage_settings_service import StorageSettingsService
 
@@ -49,12 +50,39 @@ async def get_available_providers(response: Response):
     providers = [{"name": p.value} for p in StorageProvider]
     return providers
 
+def _assert_create_scope(current_user: CurrentUser, request_tenant_id) -> None:
+    # Create/update-in-wrong-DB guard, mirroring the role, user,
+    # branding, banner, SSO, and Stripe guards: tenancy is
+    # per-database, and configure_storage disables every active
+    # storage setting in the current DB before upserting by provider.
+    # The endpoint already requires a tenant context, but it never
+    # checked the middleware scope, so a tenant caller without a
+    # tenant DB selected (no X-Tenant-ID/subdomain, request scope
+    # None) would disable the host DB's active storages and plant a
+    # record stamped with their own tenant_id in the host DB —
+    # invisible to their own tenant DB, visible in the host global
+    # list. Legitimate tenant configuration happens in the caller's
+    # own tenant DB, where the middleware scope equals their tenant
+    # id. A mismatched scope fails closed rather than writing into
+    # the wrong DB. Raised before the try block below, because
+    # ForbiddenException is not an HTTPException and the generic
+    # except would otherwise degrade it to a misleading 400.
+    if current_user.tenant_id is not None and (
+        request_tenant_id is None or str(request_tenant_id) != str(current_user.tenant_id)
+    ):
+        raise ForbiddenException(
+            "Storage settings cannot be configured outside your tenant's scope."
+        )
+
+
 @router.post("/configure", status_code=status.HTTP_201_CREATED)
 async def configure_storage(
     configuration: StorageSettingsDto,
     current_user: CurrentUser,
-    setting_service: StorageSettingsService = Depends(get_storage_settings_service)
+    setting_service: StorageSettingsService = Depends(get_storage_settings_service),
+    request_tenant_id=Depends(get_tenant_id),
 ):
+    _assert_create_scope(current_user, request_tenant_id)
 
     # Log only the provider, not the configuration itself: StorageSettingsDto
     # carries aws_secret_key / aws_access_key / azure_connection_string,
