@@ -9,13 +9,29 @@ class ApiBaseException(Exception):
 class NotFoundException(ApiBaseException):
     """Entity not found."""
     def __init__(self, entity: str, identifier: str):
-        message = f"{entity} with identifier {identifier} not found."
+        # The ApiBaseException handler logs ex.message verbatim, and
+        # every subclass (User/Tenant/Role/Product/Pricing/BillingRecord/
+        # StripeSettings not-found) funnels its identifier through here,
+        # including raw path params and JSON-body values (tenant name,
+        # role name, user id) that Starlette/Pydantic pass through
+        # unvalidated — a newline-bearing identifier would otherwise
+        # forge extra log lines on every failed lookup. Flatten CR/LF
+        # here, at the single construction site, covering all raise
+        # sites at once; the raw value still drives the lookup, and
+        # normal identifiers render identically.
+        safe_identifier = str(identifier).replace("\r", " ").replace("\n", " ")
+        message = f"{entity} with identifier {safe_identifier} not found."
         super().__init__(message)
 
 class ConflictException(ApiBaseException):
     """Entity already exists / conflict."""
     def __init__(self, entity: str, identifier: str):
-        message = f"{entity} with identifier {identifier} already exists."
+        # Same handler-logging premise as NotFoundException above:
+        # ConflictException identifiers (tenant name, role name, email)
+        # are raw JSON-body values, so flatten CR/LF at this single
+        # construction site as well.
+        safe_identifier = str(identifier).replace("\r", " ").replace("\n", " ")
+        message = f"{entity} with identifier {safe_identifier} already exists."
         super().__init__(message)
 
 class UnauthorizedException(ApiBaseException):
