@@ -149,10 +149,16 @@ _SECURITY_HEADERS = {
     # flow exists to break; a compromised script could otherwise
     # mint or redeem private state tokens on the app's origin for
     # cross-site tracking).
+    # Speaker selection is disabled for the same reason (verified
+    # by grep: the SPA never calls setSinkId / selectAudioOutput —
+    # it has no audio-output device selection flow — so no such
+    # flow exists to break; a compromised script could otherwise
+    # enumerate and select audio output devices on the app's origin
+    # for fingerprinting).
     # Clipboard-write is a separate directive and is deliberately left
     # alone, as are the WebAuthn directives: passkey login/registration
     # must keep working, including USB/BLE/NFC authenticators.
-    b"permissions-policy": b"camera=(), microphone=(), geolocation=(), payment=(), clipboard-read=(), display-capture=(), fullscreen=(), accelerometer=(), gyroscope=(), magnetometer=(), xr-spatial-tracking=(), idle-detection=(), picture-in-picture=(), browsing-topics=(), attribution-reporting=(), window-management=(), keyboard-map=(), ambient-light-sensor=(), wake-lock=(), usb=(), bluetooth=(), hid=(), nfc=(), serial=(), gamepad=(), web-share=(), local-fonts=(), otp-credentials=(), identity-credentials=(), storage-access=(), private-state-token=()",
+    b"permissions-policy": b"camera=(), microphone=(), geolocation=(), payment=(), clipboard-read=(), display-capture=(), fullscreen=(), accelerometer=(), gyroscope=(), magnetometer=(), xr-spatial-tracking=(), idle-detection=(), picture-in-picture=(), browsing-topics=(), attribution-reporting=(), window-management=(), keyboard-map=(), ambient-light-sensor=(), wake-lock=(), usb=(), bluetooth=(), hid=(), nfc=(), serial=(), gamepad=(), web-share=(), local-fonts=(), otp-credentials=(), identity-credentials=(), storage-access=(), private-state-token=(), speaker-selection=()",
 }
 
 
