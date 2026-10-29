@@ -4,6 +4,12 @@ import html
 def dns_notification_email(user_first_name: str, hostname: str, status: str) -> str:
     """HTML email template for DNS configuration status."""
     user_first_name = html.escape(user_first_name or "")
+    # hostname is interpolated both into an href attribute and into body text,
+    # so escape quotes as well as angle brackets; valid hostnames render
+    # identically. status is server-controlled today, but escape it too so a
+    # future caller cannot inject markup through this template.
+    hostname = html.escape(hostname or "", quote=True)
+    status = html.escape(status or "")
     return f"""
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <h2 style="color: #333;">DNS Configuration Status</h2>
