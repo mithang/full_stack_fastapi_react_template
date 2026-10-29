@@ -1,6 +1,6 @@
 
 from typing import  List, Literal, Optional
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 
 from api.common.enums.gender import Gender
 from api.domain.entities.tenant import CustomDomain, Subdomain
@@ -26,8 +26,8 @@ class CreateTenantDto(BaseModel):
     subdomain: Subdomain
     admin_email: EmailStr
     admin_password: str
-    first_name: str
-    last_name: str
+    first_name: str = Field(min_length=1)
+    last_name: str = Field(min_length=1)
     gender: Gender
 
 class TenantListDto(BaseModel):

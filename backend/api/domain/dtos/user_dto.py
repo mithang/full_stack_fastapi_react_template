@@ -1,13 +1,13 @@
 from typing import  List, Optional
-from pydantic import BaseModel, EmailStr, field_serializer
+from pydantic import BaseModel, EmailStr, Field, field_serializer
 from beanie import PydanticObjectId
 from api.common.enums.gender import Gender
 
 
 
 class BaseUserDto(BaseModel):
-    first_name: str
-    last_name: str
+    first_name: str = Field(min_length=1)
+    last_name: str = Field(min_length=1)
     email: EmailStr
     gender: Gender
     tenant_id: PydanticObjectId | None = None
