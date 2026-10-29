@@ -80,10 +80,15 @@ _SECURITY_HEADERS = {
     # flow, so no window-placement flow exists to break; a compromised
     # script could otherwise enumerate the user's screens and place
     # windows on them for UI spoofing).
+    # Keyboard map is disabled for the same reason (verified by grep:
+    # the SPA never calls getLayoutMap and has no keyboard-layout
+    # flow, so no layout-dependent feature exists to break; a
+    # compromised script could otherwise read the user's keyboard
+    # layout for fingerprinting).
     # Clipboard-write is a separate directive and is deliberately left
     # alone, as are the WebAuthn directives: passkey login/registration
     # must keep working, including USB/BLE/NFC authenticators.
-    b"permissions-policy": b"camera=(), microphone=(), geolocation=(), payment=(), clipboard-read=(), display-capture=(), fullscreen=(), accelerometer=(), gyroscope=(), magnetometer=(), xr-spatial-tracking=(), idle-detection=(), picture-in-picture=(), browsing-topics=(), attribution-reporting=(), window-management=()",
+    b"permissions-policy": b"camera=(), microphone=(), geolocation=(), payment=(), clipboard-read=(), display-capture=(), fullscreen=(), accelerometer=(), gyroscope=(), magnetometer=(), xr-spatial-tracking=(), idle-detection=(), picture-in-picture=(), browsing-topics=(), attribution-reporting=(), window-management=(), keyboard-map=()",
 }
 
 
