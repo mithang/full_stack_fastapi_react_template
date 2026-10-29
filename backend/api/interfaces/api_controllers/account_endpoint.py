@@ -281,7 +281,8 @@ async def change_email_confirmation(
 ):
     try:
         await auth_service.change_email_confirmation(
-            token=request.token
+            token=request.token,
+            current_user_id=str(current_user.id)
         )
     except InvalidOperationException as e:
         raise HTTPException(status_code=400, detail="Email change confirmation failed.")

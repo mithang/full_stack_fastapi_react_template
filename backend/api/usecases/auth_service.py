@@ -484,14 +484,20 @@ class AuthService:
             type=MessageType.html
         )
 
-    async def change_email_confirmation(self, token: str) -> None:
+    async def change_email_confirmation(self, token: str, current_user_id: str) -> None:
         """
             Confirm and complete the email change process.
             Raises InvalidOperationException if the new email is already in use.
             Updates the user's email to the new email address after confirmation.
             Sends a notification email to the user about the email change.
+            The token's user must be the authenticated caller: the endpoint
+            is authenticated, so applying a token issued for another user
+            would let any logged-in session change that user's email (and
+            then password-reset into the account) from a leaked token.
         """
         payload = await self.jwt_token_service.verify_change_email_token(token=token)
+        if payload.user_id != current_user_id:
+            raise InvalidOperationException("Email change token does not belong to the authenticated user.")
         user = await self.user_service.get_user_by_id(user_id=payload.user_id)
         does_exist = await self.user_service.check_email_exists(email=payload.email)
         if does_exist is True:
