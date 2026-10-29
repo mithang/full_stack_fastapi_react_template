@@ -106,11 +106,15 @@ _SECURITY_HEADERS = {
     # gated by the publickey-credentials-get/create directives, not
     # by these transport directives — the browser talks CTAP to USB /
     # BLE / NFC authenticators internally, so those authenticators
-    # keep working with the transport APIs disabled.
+    # keep working with the transport APIs disabled. Serial is
+    # disabled for the same reason (verified by grep: the SPA never
+    # calls navigator.serial and has no Web Serial flow, so no
+    # serial-device feature exists to break; a compromised script
+    # could otherwise talk to a plugged-in serial device).
     # Clipboard-write is a separate directive and is deliberately left
     # alone, as are the WebAuthn directives: passkey login/registration
     # must keep working, including USB/BLE/NFC authenticators.
-    b"permissions-policy": b"camera=(), microphone=(), geolocation=(), payment=(), clipboard-read=(), display-capture=(), fullscreen=(), accelerometer=(), gyroscope=(), magnetometer=(), xr-spatial-tracking=(), idle-detection=(), picture-in-picture=(), browsing-topics=(), attribution-reporting=(), window-management=(), keyboard-map=(), ambient-light-sensor=(), wake-lock=(), usb=(), bluetooth=(), hid=(), nfc=()",
+    b"permissions-policy": b"camera=(), microphone=(), geolocation=(), payment=(), clipboard-read=(), display-capture=(), fullscreen=(), accelerometer=(), gyroscope=(), magnetometer=(), xr-spatial-tracking=(), idle-detection=(), picture-in-picture=(), browsing-topics=(), attribution-reporting=(), window-management=(), keyboard-map=(), ambient-light-sensor=(), wake-lock=(), usb=(), bluetooth=(), hid=(), nfc=(), serial=()",
 }
 
 
