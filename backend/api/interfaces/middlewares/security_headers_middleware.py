@@ -391,7 +391,16 @@ _SECURITY_HEADERS = {
     # a dedicated Web Worker, not in document tasks, so no app flow
     # exists to break; a compromised script could otherwise keep
     # executing in a non-rendered frame from the app's origin.)
-    b"permissions-policy": b"camera=(), microphone=(), geolocation=(), payment=(), clipboard-read=(), display-capture=(), fullscreen=(), accelerometer=(), gyroscope=(), magnetometer=(), xr-spatial-tracking=(), idle-detection=(), picture-in-picture=(), browsing-topics=(), attribution-reporting=(), window-management=(), keyboard-map=(), ambient-light-sensor=(), wake-lock=(), usb=(), bluetooth=(), hid=(), nfc=(), serial=(), gamepad=(), web-share=(), local-fonts=(), otp-credentials=(), identity-credentials=(), storage-access=(), private-state-token=(), speaker-selection=(), encrypted-media=(), shared-storage=(), compute-pressure=(), sync-xhr=(), autoplay=(), midi=(), join-ad-interest-group=(), run-ad-auction=(), document-domain=(), eyedropper=(), all-screens-capture=(), digital-credentials=(), unload=(), aria-notify=(), captured-surface-control=(), deferred-fetch-minimal=(), battery=(), ch-ua-high-entropy-values=(), translator=(), summarizer=(), language-detector=(), language-model=(), screen-wake-lock=(), on-device-speech-recognition=(), identity-credentials-get=(), private-state-token-issuance=(), private-state-token-redemption=(), local-network-access=(), deferred-fetch=(), local-network=(), loopback-network=(), execution-while-not-rendered=()",
+    # Task execution in out-of-viewport frames is disabled under its
+    # directive name (verified against Chromium's fenced-frame
+    # Permissions Policies doc, which lists kExecutionWhileOutOfViewport
+    # alongside kExecutionWhileNotRendered as the execution-gating
+    # features: the SPA embeds no iframes at all — grep over
+    # frontend/app/src finds no <iframe> — and the token refresh runs in
+    # a dedicated Web Worker, not in document tasks, so no app flow
+    # exists to break; a compromised script could otherwise keep
+    # executing in a frame scrolled out of view from the app's origin.)
+    b"permissions-policy": b"camera=(), microphone=(), geolocation=(), payment=(), clipboard-read=(), display-capture=(), fullscreen=(), accelerometer=(), gyroscope=(), magnetometer=(), xr-spatial-tracking=(), idle-detection=(), picture-in-picture=(), browsing-topics=(), attribution-reporting=(), window-management=(), keyboard-map=(), ambient-light-sensor=(), wake-lock=(), usb=(), bluetooth=(), hid=(), nfc=(), serial=(), gamepad=(), web-share=(), local-fonts=(), otp-credentials=(), identity-credentials=(), storage-access=(), private-state-token=(), speaker-selection=(), encrypted-media=(), shared-storage=(), compute-pressure=(), sync-xhr=(), autoplay=(), midi=(), join-ad-interest-group=(), run-ad-auction=(), document-domain=(), eyedropper=(), all-screens-capture=(), digital-credentials=(), unload=(), aria-notify=(), captured-surface-control=(), deferred-fetch-minimal=(), battery=(), ch-ua-high-entropy-values=(), translator=(), summarizer=(), language-detector=(), language-model=(), screen-wake-lock=(), on-device-speech-recognition=(), identity-credentials-get=(), private-state-token-issuance=(), private-state-token-redemption=(), local-network-access=(), deferred-fetch=(), local-network=(), loopback-network=(), execution-while-not-rendered=(), execution-while-out-of-viewport=()",
 }
 
 
