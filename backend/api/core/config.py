@@ -33,7 +33,6 @@ class Settings(BaseSettings):
     multi_tenancy_strategy: str = "header"
     
     host_main_domain: str = "fsrapp.com"
-    host_main_domain_prefix: str = "demo"  # Prefix for subdomains, e.g., demo.fsrapp.com. Change as needed.
 
     redis_uri: str = "redis://localhost:6372"
     celery_result_backend: str = "redis://localhost:6372/0"
