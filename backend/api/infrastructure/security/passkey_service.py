@@ -119,6 +119,25 @@ class PasskeyService():
         if expected_challenge is None:
             raise PassKeyException("No expected challenge found or challenge expired.")
 
+        user_passkey = await self.user_passkey_repo.single_or_none(user_email=email)
+        if user_passkey is None:
+            raise PassKeyException("User passkey record not found.")
+
+        # Challenge/record tenant-scope guard: get_challenge() looks up by
+        # email + type only, so a stale challenge stamped for one tenant
+        # (save_challenge never deletes superseded challenges of the same
+        # type) must not complete against a passkey record stamped for
+        # another tenant in the same DB — the RP check below is derived
+        # from the challenge's tenant, so without this the ceremony could
+        # be verified for the wrong tenant's record. Both stamps are set
+        # from the same user record by register_options, so legitimate
+        # completions always match; a mismatch fails closed before any
+        # credential is stored.
+        challenge_tenant = str(expected_challenge.tenant_id) if expected_challenge.tenant_id else None
+        record_tenant = str(user_passkey.tenant_id) if user_passkey.tenant_id else None
+        if challenge_tenant != record_tenant:
+            raise PassKeyException("Passkey challenge does not match the user's tenant scope.")
+
         rep = await self._get_rep_id_and_name(expected_challenge.tenant_id)
         logger.info(f"Completing registration for user {email} with RP ID {rep.rp_id}.")
 
@@ -129,11 +148,6 @@ class PasskeyService():
             expected_origin=f"https://{rep.rp_id}",
             require_user_verification=False,
         )
-
-        user_passkey = await self.user_passkey_repo.single_or_none(user_email=email)
-        if user_passkey is None:
-            raise PassKeyException("User passkey record not found.")
-        
 
         cred_data = Credential(
             credential_id=base64.urlsafe_b64encode(verified.credential_id).decode(),
@@ -200,7 +214,18 @@ class PasskeyService():
 
         if user_passkey is None or len(user_passkey.credentials) == 0:
             raise PassKeyException("No credentials found for the user. Please register first.")
-        
+
+        # Same challenge/record tenant-scope guard as
+        # complete_registration: auth_login_options stamps the challenge
+        # with the record's tenant_id, so a legitimate completion always
+        # matches; a stale challenge stamped for another tenant must not
+        # authenticate against this record. Checked before verification,
+        # so no sign-in count is updated on a mismatched attempt.
+        challenge_tenant = str(expected_challenge.tenant_id) if expected_challenge.tenant_id else None
+        record_tenant = str(user_passkey.tenant_id) if user_passkey.tenant_id else None
+        if challenge_tenant != record_tenant:
+            raise PassKeyException("Passkey challenge does not match the user's tenant scope.")
+
         rep = await self._get_rep_id_and_name(expected_challenge.tenant_id)
 
         user_credentials = user_passkey.credentials
