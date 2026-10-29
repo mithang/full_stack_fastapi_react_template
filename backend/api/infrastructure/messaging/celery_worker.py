@@ -28,6 +28,14 @@ mongo_db_default = os.getenv("MONGO_DB_NAME")
 coolify_enabled = os.getenv("COOLIFY_ENABLED", "false").lower() == "true"
 logger = get_logger(__name__)
 
+
+def _safe_log_value(value) -> str:
+    # The DNS-update payload is an unvalidated dict[str, str], so a
+    # newline-bearing custom_domain would otherwise forge extra log
+    # lines. Flatten CR/LF here; the raw value still drives the DNS
+    # lookup, and normal hostnames render identically.
+    return str(value).replace("\r", " ").replace("\n", " ")
+
 celery_app = Celery(
     'worker',
     broker=broker_url,
@@ -113,7 +121,7 @@ async def _handle_tenant_dns_update_async(payload: str):
         try:
             result = await dns_service.resolve(hostname=hostname, expected_target=get_host_main_domain_name())
             if result:
-                logger.info(f"DNS for {hostname} is correctly pointing to {get_host_main_domain_name()}. No action needed.")
+                logger.info(f"DNS for {_safe_log_value(hostname)} is correctly pointing to {get_host_main_domain_name()}. No action needed.")
                 await db.close()
                 await _notify_dns_status(
                     tenant_id=worker_payload.tenant_id,
@@ -123,13 +131,14 @@ async def _handle_tenant_dns_update_async(payload: str):
                     hostname=hostname
                 )
                 await _update_tenant_custom_domain_status(tenant_id=worker_payload.tenant_id, status="active")
-                logger.info(f"Completed DNS update for subdomain: {worker_payload.data}")
+                safe_data = {k: _safe_log_value(v) for k, v in worker_payload.data.items()}
+                logger.info(f"Completed DNS update for subdomain: {safe_data}")
             else:
-                logger.warning(f"DNS for {hostname} is NOT pointing to {get_host_main_domain_name()}.")
+                logger.warning(f"DNS for {_safe_log_value(hostname)} is NOT pointing to {get_host_main_domain_name()}.")
                 raise Exception("DNS resolution did not return expected target.")
             await db.close()
         except Exception as e:
-            logger.error(f"Error occurred while checking DNS for {hostname}: {e}")
+            logger.error(f"Error occurred while checking DNS for {_safe_log_value(hostname)}: {e}")
             await _update_tenant_custom_domain_status(tenant_id=worker_payload.tenant_id, status="failed")
         
 
