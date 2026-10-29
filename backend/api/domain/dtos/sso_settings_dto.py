@@ -1,6 +1,6 @@
 from typing import Optional
 from beanie import PydanticObjectId
-from pydantic import BaseModel, field_serializer
+from pydantic import BaseModel, Field, field_serializer
 
 from api.domain.entities.sso_settings import SSOProvider
 
@@ -14,12 +14,17 @@ class SSOSettingsDto(BaseModel):
     redirect_uris: Optional[list[str]] = []
 
 class CreateSSOSettingsDto(SSOSettingsDto):
+    # The SSO form requires client_id (zod min(1)); an empty string would
+    # otherwise persist and only fail later at provider login time.
+    # client_secret is deliberately left as-is: the form allows it empty
+    # (z.string().default(''), sent as null) for providers without one.
+    client_id: str = Field(min_length=1)
     tenant_id: Optional[str] | None = None
 
 class UpdateSSOSettingsDto(BaseModel):
     enabled: Optional[bool] | None = None
     provider: Optional[SSOProvider] | None = None
-    client_id: Optional[str] | None = None
+    client_id: Optional[str] | None = Field(default=None, min_length=1)
     client_secret: Optional[str] | None = None
     scopes: Optional[list[str]] = None
 
