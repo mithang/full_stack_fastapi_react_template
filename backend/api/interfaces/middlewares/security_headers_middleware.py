@@ -75,10 +75,15 @@ _SECURITY_HEADERS = {
     # to break; a compromised script could otherwise use them to
     # fingerprint the user or attribute conversions on the app's
     # origin).
+    # Window management is disabled for the same reason (verified by
+    # grep: the SPA never calls getScreenDetails and has no multi-screen
+    # flow, so no window-placement flow exists to break; a compromised
+    # script could otherwise enumerate the user's screens and place
+    # windows on them for UI spoofing).
     # Clipboard-write is a separate directive and is deliberately left
     # alone, as are the WebAuthn directives: passkey login/registration
     # must keep working, including USB/BLE/NFC authenticators.
-    b"permissions-policy": b"camera=(), microphone=(), geolocation=(), payment=(), clipboard-read=(), display-capture=(), fullscreen=(), accelerometer=(), gyroscope=(), magnetometer=(), xr-spatial-tracking=(), idle-detection=(), picture-in-picture=(), browsing-topics=(), attribution-reporting=()",
+    b"permissions-policy": b"camera=(), microphone=(), geolocation=(), payment=(), clipboard-read=(), display-capture=(), fullscreen=(), accelerometer=(), gyroscope=(), magnetometer=(), xr-spatial-tracking=(), idle-detection=(), picture-in-picture=(), browsing-topics=(), attribution-reporting=(), window-management=()",
 }
 
 
