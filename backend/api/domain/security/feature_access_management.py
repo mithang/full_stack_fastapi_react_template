@@ -23,14 +23,19 @@ def check_feature_access(feature_name: FeatureEnum) -> callable:
         tenant_service = get_tenant_service()
         tenant = await tenant_service.get_tenant_by_id(tenant_id=request.state.tenant_id)
 
+        # Tenant names are free-form (CreateTenantDto.name is a plain str),
+        # so strip CR/LF before logging: a name containing a newline could
+        # otherwise forge extra log lines.
+        safe_tenant_name = tenant.name.replace("\r", " ").replace("\n", " ")
+
         for f in tenant.features:
             if f.name == feature_name:
                 if f.enabled is False:
-                    logger.info(f"Feature {feature_name.value} is disabled for tenant {tenant.name}")
+                    logger.info(f"Feature {feature_name.value} is disabled for tenant {safe_tenant_name}")
                     raise FeatureNotEnabledException(feature_name.value)
                 break
                     
                 
-        logger.info(f"Feature {feature_name.value} is enabled for tenant {tenant.name}")
+        logger.info(f"Feature {feature_name.value} is enabled for tenant {safe_tenant_name}")
         return True
     return dependency
