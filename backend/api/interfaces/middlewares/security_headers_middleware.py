@@ -131,10 +131,16 @@ _SECURITY_HEADERS = {
     # a typed-code UI component only — so no SMS auto-read flow
     # exists to break; a compromised script could otherwise
     # auto-read SMS one-time codes delivered to the device).
+    # Identity credentials are disabled for the same reason (verified
+    # by grep: the SPA never uses navigator.identity / FedCM — its
+    # SSO flows are plain redirects, not the Federated Credential
+    # Management API — so no federated sign-in flow exists to break;
+    # a compromised script could otherwise silently trigger a
+    # federated identity prompt on the app's origin).
     # Clipboard-write is a separate directive and is deliberately left
     # alone, as are the WebAuthn directives: passkey login/registration
     # must keep working, including USB/BLE/NFC authenticators.
-    b"permissions-policy": b"camera=(), microphone=(), geolocation=(), payment=(), clipboard-read=(), display-capture=(), fullscreen=(), accelerometer=(), gyroscope=(), magnetometer=(), xr-spatial-tracking=(), idle-detection=(), picture-in-picture=(), browsing-topics=(), attribution-reporting=(), window-management=(), keyboard-map=(), ambient-light-sensor=(), wake-lock=(), usb=(), bluetooth=(), hid=(), nfc=(), serial=(), gamepad=(), web-share=(), local-fonts=(), otp-credentials=()",
+    b"permissions-policy": b"camera=(), microphone=(), geolocation=(), payment=(), clipboard-read=(), display-capture=(), fullscreen=(), accelerometer=(), gyroscope=(), magnetometer=(), xr-spatial-tracking=(), idle-detection=(), picture-in-picture=(), browsing-topics=(), attribution-reporting=(), window-management=(), keyboard-map=(), ambient-light-sensor=(), wake-lock=(), usb=(), bluetooth=(), hid=(), nfc=(), serial=(), gamepad=(), web-share=(), local-fonts=(), otp-credentials=(), identity-credentials=()",
 }
 
 
