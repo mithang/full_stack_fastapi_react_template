@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ProductDto(BaseModel):
@@ -14,7 +14,7 @@ class ProductListDto(BaseModel):
 
 
 class CreateProductDto(BaseModel):
-    name: str
-    description: str
+    name: str = Field(min_length=1)
+    description: str = Field(min_length=1)
     tax_code: str | None = None
     active: bool = True
