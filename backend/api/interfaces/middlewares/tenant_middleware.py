@@ -12,6 +12,18 @@ from api.infrastructure.persistence.mongodb import mongo_client as db
 
 logger = get_logger(__name__)
 
+
+def _safe_log_value(value) -> str:
+    # tenant_id below can arrive as a query param (request.query_params
+    # percent-decodes it), unlike the X-Tenant-ID header value, so a
+    # newline-bearing value would otherwise forge extra log lines on
+    # every request carrying it — unauthenticated, before any handler
+    # runs (same class as the endpoint/service fixes in iterations
+    # 951-969). Only the logged copy is flattened; the raw value still
+    # drives the PydanticObjectId conversion and its fallback.
+    return str(value).replace("\r", " ").replace("\n", " ")
+
+
 class TenantMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         tenant_id: Optional[str] = None
@@ -41,7 +53,7 @@ class TenantMiddleware(BaseHTTPMiddleware):
 
  
         if tenant_id is not None:
-            logger.debug(f"Tenant ID found: {tenant_id}")
+            logger.debug(f"Tenant ID found: {_safe_log_value(tenant_id)}")
             try:
                 request.state.tenant_id = PydanticObjectId(tenant_id)
                 # Initialize the database for the tenant and initialize
@@ -64,7 +76,7 @@ class TenantMiddleware(BaseHTTPMiddleware):
                 # scoped handlers still fail closed on their own auth
                 # checks, and a valid id behaves as before.
                 logger.warning(
-                    f"Invalid tenant id '{tenant_id}', falling back to host scope"
+                    f"Invalid tenant id '{_safe_log_value(tenant_id)}', falling back to host scope"
                 )
                 tenant_id = None
         # A malformed id falls through here to the host/default-
