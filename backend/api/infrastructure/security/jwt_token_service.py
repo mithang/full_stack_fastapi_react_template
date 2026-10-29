@@ -9,6 +9,17 @@ from api.common.security import ACCESS_TOKEN_EXPIRE_MINUTES, ACTIVATION_TOKEN_EX
 from api.common.exceptions import InvalidOperationException
 
 logger  = get_logger(__name__)
+
+
+def _safe_log_value(value) -> str:
+    # The two verify_* methods below state "Payload intentionally not
+    # logged", yet they logged the payload's "type" claim verbatim at
+    # debug level. The claim is signature-validated, so forging it
+    # needs a valid signature today, but a newline-bearing claim
+    # would still forge extra log lines if one ever reached the log;
+    # flatten CR/LF here, same pattern as celery_worker and
+    # coolify_app, and normal type strings render identically.
+    return str(value).replace("\r", " ").replace("\n", " ")
 class JwtTokenService:
     def __init__(self):
         logger.info("Initialized.")
@@ -145,7 +156,7 @@ class JwtTokenService:
             payload = jwt.decode(token, jwt_secret, algorithms=[ALGORITHM])
             # Payload intentionally not logged: it carries the user's id and email.
             if payload.get("type") != "password_reset_confirmation":
-                logger.debug(f"Invalid token type: {payload.get('type')}")
+                logger.debug(f"Invalid token type: {_safe_log_value(payload.get('type'))}")
                 raise InvalidOperationException("Invalid token type")
             return VerifyEmailTokenPayloadDto(
                 user_id=payload.get("user_id"),
@@ -173,7 +184,7 @@ class JwtTokenService:
             payload = jwt.decode(token, JWT_SECRET, algorithms=[ALGORITHM])
             # Payload intentionally not logged: it carries the user's id and email.
             if payload.get("type") != "change_email_confirmation":
-                logger.debug(f"Invalid token type: {payload.get('type')}")
+                logger.debug(f"Invalid token type: {_safe_log_value(payload.get('type'))}")
                 raise jwt.InvalidTokenError("Invalid token type")
             return VerifyEmailTokenPayloadDto(
                 user_id=payload.get("user_id"),
