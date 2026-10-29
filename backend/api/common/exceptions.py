@@ -37,7 +37,16 @@ class ConflictException(ApiBaseException):
 class UnauthorizedException(ApiBaseException):
     """Unauthorized or forbidden action."""
     def __init__(self, message: str):
-        super().__init__(message)
+        # Same handler-logging premise as ForbiddenException above:
+        # today's raise sites are fixed strings, but the base takes
+        # caller-built messages directly, so flatten CR/LF here to
+        # keep any future caller embedding a raw identifier from
+        # re-opening the log-forging vector. This is the last
+        # verbatim-message base in this file: NotFound/Conflict,
+        # InvalidOperation, Forbidden, AuthenticationFailed, Aws and
+        # Azure all already flatten at construction.
+        safe_message = str(message).replace("\r", " ").replace("\n", " ")
+        super().__init__(safe_message)
 
 class InvalidOperationException(ApiBaseException):
     """Invalid input or operation."""
