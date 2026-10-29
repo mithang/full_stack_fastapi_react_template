@@ -81,6 +81,33 @@ class UserService:
             raise UserNotFoundException(user_id)
         return existing
 
+    async def assert_profile_image_owned(self, image_key: str, tenant_id: str | PydanticObjectId | None = None) -> None:
+        """Fail unless some user in the caller's scope stores this key as their profile picture.
+
+        The profile-image endpoint mints a presigned URL for an arbitrary
+        storage key, and the scope guard in the controller only checks
+        which database served the request — so any authenticated caller
+        with USER_VIEW_ONLY could mint URLs for any object in the shared
+        bucket (another tenant's avatar, or any other stored object whose
+        uuid-prefixed key they learn) as long as the request hit their
+        own tenant DB. Legitimate callers only ever pass a user's stored
+        image_url (the auth provider and the user table both pass the
+        value verbatim, and both already tolerate a rejection with a
+        fallback avatar), so requiring an owning user record closes the
+        arbitrary-key minting without changing those flows. Ownership is
+        checked with the same stamp rule as get_user_by_id(): host
+        callers (tenant_id None) keep the global view, a tenant caller
+        needs an owner stamped with their own tenant, and an unknown or
+        cross-tenant key answers with the same 404 as an unknown user
+        id, so probing a key reveals neither its existence nor its
+        owner. All owners are considered (not just the first match) so
+        a key legitimately stored on two users is not denied because
+        the first match belongs to another tenant.
+        """
+        owners = await self.user_repository.search({"image_url": image_key})
+        if not any(_caller_may_access(owner.tenant_id, tenant_id) for owner in owners):
+            raise UserNotFoundException(image_key)
+
     async def create_user(self, user_data: CreateUserDto, *, skip_password_validation: bool = False) -> PydanticObjectId:
         """Create a new user and returns its ID. Raises EmailAlreadyExistsException if email already exists."""
         # Enforce the same password policy as tenant creation (iteration 427)

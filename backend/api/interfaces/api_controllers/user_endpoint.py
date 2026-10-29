@@ -272,9 +272,17 @@ async def get_profile_image(
     current_user: CurrentUser,
     _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.USER_VIEW_ONLY])),
     file_service: FileService = Depends(get_file_service),
+    service: UserService = Depends(get_user_service),
     request_tenant_id = Depends(get_tenant_id)
 ):
     _assert_profile_image_scope(current_user, request_tenant_id)
+    # Mint only keys that are actually a profile picture in the caller's
+    # scope: without this, any caller with USER_VIEW_ONLY could mint a
+    # presigned URL for any object in the shared bucket by guessing or
+    # learning its uuid-prefixed key. Runs before the storage call so
+    # a rejected key leaks no URL, and an unknown/cross-tenant key
+    # answers 404, the same as an unknown user id.
+    await service.assert_profile_image_owned(image_key, tenant_id=current_user.tenant_id)
     # This GET returns a freshly minted presigned URL (1-hour expiry),
     # so it must never be served from a browser or proxy cache: a
     # cached 200 would hand back an expired URL after the hour instead
