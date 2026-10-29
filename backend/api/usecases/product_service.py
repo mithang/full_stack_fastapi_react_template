@@ -7,6 +7,18 @@ from api.infrastructure.persistence.repositories.payment_repository_impl import 
 
 logger = get_logger(__name__)
 
+
+def _safe_log_value(value: object) -> str:
+    # Product ids arrive as a {product_id:path} URL param, which
+    # Starlette percent-decodes, so a newline-bearing id would
+    # otherwise reach the log lines below (and, via the exception
+    # messages, the API exception handler's log line) and forge extra
+    # log lines. Only the logged/reported copy is flattened; the raw
+    # id still drives the Stripe calls, and normal ids render
+    # identically.
+    return str(value).replace("\r", " ").replace("\n", " ")
+
+
 class ProductService:
     def __init__(self, payment_repository: PaymentRepository, stripe_resolver: StripeResolver):
         self.payment_repository: PaymentRepository = payment_repository
@@ -36,7 +48,7 @@ class ProductService:
             sc = await self.stripe_resolver.get_stripe_client(scope=scope)
             product = await sc.v1.products.retrieve_async(id=product_id)
         except Exception as e:
-            logger.error(f"Failed to retrieve product {product_id}: {str(e)}")
+            logger.error(f"Failed to retrieve product {_safe_log_value(product_id)}: {str(e)}")
             # The retrieve is unwrapped, so a Stripe failure reached the
             # client as a raw 500 instead of a mapped API error — and
             # an unknown product id was indistinguishable from an outage.
@@ -45,10 +57,10 @@ class ProductService:
             # else — auth failure, Stripe outage, resolver error — is a
             # product error (406 via ProductException).
             if getattr(e, "http_status", None) == 404:
-                raise ProductNotFoundException(product_id) from e
-            raise ProductException(f"Failed to retrieve product {product_id}.") from e
+                raise ProductNotFoundException(_safe_log_value(product_id)) from e
+            raise ProductException(f"Failed to retrieve product {_safe_log_value(product_id)}.") from e
         if not product:
-            raise ProductNotFoundException(f"Product with ID {product_id} not found.")
+            raise ProductNotFoundException(f"Product with ID {_safe_log_value(product_id)} not found.")
         return ProductDto(id=product.id, name=product.name, description=product.description, active=product.active, tax_code=product.tax_code) 
 
     async def create_product(self, product_dto: CreateProductDto, scope: ScopeType):
@@ -67,7 +79,7 @@ class ProductService:
             sc = await self.stripe_resolver.get_stripe_client(scope=scope)
             existing_product = await sc.v1.products.retrieve_async(id=product_id)
             if not existing_product:
-                raise ProductNotFoundException(f"Product with ID {product_id} not found.")
+                raise ProductNotFoundException(f"Product with ID {_safe_log_value(product_id)} not found.")
             
             sc = await self.stripe_resolver.get_stripe_client(scope=scope)
             params = product_dto.model_dump()
@@ -86,8 +98,8 @@ class ProductService:
             # product error (406 via ProductException), not a 404.
             logger.error(f"Failed to update product: {str(e)}")
             if getattr(e, "http_status", None) == 404:
-                raise ProductNotFoundException(f"Product with ID {product_id} not found.") from e
-            raise ProductException(f"Failed to update product {product_id}.") from e
+                raise ProductNotFoundException(f"Product with ID {_safe_log_value(product_id)} not found.") from e
+            raise ProductException(f"Failed to update product {_safe_log_value(product_id)}.") from e
 
     async def delete_product(self, product_id: str, scope: ScopeType):
         try:
@@ -102,5 +114,5 @@ class ProductService:
             # failure, Stripe outage, resolver error — is a product error,
             # not a 404 claiming the product does not exist.
             if getattr(e, "http_status", None) == 404:
-                raise ProductNotFoundException(f"Product with ID {product_id} not found.") from e
-            raise ProductException(f"Failed to delete product {product_id}.") from e
+                raise ProductNotFoundException(f"Product with ID {_safe_log_value(product_id)} not found.") from e
+            raise ProductException(f"Failed to delete product {_safe_log_value(product_id)}.") from e
