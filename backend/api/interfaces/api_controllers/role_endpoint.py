@@ -93,6 +93,25 @@ def _assert_list_scope(current_user: CurrentUser, request_tenant_id) -> None:
         raise ForbiddenException("Roles cannot be listed outside your tenant's scope.")
 
 
+def _assert_get_scope(current_user: CurrentUser, request_tenant_id) -> None:
+    # Get-in-wrong-DB guard, mirroring the list guard above and the
+    # users get guard: get_role_by_id already scopes the target to
+    # the caller's tenant stamp, but nothing checks which database
+    # served the request. So a tenant caller reading on the host DB
+    # (no X-Tenant-ID/subdomain, request scope None) could still read
+    # a tenant-stamped role sitting in the host DB (e.g. planted
+    # before the create guard), including its name and permissions.
+    # Legitimate tenant role reads happen in the caller's own tenant
+    # DB, where the middleware scope equals their tenant id, and host
+    # callers (tenant_id None) are unaffected. A mismatched scope
+    # fails closed before any read, so it also leaks no existence
+    # signal via the 404.
+    if current_user.tenant_id is not None and (
+        request_tenant_id is None or str(request_tenant_id) != str(current_user.tenant_id)
+    ):
+        raise ForbiddenException("Role cannot be read outside your tenant's scope.")
+
+
 @router.get("/", response_model=RoleListDto)
 async def list_roles(
     response: Response,
@@ -185,8 +204,16 @@ async def get_role(
     role_id: str,
     current_user: CurrentUser,
     service: RoleService = Depends(get_role_service),
-    _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.ROLE_VIEW_ONLY]))
+    _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.ROLE_VIEW_ONLY])),
+    request_tenant_id = Depends(get_tenant_id)
 ):
+    # Same get-in-wrong-DB guard as GET /users/{user_id}: the read is
+    # stamp-filtered but, without a middleware-scope check, a tenant
+    # caller reading on the host DB (no X-Tenant-ID/subdomain,
+    # request scope None) could still read a tenant-stamped role
+    # sitting in the host DB (e.g. planted before the create guard).
+    # Guard runs before any read.
+    _assert_get_scope(current_user, request_tenant_id)
     # Same no-store hardening as the GET /roles/ list above: this GET
     # returns a single role (name and permissions), so a cached 200
     # could serve one tenant's role to another admin after an account
