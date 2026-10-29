@@ -242,13 +242,39 @@ async def update_user(
     serialized_user = await user_doc.to_serializable_dict()
     return UserDto(**serialized_user)
 
+def _assert_profile_image_scope(current_user: CurrentUser, request_tenant_id) -> None:
+    # Profile-image-in-wrong-DB guard, mirroring the get/list
+    # guards above: this endpoint mints a presigned URL for an
+    # arbitrary storage key and takes no user id, so nothing
+    # scopes it at all — not even to the caller's tenant stamp.
+    # A tenant caller minting on the host DB (no
+    # X-Tenant-ID/subdomain, request scope None) could still
+    # mint URLs for objects in the shared bucket that host
+    # callers resolve with no tenant scope. Legitimate tenant
+    # avatar fetches happen in the caller's own tenant DB,
+    # where the middleware scope equals their tenant id, and
+    # host callers (tenant_id None) are unaffected. A mismatched
+    # scope fails closed before any storage call, so it also
+    # leaks no URL for the key. (Key ownership — minting only
+    # keys that are actually a profile picture in the caller's
+    # tenant — is a deeper check and is left as a candidate;
+    # keys are uuid-prefixed, so they are not enumerable.)
+    if current_user.tenant_id is not None and (
+        request_tenant_id is None or str(request_tenant_id) != str(current_user.tenant_id)
+    ):
+        raise ForbiddenException("Profile image cannot be read outside your tenant's scope.")
+
+
 @router.get("/profile/{image_key:path}", response_model=UserProfileImageUpdateDto)
 async def get_profile_image(
     response: Response,
     image_key: str,
+    current_user: CurrentUser,
     _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.USER_VIEW_ONLY])),
-    file_service: FileService = Depends(get_file_service)
+    file_service: FileService = Depends(get_file_service),
+    request_tenant_id = Depends(get_tenant_id)
 ):
+    _assert_profile_image_scope(current_user, request_tenant_id)
     # This GET returns a freshly minted presigned URL (1-hour expiry),
     # so it must never be served from a browser or proxy cache: a
     # cached 200 would hand back an expired URL after the hour instead
