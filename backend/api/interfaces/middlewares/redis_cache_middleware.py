@@ -40,6 +40,15 @@ def _redacted_query(query: str) -> str:
         doseq=True,
     )
 
+
+def _safe_log_path(path: str) -> str:
+    # ASGI servers percent-decode the request path, so %0A/%0D in a
+    # URL arrives here as a literal newline and could forge extra log
+    # lines in the debug lines below (same class as the tenant-name
+    # and preference-key fixes). Only the logged copy is flattened —
+    # the real cache key is untouched, so caching behaves as before.
+    return path.replace("\r", " ").replace("\n", " ")
+
 redis_cache_expiry = 300  # Cache expiry time in seconds (5 minutes)
 redis: Redis =  from_url(url=settings.redis_uri, decode_responses=True)
 
@@ -448,7 +457,7 @@ class RedisCacheMiddleware(BaseHTTPMiddleware):
         # read/write fresh, and the login/callback handlers read
         # settings fresh.
         if any(request.url.path.endswith(path) for path in not_allowed_cache_paths) or "/check_subdomain/" in request.url.path or "/search_by_subdomain/" in request.url.path or "/search_by_name/" in request.url.path or "/ai/sessions/" in request.url.path or "/api/v1/products/" in request.url.path or "/api/v1/billing/plans/" in request.url.path or "/api/v1/users/" in request.url.path or "/api/v1/roles/" in request.url.path or "/api/v1/ssos/" in request.url.path or token is None:
-            logger.debug(f"Bypassing cache for path: {request.url.path}")
+            logger.debug(f"Bypassing cache for path: {_safe_log_path(request.url.path)}")
             return await call_next(request)
             
         try:
@@ -498,12 +507,12 @@ class RedisCacheMiddleware(BaseHTTPMiddleware):
         cache_base = f"cu{user_id}:ct{tenant_id}:{request.url.path}?{request.url.query}"
         # Log only the redacted form: the raw query can carry a
         # single-use token (see _REDACTED_QUERY_KEYS).
-        log_cache_base = f"cu{user_id}:ct{tenant_id}:{request.url.path}?{_redacted_query(request.url.query)}"
+        log_cache_base = f"cu{user_id}:ct{tenant_id}:{_safe_log_path(request.url.path)}?{_redacted_query(request.url.query)}"
         log_cache_key = f"cache:{log_cache_base}"
         logger.debug(f"Cache base string: {log_cache_base}")
         cache_key = f"cache:{cache_base}"
 
-        logger.debug(request.method + " " + request.url.path + "?" + _redacted_query(request.url.query))
+        logger.debug(request.method + " " + _safe_log_path(request.url.path) + "?" + _redacted_query(request.url.query))
         # Only cache GET requests
         if request.method != "GET":
             logger.debug(f"Clearing cache for key: {log_cache_key}")
