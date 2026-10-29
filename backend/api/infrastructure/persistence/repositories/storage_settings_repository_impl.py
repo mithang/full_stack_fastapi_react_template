@@ -77,8 +77,19 @@ class StorageSettingsRepository(BaseRepository[StorageSettings], AuditLogReposit
             ))
         return result.id
     
-    async def get_storages(self) -> list[AvailableStorageProviderDto]:
-        settings = await super().list()
+    async def get_storages(self, tenant_id: PydanticObjectId | None = None) -> list[AvailableStorageProviderDto]:
+        # Tenant-scoped listing: the route is MANAGE_STORAGE_SETTINGS-
+        # gated, and that gate also admits FULL_ACCESS holders — which
+        # every tenant's seeded ADMIN role holds — so an unscoped list
+        # previously served every tenant's storage settings (provider,
+        # region, bucket/container names, enabled flags; secrets are
+        # masked to "****" by the DTO serializer) to any tenant admin.
+        # Tenant callers now see only their own tenant's records; host
+        # callers (tenant_id None) keep the global view.
+        if tenant_id is not None:
+            settings = await self.model.find({"tenant_id": tenant_id}).to_list()
+        else:
+            settings = await super().list()
         result = []
         for setting in settings:
             serializable = await setting.to_serializable_dict()

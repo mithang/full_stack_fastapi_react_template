@@ -30,8 +30,18 @@ class StorageSettingsService:
         return await self.storage_settings_repository.configure_storage(setting=settings)
 
 
-    async def get_storages(self) -> list[AvailableStorageProviderDto]:
-        return  await self.storage_settings_repository.get_storages()
+    async def get_storages(self, tenant_id: str | PydanticObjectId | None = None) -> list[AvailableStorageProviderDto]:
+        # Tenant callers see only their tenant's settings; host callers
+        # (tenant_id None) keep the global view. A malformed tenant id
+        # cannot match any record, so fail closed with an empty list
+        # rather than falling back to the unscoped list.
+        tenant_oid = None
+        if tenant_id:
+            try:
+                tenant_oid = PydanticObjectId(tenant_id)
+            except Exception:
+                return []
+        return await self.storage_settings_repository.get_storages(tenant_id=tenant_oid)
 
 
     async def reset_storage(self, storage_id: str, updated_by_user_id: str, tenant_id: Optional[PydanticObjectId] = None) -> None:

@@ -25,6 +25,7 @@ router.tags = ["Storage Settings"]
 @router.get("/", response_model=List[AvailableStorageProviderDto], response_model_exclude_none=True)
 async def get_storage_settings(
     response: Response,
+    current_user: CurrentUser,
     setting_service: StorageSettingsService = Depends(get_storage_settings_service)
 ):
     # Tenant storage configuration (masked secrets included): a
@@ -33,7 +34,7 @@ async def get_storage_settings(
     # freshly updated settings — same class as the SSO list fix.
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
-    res = await setting_service.get_storages()
+    res = await setting_service.get_storages(tenant_id=current_user.tenant_id)
     return [s.model_dump(exclude_none=True) for s in res]
 
 @router.get("/available", response_model=List[dict[str, str]])
