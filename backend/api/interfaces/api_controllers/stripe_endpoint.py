@@ -79,7 +79,7 @@ async def get_stripe_settings(
         raise InvalidOperationException(
             "Tenant context is required to get Stripe settings."
         )
-    return await stripe_setting_service.get_stripe_settings()
+    return await stripe_setting_service.get_stripe_settings(tenant_id=str(current_user.tenant_id))
 
 
 SUPPORTED_EVENTS = {

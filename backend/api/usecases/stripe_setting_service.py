@@ -1,3 +1,4 @@
+from api.core.exceptions import StripeSettingsNotFoundException
 from api.domain.dtos.stripe_setting_dto import CreateStripeSettingDto, StripeSettingDto, StripeSettingSecretDto
 from api.infrastructure.externals.stripe_resolver import StripeResolver
 from api.infrastructure.persistence.repositories.payment_repository_impl import PaymentRepository
@@ -30,7 +31,7 @@ class StripeSettingService:
         settings.tenant_id = tenant_id
         await self.payment_repository.store_stripe_settings(stripe_config=settings)
         
-    async def get_stripe_settings(self) -> StripeSettingDto:
+    async def get_stripe_settings(self, tenant_id: str) -> StripeSettingDto:
         """
         Get the Stripe settings for the application.
         Returns:
@@ -39,6 +40,21 @@ class StripeSettingService:
             StripeSettingsNotFoundException: If there is an error retrieving the settings.
         """
         result = await self.payment_repository.get_stored_stripe_settings()
+        # Scope to the caller's tenant, mirroring the GET /storage/
+        # scoping: the repository returns the single record in the
+        # current DB with no tenant filter, and the endpoint already
+        # requires a tenant context — but a tenant caller without a
+        # tenant DB selected (no X-Tenant-ID/subdomain, hitting the
+        # host DB) would otherwise read whatever settings record sits
+        # in the host DB, stamped with another tenant's id. A record
+        # stamped with a different tenant (or none) is indistinguishable
+        # from no settings at all, so it raises the same 404 the
+        # repository raises when nothing is stored. The secret path
+        # (get_stripe_secret, used by the webhook and the Stripe client
+        # resolver) is deliberately unchanged: it resolves its own
+        # tenant scope from the request/DB context, not the caller.
+        if str(result.tenant_id) != str(tenant_id):
+            raise StripeSettingsNotFoundException("Stripe settings not found.")
         return StripeSettingDto(
             id=str(result.id),
             tenant_id=str(result.tenant_id),
