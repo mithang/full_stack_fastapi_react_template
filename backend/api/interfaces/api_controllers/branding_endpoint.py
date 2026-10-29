@@ -129,6 +129,28 @@ async def upload_logo(
         # creation by a tenant caller on the host DB would squat the
         # singleton slot just as a POST creation would.
         _assert_create_scope(current_user, request_tenant_id)
+    else:
+        # Update-scope pre-check before the upload: the service-level
+        # scope check in update_branding below runs only after the
+        # file is written, so a refused update still left its logo
+        # orphaned in the current scope's storage — the same
+        # upload-before-refusal ordering fixed for the create branch
+        # above. This mirrors that check's decision (host callers
+        # allowed; a tenant caller allowed only for their own stamp,
+        # or for a legacy None-stamped record claimed from their own
+        # tenant DB) using the record already fetched here, and the
+        # service check still runs as the authoritative backstop.
+        # The refusal message matches the service's "not found" so a
+        # probe cannot distinguish a refused record from a missing one.
+        if current_user.tenant_id is not None:
+            stamp = branding.tenant_id
+            claim_legacy = (
+                stamp is None
+                and request_tenant_id is not None
+                and str(request_tenant_id) == str(current_user.tenant_id)
+            )
+            if not claim_legacy and (stamp is None or str(stamp) != str(current_user.tenant_id)):
+                raise BrandingException("Branding not found.")
     key = await file_service.upload_file(file=file)
     logger.debug(f"Logo uploaded successfully with key: {key}")
     if branding is None:
