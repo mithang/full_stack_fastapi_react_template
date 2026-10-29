@@ -31,7 +31,7 @@ class CreatePlanDto(BaseModel):
 
 
 class UpdatePlanDto(BaseModel):
-    trial_period_days: int
+    trial_period_days: int = Field(..., ge=0, le=365, description="Trial period in days, 0..365, matching the Stripe settings trial policy; the billing UI only ever sends 0 or 14.")
     active: bool = True
     metadata: Optional[Dict[str, Any]] = None
 
