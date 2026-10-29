@@ -46,10 +46,14 @@ _SECURITY_HEADERS = {
     # prompt to read a just-copied password or token. Display capture
     # is disabled for the same reason (verified by grep: the SPA never
     # calls getDisplayMedia, so no screen-sharing flow exists to break).
+    # Fullscreen is disabled for the same reason (verified by grep: the
+    # SPA never calls requestFullscreen and has no video/audio element,
+    # so no fullscreen flow exists to break; a compromised script could
+    # otherwise fullscreen-spoof the app UI).
     # Clipboard-write is a separate directive and is deliberately left
     # alone, as are the WebAuthn directives: passkey login/registration
     # must keep working, including USB/BLE/NFC authenticators.
-    b"permissions-policy": b"camera=(), microphone=(), geolocation=(), payment=(), clipboard-read=(), display-capture=()",
+    b"permissions-policy": b"camera=(), microphone=(), geolocation=(), payment=(), clipboard-read=(), display-capture=(), fullscreen=()",
 }
 
 
