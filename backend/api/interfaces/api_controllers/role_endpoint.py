@@ -34,6 +34,26 @@ def _assert_create_scope(current_user: CurrentUser, request_tenant_id) -> None:
         raise ForbiddenException("Role cannot be created outside your tenant's scope.")
 
 
+def _assert_update_scope(current_user: CurrentUser, request_tenant_id) -> None:
+    # Update-in-wrong-DB guard, mirroring the create guard above and
+    # the notification-banner/SSO/storage update guards (iterations
+    # 902-904): the service already refuses a record stamped for
+    # another tenant, but it does not check which database served
+    # the request. So a tenant caller updating on the host DB (no
+    # X-Tenant-ID/subdomain, request scope None) could still edit a
+    # tenant-stamped role sitting in the host DB (e.g. planted
+    # before the create guard), changing its name or permissions
+    # where host callers resolve roles by id with no tenant scope.
+    # Legitimate tenant role edits happen in the caller's own tenant
+    # DB, where the middleware scope equals their tenant id, and
+    # host callers (tenant_id None) are unaffected. A mismatched
+    # scope fails closed before any write.
+    if current_user.tenant_id is not None and (
+        request_tenant_id is None or str(request_tenant_id) != str(current_user.tenant_id)
+    ):
+        raise ForbiddenException("Role cannot be updated outside your tenant's scope.")
+
+
 @router.get("/", response_model=RoleListDto)
 async def list_roles(
     response: Response,
@@ -138,8 +158,10 @@ async def update_role(
     data: UpdateRoleDto,
     current_user: CurrentUser,
     service: RoleService = Depends(get_role_service),
-    _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.ROLE_READ_AND_WRITE_ONLY]))
+    _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.ROLE_READ_AND_WRITE_ONLY])),
+    request_tenant_id = Depends(get_tenant_id),
 ):
+    _assert_update_scope(current_user, request_tenant_id)
     role_doc = await service.update_role(role_id=role_id, role_data=data, tenant_id=current_user.tenant_id)
     serialized_role = await role_doc.to_serializable_dict()
     return RoleDto(**serialized_role)
