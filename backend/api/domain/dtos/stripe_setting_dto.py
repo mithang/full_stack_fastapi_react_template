@@ -5,10 +5,11 @@ from api.domain.entities.stripe_settings import PaymentType
 
 
 class CreateStripeSettingDto(BaseModel):
-    # ISO currency codes are always 3 letters; the settings form caps
-    # this field at 3 chars (zod max(3)), so reject longer values here
-    # instead of persisting a code Stripe will refuse at checkout time.
-    default_currency: str = Field(default="eur", max_length=3)
+    # ISO currency codes are always 3 letters; the settings form requires
+    # exactly 3 chars (zod min(3).max(3)), so reject shorter or longer
+    # values here instead of persisting a code Stripe will refuse at
+    # checkout time.
+    default_currency: str = Field(default="eur", min_length=3, max_length=3)
     # The configure-stripe form requires both secrets non-empty
     # (zod min(1)); reject empty values here instead of persisting
     # a config that only fails later at Stripe/webhook time.
@@ -25,9 +26,9 @@ class CreateStripeSettingDto(BaseModel):
     tenant_id: str
 
 class UpdateStripeSettingDto(BaseModel):
-    # Same 3-letter ISO cap as CreateStripeSettingDto (see above);
-    # None still means "leave unchanged".
-    default_currency: Optional[str] = Field(default=None, max_length=3)
+    # Same exact-3-letter ISO requirement as CreateStripeSettingDto
+    # (see above); None still means "leave unchanged".
+    default_currency: Optional[str] = Field(default=None, min_length=3, max_length=3)
     # Same non-empty requirement as CreateStripeSettingDto;
     # None still means "leave unchanged".
     stripe_webhook_secret: Optional[str] = Field(default=None, min_length=1)
