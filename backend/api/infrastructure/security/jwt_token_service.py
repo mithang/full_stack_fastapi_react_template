@@ -63,6 +63,20 @@ class JwtTokenService:
         try:
             if type == "access_token":
                 payload = jwt.decode(token, JWT_SECRET, algorithms=[ALGORITHM])
+                # Explicit type rejection, mirroring the refresh branch
+                # below: access tokens issued by get_access_token carry
+                # no "type" claim, while every other token signed with
+                # JWT_SECRET (activation, password-reset, change-email)
+                # does. Cross-use is blocked today only incidentally,
+                # by TokenPayloadDto's required sub/email/is_active
+                # fields, so a future token type whose payload happened
+                # to satisfy those fields could replay as a session
+                # token. Rejecting any typed token here makes the
+                # invariant structural; legitimate access tokens are
+                # unaffected, and rejected tokens still surface as
+                # None (401 via the caller), as before.
+                if payload.get("type") is not None:
+                    raise jwt.InvalidTokenError("Invalid token type")
                 return TokenPayloadDto(**payload)
             elif type == "refresh_token":
                 payload = jwt.decode(token, REFRESH_TOKEN_SECRET, algorithms=[REFRESH_ALGORITHM])
