@@ -42,13 +42,35 @@ class UnauthorizedException(ApiBaseException):
 class InvalidOperationException(ApiBaseException):
     """Invalid input or operation."""
     def __init__(self, message: str):
-        super().__init__(message)
+        # The ApiBaseException handler logs ex.message verbatim, and
+        # these two bases take caller-built messages directly — unlike
+        # NotFound/Conflict, which take an identifier. Direct raise
+        # sites embed raw values (dns_resolver's hostname, which
+        # reaches the Celery worker through an unvalidated
+        # dict[str, str] payload; role_endpoint's path-param role_id;
+        # auth_service's plain-str subdomain, which its own except
+        # handler re-logs via {ioe}), so a newline-bearing value
+        # would otherwise forge extra log lines on every failure.
+        # Flatten CR/LF here, at the single construction site,
+        # covering all raise sites at once (subclass messages from
+        # api/core/exceptions.py funnel through here too, and the
+        # flattening is idempotent with their own sanitizing); the
+        # raw values still drive the lookups, and normal messages
+        # render identically.
+        safe_message = str(message).replace("\r", " ").replace("\n", " ")
+        super().__init__(safe_message)
 
 
 class ForbiddenException(ApiBaseException):
     """Forbidden action."""
     def __init__(self, message: str):
-        super().__init__(message)
+        # Same handler-logging premise as InvalidOperationException
+        # above: today's ForbiddenException raise sites are fixed
+        # strings, but the base takes caller-built messages directly,
+        # so flatten CR/LF here to keep any future caller embedding
+        # a raw identifier from re-opening the vector.
+        safe_message = str(message).replace("\r", " ").replace("\n", " ")
+        super().__init__(safe_message)
 
 
 class AuthenticationFailedException(ApiBaseException):
