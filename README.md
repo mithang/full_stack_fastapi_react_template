@@ -398,7 +398,7 @@ To use the Stripe payment features, you need to configure your Stripe account:
 ### Available Services
 
 - **Backend API**: http://localhost:8000
-- **Frontend App**: http://localhost:5173
+- **Frontend App**: http://localhost:3000
 - **API Documentation**: http://localhost:8000/docs
 - **MongoDB**: localhost:27012
 - **Redis**: localhost:6372
