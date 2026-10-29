@@ -85,10 +85,15 @@ _SECURITY_HEADERS = {
     # flow, so no layout-dependent feature exists to break; a
     # compromised script could otherwise read the user's keyboard
     # layout for fingerprinting).
+    # Ambient light sensor is disabled for the same reason (verified
+    # by grep: the SPA never uses AmbientLightSensor and has no
+    # brightness-adaptive flow, so no sensor-driven feature exists
+    # to break; a compromised script could otherwise read ambient
+    # light levels for fingerprinting).
     # Clipboard-write is a separate directive and is deliberately left
     # alone, as are the WebAuthn directives: passkey login/registration
     # must keep working, including USB/BLE/NFC authenticators.
-    b"permissions-policy": b"camera=(), microphone=(), geolocation=(), payment=(), clipboard-read=(), display-capture=(), fullscreen=(), accelerometer=(), gyroscope=(), magnetometer=(), xr-spatial-tracking=(), idle-detection=(), picture-in-picture=(), browsing-topics=(), attribution-reporting=(), window-management=(), keyboard-map=()",
+    b"permissions-policy": b"camera=(), microphone=(), geolocation=(), payment=(), clipboard-read=(), display-capture=(), fullscreen=(), accelerometer=(), gyroscope=(), magnetometer=(), xr-spatial-tracking=(), idle-detection=(), picture-in-picture=(), browsing-topics=(), attribution-reporting=(), window-management=(), keyboard-map=(), ambient-light-sensor=()",
 }
 
 
