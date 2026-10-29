@@ -1,5 +1,5 @@
 from typing import List, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class AIModelInfoDto(BaseModel):
@@ -34,6 +34,13 @@ class AISessionByUserIdDto(AISessionDto):
 
 
 class AIAskRequestDto(BaseModel):
-    question: str
+    # The chat textarea caps input at 2000 characters, but a direct API
+    # call bypasses it, so enforce the same cap server-side: an uncapped
+    # question flows verbatim into the LLM prompt and the persisted
+    # history record, so an oversized question inflates model cost /
+    # context and history storage. 2000 matches the frontend cap exactly,
+    # so no legitimate client flow is affected; overlong questions now
+    # fail FastAPI validation (422) before reaching the model.
+    question: str = Field(..., max_length=2000)
     model_name: Optional[str] = None
     session_id: Optional[str] = None
