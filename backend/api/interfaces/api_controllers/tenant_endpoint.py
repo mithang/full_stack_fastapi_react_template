@@ -103,6 +103,26 @@ def _assert_trial_activation_scope(current_user: CurrentUser, request_tenant_id)
     ):
         raise ForbiddenException("Trial plan cannot be activated outside your tenant's scope.")
 
+
+def _assert_features_read_scope(current_user: CurrentUser, request_tenant_id) -> None:
+    # Same wrong-DB class as _assert_trial_activation_scope (iteration
+    # 925) but for the tenant features GET: the stamp check in
+    # get_tenant_features only compares against the record the
+    # request's database returned, so a tenant caller reading on the
+    # host DB (no X-Tenant-ID/subdomain, request scope None) could
+    # still read the feature enablement of a tenant record sitting in
+    # the host DB (e.g. planted before the create guard), even when
+    # the planted record's id matches the caller's stamp and the old
+    # stamp check would have passed. Legitimate tenant feature reads
+    # happen in the caller's own tenant DB, where the middleware scope
+    # equals their tenant id (the frontend ApiClient sends
+    # X-Tenant-ID), and host callers (tenant_id None) are unaffected.
+    # A mismatched scope fails closed before any read.
+    if current_user.tenant_id is not None and (
+        request_tenant_id is None or str(request_tenant_id) != str(current_user.tenant_id)
+    ):
+        raise ForbiddenException("Tenant features cannot be read outside your tenant's scope.")
+
 @router.get("/", response_model=TenantListDto, status_code=status.HTTP_200_OK)
 async def list_tenants(
     response: Response,
@@ -457,8 +477,10 @@ async def get_tenant_features(
     tenant_id: str,
     current_user: CurrentUser,
     tenant_service: TenantService = Depends(get_tenant_service),
+    request_tenant_id = Depends(get_tenant_id),
     _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.HOST_MANAGE_TENANTS]))
 ):
+    _assert_features_read_scope(current_user, request_tenant_id)
     # The HOST_MANAGE_TENANTS gate also admits FULL_ACCESS holders (see
     # UserAccessManagement), and every tenant's seeded ADMIN role holds
     # FULL_ACCESS, so without this a tenant admin could pass any
