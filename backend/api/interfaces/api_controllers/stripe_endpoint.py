@@ -2,7 +2,7 @@ from typing import Any
 
 import stripe
 from beanie import PydanticObjectId
-from api.common.exceptions import InvalidOperationException
+from api.common.exceptions import ForbiddenException, InvalidOperationException
 from api.common.utils import get_logger
 from api.core.container import get_billing_record_service, get_stripe_setting_service
 from api.domain.dtos.stripe_setting_dto import CreateStripeSettingDto, StripeSettingDto
@@ -10,6 +10,7 @@ from api.domain.enum.feature import Feature as FeatureEnum
 from api.domain.enum.permission import Permission
 from api.domain.security.feature_access_management import check_feature_access
 from api.infrastructure.security.current_user import CurrentUser
+from api.interfaces.middlewares.tenant_middleware import get_tenant_id
 from api.interfaces.security.role_checker import check_permissions_for_current_role
 from api.usecases.billing_record_service import BillingRecordService
 from api.usecases.stripe_setting_service import StripeSettingService
@@ -46,16 +47,41 @@ router.tags = ["Stripe"]
 webhook_router = APIRouter(prefix="/configurations", tags=["Stripe"])
 
 
+def _assert_create_scope(current_user: CurrentUser, request_tenant_id) -> None:
+    # Create/update-in-wrong-DB guard, mirroring the role, user,
+    # branding, banner, and SSO guards: tenancy is per-database, and
+    # Stripe settings are a singleton in the current DB whose update
+    # branch overwrites the stored secret keys without re-stamping
+    # tenant_id. The endpoint already requires a tenant context, but
+    # it never checked the middleware scope, so a tenant caller
+    # without a tenant DB selected (no X-Tenant-ID/subdomain,
+    # request scope None) would overwrite the host DB's singleton —
+    # or squat the host slot on creation — with their own tenant's
+    # keys. GET already fails closed on a scope mismatch (iteration
+    # 883), so only the write needed this guard. Legitimate tenant
+    # configuration happens in the caller's own tenant DB, where the
+    # middleware scope equals their tenant id. A mismatched scope
+    # fails closed rather than writing into the wrong DB.
+    if current_user.tenant_id is not None and (
+        request_tenant_id is None or str(request_tenant_id) != str(current_user.tenant_id)
+    ):
+        raise ForbiddenException(
+            "Stripe settings cannot be configured outside your tenant's scope."
+        )
+
+
 @router.post("/stripe", status_code=status.HTTP_201_CREATED)
 async def configure_stripe_setting(
     configuration: CreateStripeSettingDto,
     current_user: CurrentUser,
     stripe_setting_service: StripeSettingService = Depends(get_stripe_setting_service),
+    request_tenant_id=Depends(get_tenant_id),
 ):
     if not current_user.tenant_id:
         raise InvalidOperationException(
             "Tenant context is required to configure Stripe settings."
         )
+    _assert_create_scope(current_user, request_tenant_id)
 
     await stripe_setting_service.configure_stripe_settings(
         settings=configuration, tenant_id=str(current_user.tenant_id)
