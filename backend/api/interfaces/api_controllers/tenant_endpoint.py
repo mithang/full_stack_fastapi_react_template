@@ -104,6 +104,27 @@ def _assert_trial_activation_scope(current_user: CurrentUser, request_tenant_id)
         raise ForbiddenException("Trial plan cannot be activated outside your tenant's scope.")
 
 
+def _assert_tenant_delete_scope(current_user: CurrentUser, request_tenant_id) -> None:
+    # Same wrong-DB class as _assert_tenant_update_scope (iteration
+    # 923) but for the tenant DELETE: the stamp check in
+    # delete_tenant only compares against the record the request's
+    # database returned, so a tenant caller deleting on the host DB
+    # (no X-Tenant-ID/subdomain, request scope None) could still
+    # delete a tenant record sitting in the host DB (e.g. planted
+    # before the create guard) and dispatch its post-deletion job,
+    # when the planted record's id matches the caller's stamp and
+    # the old stamp check would have passed. Legitimate tenant
+    # deletions happen in the caller's own tenant DB, where the
+    # middleware scope equals their tenant id (the frontend
+    # ApiClient sends X-Tenant-ID), and host callers (tenant_id
+    # None) are unaffected. A mismatched scope fails closed before
+    # any read, deletion, or worker dispatch.
+    if current_user.tenant_id is not None and (
+        request_tenant_id is None or str(request_tenant_id) != str(current_user.tenant_id)
+    ):
+        raise ForbiddenException("Tenant cannot be deleted outside your tenant's scope.")
+
+
 def _assert_features_read_scope(current_user: CurrentUser, request_tenant_id) -> None:
     # Same wrong-DB class as _assert_trial_activation_scope (iteration
     # 925) but for the tenant features GET: the stamp check in
@@ -206,8 +227,19 @@ async def delete_tenant(
     id: str,
     current_user: CurrentUser,
     service: TenantService = Depends(get_tenant_service),
-    _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.HOST_MANAGE_TENANTS]))
+    _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.HOST_MANAGE_TENANTS])),
+    request_tenant_id = Depends(get_tenant_id)
 ):
+    # Placed before the try below on purpose: the generic handler
+    # inside it converts any unexpected exception to "Failed to
+    # delete tenant.", so a guard raised inside would lose its 403.
+    # The stamp check below alone does not stop the wrong-DB case:
+    # it compares against the record the request's database
+    # returned, so a tenant caller on the host DB could still delete
+    # a planted host-DB record with a matching id. This scope guard
+    # fails closed before any read, deletion, or worker dispatch,
+    # mirroring the tenant PUT (iteration 923).
+    _assert_tenant_delete_scope(current_user, request_tenant_id)
     try:
         tenant: Tenant = await service.get_tenant_by_id(tenant_id=id)
         # The HOST_MANAGE_TENANTS gate also admits FULL_ACCESS holders (see
