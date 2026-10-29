@@ -24,7 +24,7 @@ class PlanListDto(BaseModel):
 
 
 class CreatePlanDto(BaseModel):
-    currency: str = Field(default="eur", max_length=3, description="Must be a supported currency: https://docs.stripe.com/currencies")
+    currency: str = Field(default="eur", min_length=3, max_length=3, description="Must be a supported currency: https://docs.stripe.com/currencies")
     interval: Literal["month", "year"] # Add day or week later... if needed.
     product_id: str = Field(..., min_length=1, description="The product whose pricing the created plan will represent. This must be the ID of an existing product; empty strings are rejected, matching the add-a-new-plan form's min(1) validation.")
     amount: int = Field(..., ge=1, description="Amount in cents; must be greater than 0, matching the add-a-new-plan form's min(1) validation.")
