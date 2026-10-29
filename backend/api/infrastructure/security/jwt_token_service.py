@@ -66,6 +66,17 @@ class JwtTokenService:
                 return TokenPayloadDto(**payload)
             elif type == "refresh_token":
                 payload = jwt.decode(token, REFRESH_TOKEN_SECRET, algorithms=[REFRESH_ALGORITHM])
+                # Explicit type check, mirroring verify_activation_token
+                # below: RefreshTokenPayloadDto defaults a missing type
+                # to "refresh", so without this an access token (which
+                # carries no type field) would decode as a refresh
+                # token if the access and refresh secrets ever
+                # coincided, letting a 15-minute access token mint a
+                # fresh 7-day token pair. Every refresh token issued
+                # by get_refresh_token carries type "refresh", so
+                # legitimate refreshes are unaffected.
+                if payload.get("type") != "refresh":
+                    raise jwt.InvalidTokenError("Invalid token type")
                 # Payload intentionally not logged: it carries user/tenant identifiers.
                 return RefreshTokenPayloadDto(sub=payload.get("sub"), tenant_id=payload.get("tenant_id", None), type=payload.get("type"))
         except jwt.ExpiredSignatureError:
