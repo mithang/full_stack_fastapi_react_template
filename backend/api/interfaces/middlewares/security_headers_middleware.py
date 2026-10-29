@@ -90,10 +90,15 @@ _SECURITY_HEADERS = {
     # brightness-adaptive flow, so no sensor-driven feature exists
     # to break; a compromised script could otherwise read ambient
     # light levels for fingerprinting).
+    # Screen wake lock is disabled for the same reason (verified by
+    # grep: the SPA never calls navigator.wakeLock and has no
+    # keep-awake flow, so no wake-lock feature exists to break; a
+    # compromised script could otherwise keep the screen awake to
+    # aid fingerprinting or annoy the user).
     # Clipboard-write is a separate directive and is deliberately left
     # alone, as are the WebAuthn directives: passkey login/registration
     # must keep working, including USB/BLE/NFC authenticators.
-    b"permissions-policy": b"camera=(), microphone=(), geolocation=(), payment=(), clipboard-read=(), display-capture=(), fullscreen=(), accelerometer=(), gyroscope=(), magnetometer=(), xr-spatial-tracking=(), idle-detection=(), picture-in-picture=(), browsing-topics=(), attribution-reporting=(), window-management=(), keyboard-map=(), ambient-light-sensor=()",
+    b"permissions-policy": b"camera=(), microphone=(), geolocation=(), payment=(), clipboard-read=(), display-capture=(), fullscreen=(), accelerometer=(), gyroscope=(), magnetometer=(), xr-spatial-tracking=(), idle-detection=(), picture-in-picture=(), browsing-topics=(), attribution-reporting=(), window-management=(), keyboard-map=(), ambient-light-sensor=(), wake-lock=()",
 }
 
 
