@@ -120,11 +120,16 @@ _SECURITY_HEADERS = {
     # has no share-sheet flow — sharing is via copy buttons using
     # clipboard-write, a separate directive left alone — so no
     # share flow exists to break; a compromised script could
-    # otherwise open the OS share sheet on the app's origin).
+    # otherwise open the OS share sheet on the app's origin). Local
+    # fonts are disabled for the same reason (verified by grep: the
+    # SPA never calls navigator.fonts.queryLocalFonts and has no
+    # local-font enumeration flow, so no font feature exists to
+    # break; a compromised script could otherwise enumerate the
+    # user's installed fonts for fingerprinting).
     # Clipboard-write is a separate directive and is deliberately left
     # alone, as are the WebAuthn directives: passkey login/registration
     # must keep working, including USB/BLE/NFC authenticators.
-    b"permissions-policy": b"camera=(), microphone=(), geolocation=(), payment=(), clipboard-read=(), display-capture=(), fullscreen=(), accelerometer=(), gyroscope=(), magnetometer=(), xr-spatial-tracking=(), idle-detection=(), picture-in-picture=(), browsing-topics=(), attribution-reporting=(), window-management=(), keyboard-map=(), ambient-light-sensor=(), wake-lock=(), usb=(), bluetooth=(), hid=(), nfc=(), serial=(), gamepad=(), web-share=()",
+    b"permissions-policy": b"camera=(), microphone=(), geolocation=(), payment=(), clipboard-read=(), display-capture=(), fullscreen=(), accelerometer=(), gyroscope=(), magnetometer=(), xr-spatial-tracking=(), idle-detection=(), picture-in-picture=(), browsing-topics=(), attribution-reporting=(), window-management=(), keyboard-map=(), ambient-light-sensor=(), wake-lock=(), usb=(), bluetooth=(), hid=(), nfc=(), serial=(), gamepad=(), web-share=(), local-fonts=()",
 }
 
 
