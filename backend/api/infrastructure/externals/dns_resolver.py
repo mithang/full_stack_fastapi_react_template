@@ -6,6 +6,18 @@ from api.domain.dtos.user_dto import UserDto
 from api.domain.interfaces.email_service import IEmailService
 from api.interfaces.email_templates.dns_notification_html import dns_notification_email
 logger = get_logger(__name__)
+
+
+def _safe_log_value(value) -> str:
+    # Hostnames reach resolve()/notify_dns_status() from the Celery
+    # worker's unvalidated dict[str, str] payload (celery_worker.py),
+    # not only from CustomDomain-validated DTOs, so a newline-bearing
+    # hostname would otherwise forge extra log lines. Flatten CR/LF
+    # here; the raw value still drives the DNS lookup, and normal
+    # hostnames render identically.
+    return str(value).replace("\r", " ").replace("\n", " ")
+
+
 class DnsResolver:
     def __init__(self, email_service: IEmailService):
         self.email_service = email_service
@@ -31,10 +43,10 @@ class DnsResolver:
                 # message must not carry it (the Celery task logs the
                 # exception, and InvalidCustomDomainException's message
                 # would otherwise embed resolver internals verbatim).
-                logger.error(f"DNS resolution failed for {hostname}: {e}")
+                logger.error(f"DNS resolution failed for {_safe_log_value(hostname)}: {e}")
                 raise InvalidOperationException(f"DNS resolution failed for {hostname}.")
         except Exception as e:
-            logger.error(f"DNS resolution failed for {hostname}: {e}")
+            logger.error(f"DNS resolution failed for {_safe_log_value(hostname)}: {e}")
             raise InvalidOperationException(f"DNS resolution failed for {hostname}.")
 
         # if expected_target:
@@ -46,7 +58,7 @@ class DnsResolver:
         return True
     
     async def notify_dns_status(self, user_info: UserDto,  hostname: str, is_success: bool, message: str):
-        logger.info(f"Sending DNS status notification to {user_info.email} for hostname {hostname} with status {'Success' if is_success else 'Failed'}")
+        logger.info(f"Sending DNS status notification to {user_info.email} for hostname {_safe_log_value(hostname)} with status {'Success' if is_success else 'Failed'}")
         await self.email_service.send_email(
             subject="DNS Configuration Status",
             to=user_info.email,
