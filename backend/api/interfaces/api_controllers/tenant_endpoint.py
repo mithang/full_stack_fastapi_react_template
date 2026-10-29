@@ -13,6 +13,7 @@ from api.domain.enum.feature import Feature
 from api.domain.enum.permission import Permission
 from api.domain.security.feature_access_management import check_feature_access
 from api.infrastructure.security.current_user import CurrentUser
+from api.interfaces.middlewares.tenant_middleware import get_tenant_id
 from api.interfaces.security.role_checker import check_permissions_for_current_role
 from api.usecases.billing_record_service import BillingRecordService
 from api.usecases.subscription_plan_service import SubscriptionPlanService
@@ -22,6 +23,26 @@ from api.infrastructure.messaging.celery_worker import handle_post_tenant_creati
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/tenants", tags=["Tenants"])
+
+
+def _assert_update_scope(current_user: CurrentUser, request_tenant_id) -> None:
+    # Update-in-wrong-DB guard, mirroring the user/role update guards
+    # (iterations 905-907): update_dns already refuses a tenant_id
+    # stamped for another tenant, but it does not check which database
+    # served the request. So a tenant caller updating on the host DB
+    # (no X-Tenant-ID/subdomain, request scope None) could still
+    # overwrite the custom_domain / is_active of a tenant record
+    # sitting in the host DB (e.g. planted before the create guard)
+    # and enqueue its DNS-update job, while the real tenant DB record
+    # is untouched. Legitimate tenant DNS updates happen in the
+    # caller's own tenant DB, where the middleware scope equals their
+    # tenant id (the frontend ApiClient sends X-Tenant-ID), and host
+    # callers (tenant_id None) are unaffected. A mismatched scope fails
+    # closed before any read, write, or job enqueue.
+    if current_user.tenant_id is not None and (
+        request_tenant_id is None or str(request_tenant_id) != str(current_user.tenant_id)
+    ):
+        raise ForbiddenException("Tenant DNS cannot be updated outside your tenant's scope.")
 
 @router.get("/", response_model=TenantListDto, status_code=status.HTTP_200_OK)
 async def list_tenants(
@@ -220,8 +241,10 @@ async def update_tenant_dns_record(
     data: UpdateTenantDto,
     current_user: CurrentUser,
     tenant_service: TenantService = Depends(get_tenant_service),
-    _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.HOST_MANAGE_TENANTS, Permission.MANAGE_TENANT_SETTINGS]))
+    _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.HOST_MANAGE_TENANTS, Permission.MANAGE_TENANT_SETTINGS])),
+    request_tenant_id = Depends(get_tenant_id)
 ):
+    _assert_update_scope(current_user, request_tenant_id)
     tenant = await tenant_service.get_tenant_by_id(tenant_id)
     # Tenant callers may only update their own tenant's DNS: the
     # permission gate above also admits MANAGE_TENANT_SETTINGS, so without
