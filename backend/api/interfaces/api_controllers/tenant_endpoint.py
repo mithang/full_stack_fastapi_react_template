@@ -152,6 +152,12 @@ async def list_tenants(
     service: TenantService = Depends(get_tenant_service),
     _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.HOST_MANAGE_TENANTS]))
 ):
+    # This GET returns tenant data, so it must never be served from a
+    # browser or proxy cache (see the no-store note below) — and the
+    # headers are set here, before the tenant early-return, so the
+    # single-tenant branch gets them too instead of only the host list.
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
     # The HOST_MANAGE_TENANTS gate also admits FULL_ACCESS holders (see
     # UserAccessManagement), and every tenant's seeded ADMIN role holds
     # FULL_ACCESS, so without this a tenant admin could enumerate every
@@ -166,14 +172,12 @@ async def list_tenants(
             tenants=[TenantDto(**tenant.model_dump())],
             skip=0, limit=1, total=1, has_previous=False, has_next=False,
         )
-    # This GET returns the host-admin tenant list, so it must never be
-    # served from a browser or proxy cache: a cached 200 could hide a
-    # freshly created or deleted tenant, or serve one host admin's list
-    # to another after an account switch on a shared machine — the same
-    # no-store hardening as the /users/{user_id} and /configurations/stripe
-    # GETs. Response is already imported in this module.
-    response.headers["Cache-Control"] = "no-store"
-    response.headers["Pragma"] = "no-cache"
+    # No-store headers were already set above, covering this host-list
+    # return as well as the tenant early-return: a cached 200 could hide
+    # a freshly created or deleted tenant, or serve one host admin's
+    # list to another after an account switch on a shared machine —
+    # the same no-store hardening as the /users/{user_id} and
+    # /configurations/stripe GETs.
     return await service.list_tenants(skip=skip, limit=limit)
 
 @router.post("/", response_model=CreateTenantResponseDto, status_code=status.HTTP_201_CREATED)
