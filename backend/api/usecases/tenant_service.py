@@ -43,14 +43,26 @@ class TenantService:
         """Get tenant by custom domain. Raises TenantNotFoundException if not found."""
         existing = await self.tenant_repository.single_or_none(custom_domain=custom_domain)
         if existing is None:
-            raise TenantNotFoundException(custom_domain)
+            # Same _safe_log_value hardening as find_by_name /
+            # get_tenant_by_id above: the ApiBaseException handler logs
+            # ex.message verbatim, and the middleware's warning log
+            # embeds this exception, so a newline-bearing host would
+            # otherwise forge extra log lines. The raw value still
+            # drives the lookup; normal domains render identically.
+            raise TenantNotFoundException(_safe_log_value(custom_domain))
         return existing
 
     async def find_by_subdomain(self, subdomain: str) -> Tenant | None:
         """Get tenant by subdomain. Raises TenantNotFoundException if not found."""
         existing = await self.tenant_repository.single_or_none(subdomain=subdomain)
         if existing is None:
-            raise TenantNotFoundException(subdomain)
+            # Same hardening as find_by_custom_domain above: unlike
+            # the endpoint's Subdomain-typed path param, the register
+            # flow passes the free-form UserDto.sub_domain string here,
+            # so a newline-bearing value would otherwise reach the
+            # handler's verbatim log via this exception. The raw value
+            # still drives the lookup.
+            raise TenantNotFoundException(_safe_log_value(subdomain))
         return existing
 
     async def get_tenant_by_id(self, tenant_id: str) -> Tenant:
