@@ -1,7 +1,11 @@
+import html
+
+
 def notify_password_change_template_html(user_first_name: str) -> str:
     """
     HTML email template for notifying users about password changes.
     """
+    user_first_name = html.escape(user_first_name or "")
     return f"""
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <h2 style="color: #333;">Password Changed Successfully</h2>
