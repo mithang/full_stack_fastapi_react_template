@@ -251,10 +251,19 @@ _SECURITY_HEADERS = {
     # no iframes, so no deferred-fetch flow exists to break; with
     # this directive set to empty, cross-origin subframes are
     # allocated no fetchLater quota and cannot use fetchLater at
-    # all. Note this covers subframe quota only — the top-level
-    # deferred-fetch directive itself is a separate, future
-    # candidate — so a top-level fetchLater call is not blocked
-    # by this change alone).
+    # all. Note this covers subframe quota only.)
+    # Top-level deferred fetch is disabled for the same reason
+    # (verified by grep: the SPA never calls fetchLater, and it
+    # embeds no iframes, so no deferred-fetch flow exists to break;
+    # verified against MDN's Permissions-Policy: deferred-fetch page,
+    # whose default allowlist is self — so with this directive set
+    # to empty, the top-level document itself is removed from the
+    # allowlist and its fetchLater calls are denied, closing the
+    # top-level gap left by deferred-fetch-minimal, which covers
+    # subframe quota only. A compromised script could otherwise
+    # schedule deferred requests on the app's origin that fire
+    # after the user navigates away, e.g. to exfiltrate data or
+    # trigger actions outside the visible session).
     # Battery status is disabled for the same reason (verified by
     # grep: the SPA never calls navigator.getBattery — it has no
     # battery-aware throttling or low-battery warning flow — so no
@@ -350,7 +359,7 @@ _SECURITY_HEADERS = {
     # requests — so no app flow exists to break, and a compromised
     # script could otherwise probe the user's LAN/loopback services
     # from the app's origin.
-    b"permissions-policy": b"camera=(), microphone=(), geolocation=(), payment=(), clipboard-read=(), display-capture=(), fullscreen=(), accelerometer=(), gyroscope=(), magnetometer=(), xr-spatial-tracking=(), idle-detection=(), picture-in-picture=(), browsing-topics=(), attribution-reporting=(), window-management=(), keyboard-map=(), ambient-light-sensor=(), wake-lock=(), usb=(), bluetooth=(), hid=(), nfc=(), serial=(), gamepad=(), web-share=(), local-fonts=(), otp-credentials=(), identity-credentials=(), storage-access=(), private-state-token=(), speaker-selection=(), encrypted-media=(), shared-storage=(), compute-pressure=(), sync-xhr=(), autoplay=(), midi=(), join-ad-interest-group=(), run-ad-auction=(), document-domain=(), eyedropper=(), all-screens-capture=(), digital-credentials=(), unload=(), aria-notify=(), captured-surface-control=(), deferred-fetch-minimal=(), battery=(), ch-ua-high-entropy-values=(), translator=(), summarizer=(), language-detector=(), language-model=(), screen-wake-lock=(), on-device-speech-recognition=(), identity-credentials-get=(), private-state-token-issuance=(), private-state-token-redemption=(), local-network-access=()",
+    b"permissions-policy": b"camera=(), microphone=(), geolocation=(), payment=(), clipboard-read=(), display-capture=(), fullscreen=(), accelerometer=(), gyroscope=(), magnetometer=(), xr-spatial-tracking=(), idle-detection=(), picture-in-picture=(), browsing-topics=(), attribution-reporting=(), window-management=(), keyboard-map=(), ambient-light-sensor=(), wake-lock=(), usb=(), bluetooth=(), hid=(), nfc=(), serial=(), gamepad=(), web-share=(), local-fonts=(), otp-credentials=(), identity-credentials=(), storage-access=(), private-state-token=(), speaker-selection=(), encrypted-media=(), shared-storage=(), compute-pressure=(), sync-xhr=(), autoplay=(), midi=(), join-ad-interest-group=(), run-ad-auction=(), document-domain=(), eyedropper=(), all-screens-capture=(), digital-credentials=(), unload=(), aria-notify=(), captured-surface-control=(), deferred-fetch-minimal=(), battery=(), ch-ua-high-entropy-values=(), translator=(), summarizer=(), language-detector=(), language-model=(), screen-wake-lock=(), on-device-speech-recognition=(), identity-credentials-get=(), private-state-token-issuance=(), private-state-token-redemption=(), local-network-access=(), deferred-fetch=()",
 }
 
 
