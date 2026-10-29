@@ -26,8 +26,8 @@ class CreateUserDto(BaseUserDto):
 
 
 class UpdateUserDto(BaseModel):
-    first_name: Optional[str] = None
-    last_name: Optional[str] = None
+    first_name: Optional[str] = Field(default=None, min_length=1)
+    last_name: Optional[str] = Field(default=None, min_length=1)
     email: Optional[EmailStr] = None
     gender: Optional[Gender] = None
     image_url: Optional[str] = None
