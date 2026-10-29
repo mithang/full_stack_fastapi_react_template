@@ -155,7 +155,16 @@ async def get_user(
     current_user: CurrentUser,
     service: UserService = Depends(get_user_service),
     _bool: bool = Depends(check_permissions_for_current_role(
-        required_permissions=[Permission.USER_SELF_READ_AND_WRITE_ONLY],
+        # USER_VIEW_ONLY joins the self permission here: list_users()
+        # already grants VIEW_ONLY holders the full UserDto of every
+        # user in the tenant, so denying those same holders this
+        # detail read (e.g. the seeded read-only GUEST role) exposed
+        # nothing less — it just 403'd a record the caller could
+        # already see via the list. With allow_self_access, SELF
+        # still only passes for the caller's own id; VIEW_ONLY
+        # passes for any in-tenant id, and the tenant scoping below
+        # is unchanged.
+        required_permissions=[Permission.USER_SELF_READ_AND_WRITE_ONLY, Permission.USER_VIEW_ONLY],
         allow_self_access=True)
     ),
     request_tenant_id = Depends(get_tenant_id)
