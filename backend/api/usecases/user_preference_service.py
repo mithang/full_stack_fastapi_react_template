@@ -5,6 +5,14 @@ from api.infrastructure.persistence.repositories.user_preference_repository_impl
 
 logger = get_logger(__name__)
 
+
+def _safe_log_keys(keys) -> list[str]:
+    # Flatten CR/LF in each key before logging: a key containing a newline
+    # could otherwise forge extra log lines. Logged copy only; the stored
+    # keys are untouched (same shape as the repository-layer helper).
+    return [str(k).replace("\r", " ").replace("\n", " ") for k in keys]
+
+
 class UserPreferenceService:
     def __init__(self, user_preference_repository: UserPreferenceRepository):
         self.user_preference_repository = user_preference_repository
@@ -20,6 +28,6 @@ class UserPreferenceService:
         # this logger runs at INFO, so the full payload would reach server
         # logs on every preference save (same class as the payload logs
         # trimmed in iterations 431-444).
-        logger.info(f"Setting preferences for user {user_id}: keys={sorted(payload.keys())}")
+        logger.info(f"Setting preferences for user {user_id}: keys={_safe_log_keys(sorted(payload.keys()))}")
         await self.user_preference_repository.update_preferences(user_id=user_id, preferences=payload)
 
