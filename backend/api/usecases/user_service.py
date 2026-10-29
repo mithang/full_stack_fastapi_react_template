@@ -186,7 +186,17 @@ class UserService:
         # hashed password — logging it would leak a credential hash into
         # server logs (same class as the token/password logs removed in
         # iterations 18-20 and 426). Log everything except the password.
-        log_doc = {k: v for k, v in doc.items() if k != "password"}
+        # first_name/last_name are plain strs with no validator and
+        # image_url/sso_provider_id are plain strs too, so strip CR/LF
+        # from string values before logging (same shape as the tenant
+        # name, preference key and cache-path fixes in iterations
+        # 951-953) — otherwise a newline in a stored name could forge
+        # extra log lines. The stored doc itself is untouched.
+        log_doc = {
+            k: (v.replace("\r", " ").replace("\n", " ") if isinstance(v, str) else v)
+            for k, v in doc.items()
+            if k != "password"
+        }
         logger.info(f"Updating user {user_id} with data: {log_doc}")
         return await self.user_repository.update(user_id=user_id, data=UpdateUserDto(**doc))
      
