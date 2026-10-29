@@ -83,8 +83,8 @@ async def _handle_post_tenant_creation_async(payload: str):
         db = await _get_current_tenant_db(tenant_id=worker_payload.tenant_id)
         worker_payload.data.tenant_id = worker_payload.tenant_id # Set tenant_id in admin user data DTO
 
-        logger.info(f"Starting post-tenant-creation tasks for tenant_id: {worker_payload.tenant_id}")
-        logger.info(f"Admin user details: {worker_payload.data.email}, Tenant ID: {worker_payload.tenant_id}")
+        logger.info(f"Starting post-tenant-creation tasks for tenant_id: {_safe_log_value(worker_payload.tenant_id)}")
+        logger.info(f"Admin user details: {worker_payload.data.email}, Tenant ID: {_safe_log_value(worker_payload.tenant_id)}")
         user_service = get_user_service()
         role_service = get_role_service()
         post_tenant_creation_service = PostTenantCreationTaskService(
@@ -99,11 +99,11 @@ async def _handle_post_tenant_deletion_async(payload: str):
     worker_payload = WorkerPayloadDto[TenantDto].model_validate_json(payload)
     logger.info(f"Handling task with label: {worker_payload.label}")
     if worker_payload.label == "post-tenant-deletion":
-        logger.info(f"Starting post-tenant-deletion tasks for tenant_id: {worker_payload.tenant_id}")
+        logger.info(f"Starting post-tenant-deletion tasks for tenant_id: {_safe_log_value(worker_payload.tenant_id)}")
         db = await _get_current_tenant_db(tenant_id=worker_payload.tenant_id)
         await db.drop()
         await db.close()
-        logger.warning(f"Completed post-tenant-deletion tasks for tenant_id: {worker_payload.tenant_id} - Database dropped.")
+        logger.warning(f"Completed post-tenant-deletion tasks for tenant_id: {_safe_log_value(worker_payload.tenant_id)} - Database dropped.")
         if worker_payload.data.custom_domain:
             await _update_coolify_domain(data=UpdateDomainDto(domain=worker_payload.data.custom_domain, mode="remove"))
         elif worker_payload.data.subdomain:
@@ -162,7 +162,7 @@ async def _notify_dns_status(tenant_id: str, user_id: str, is_success: bool, mes
 
 
 async def _update_tenant_custom_domain_status(tenant_id: str, status: str):
-    logger.info(f"Updating tenant {tenant_id} custom_domain_status to {status}")
+    logger.info(f"Updating tenant {_safe_log_value(tenant_id)} custom_domain_status to {status}")
     db = Database(uri=mongo_uri, models=models)
     await db.init_db(db_name=mongo_db_default, is_tenant=False)
     tenant_service: TenantService = get_tenant_service()
@@ -177,7 +177,7 @@ async def _update_tenant_custom_domain_status(tenant_id: str, status: str):
     if status == "active":
         await _update_coolify_domain(data=UpdateDomainDto(domain=tenant.custom_domain, mode="add"))
 
-    logger.info(f"Updated tenant {tenant_id} custom_domain_status to {status}")
+    logger.info(f"Updated tenant {_safe_log_value(tenant_id)} custom_domain_status to {status}")
 
 
 async def _update_coolify_domain(data: UpdateDomainDto):
