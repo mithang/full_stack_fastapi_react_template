@@ -191,8 +191,8 @@ env:
 ## Monitoring
 
 The application exposes health check endpoints:
-- Liveness: `/api/v1/users/`
-- Readiness: `/api/v1/users/`
+- Liveness: `/api/v1/health/`
+- Readiness: `/api/v1/health/`
 
 Integrate with Prometheus for metrics collection.
 
