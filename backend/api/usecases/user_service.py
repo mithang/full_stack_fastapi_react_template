@@ -234,7 +234,12 @@ class UserService:
     async def clear_password_reset_data_by_user_id(self, user_id: str) -> bool:
         """Clear password reset entry by user ID. Returns boolean."""
         logger.info(f"Clearing password reset data for user_id: {user_id}")
-        return await self.user_password_reset_repository.delete(id=user_id)
+        # BaseRepository.delete(id=...) deletes by the reset document's
+        # own _id, not by its user_id field, so passing the user id there
+        # found no document and returned False while the reset record
+        # stayed usable. Delete by the user_id field instead, via the
+        # repository's delete_by_user_id (which also audits the delete).
+        return await self.user_password_reset_repository.delete_by_user_id(user_id=user_id)
     
     async def check_email_exists(self, email: EmailStr) -> bool:
         """Check if email exists. Returns boolean."""
