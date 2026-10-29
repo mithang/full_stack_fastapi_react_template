@@ -9,6 +9,12 @@ from api.infrastructure.security.current_user import CurrentUser
 
 logger = get_logger(__name__)
 
+
+def _safe_log_value(value) -> str:
+    """Flatten CR/LF in a logged value so it cannot forge extra log lines."""
+    return str(value).replace("\r", " ").replace("\n", " ") if value is not None else "None"
+
+
 class UserAccessManagement:
     def __init__(self,
         required_permissions: List[Permission],
@@ -62,7 +68,7 @@ class UserAccessManagement:
             # parameter user_id; routes without one get None here and
             # fail the self-access check, which is fail-closed.
             resource_id = request.path_params.get("user_id")
-            logger.info(f"Resource ID for self-access checking: {resource_id}")
+            logger.info(f"Resource ID for self-access checking: {_safe_log_value(resource_id)}")
 
             if current_user.role_id is None:
                 logger.info("User has no role assigned")
