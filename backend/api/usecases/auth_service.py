@@ -210,7 +210,13 @@ class AuthService:
                 await user.save()
             return await self._get_token_set(user)
         except UserNotFoundException:
-            logger.error(f"User not found for email: {email}")
+            # The email here comes from the IdP's OpenID claims, not from
+            # a validated DTO, so it reaches this log before any EmailStr
+            # check: a newline-bearing claim would otherwise forge extra
+            # log lines. Flatten the logged copy only, mirroring the
+            # magic-link log line above; the raw value still drives the
+            # user creation below.
+            logger.error(f"User not found for email: {_safe_log_value(email)}")
             role: Role = await self.role_service.find_by_name(name=RoleType.GUEST)  # Ensure default role exists
             await self.user_service.create_user(
                 user_data=CreateUserDto(
