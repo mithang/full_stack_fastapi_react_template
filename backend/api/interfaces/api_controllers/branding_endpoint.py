@@ -13,6 +13,15 @@ from api.usecases.file_service import FileService
 
 logger = get_logger(__name__)
 
+
+def _safe_log_value(value: object) -> str:
+    # The logo filename comes from the multipart header, so it is
+    # client-controlled: a newline-bearing name could forge extra log
+    # lines. Flatten CR/LF in the logged copy only; the raw filename
+    # still drives the storage key, same shape as file_upload.py.
+    return str(value).replace("\r", " ").replace("\n", " ")
+
+
 router = APIRouter(prefix="/brandings", dependencies=[Depends(check_permissions_for_current_role(required_permissions=[Permission.FULL_ACCESS]))])
 router.tags = ["Branding"]
 
@@ -106,7 +115,7 @@ async def upload_logo(
         if size > max_size:
             raise BrandingException("File size must be less than 5MB.")
     await file.seek(0)
-    logger.debug(f"Received logo file: {file.filename}, size: {size} bytes")
+    logger.debug(f"Received logo file: {_safe_log_value(file.filename)}, size: {size} bytes")
     if size == 0:
         raise BrandingException("Uploaded file is empty.")
     # PNG/JPEG only, matching the LogoType literal on BrandingDto /
