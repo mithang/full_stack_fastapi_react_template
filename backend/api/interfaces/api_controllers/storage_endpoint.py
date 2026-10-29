@@ -113,12 +113,40 @@ async def configure_storage(
 
 
 
+def _assert_reset_scope(current_user: CurrentUser, request_tenant_id) -> None:
+    # Reset-in-wrong-DB guard, mirroring the configure guard above
+    # and the notification-banner/SSO update guards: the service
+    # already refuses a record stamped for another tenant, but it
+    # does not check which database served the request. So a tenant
+    # caller resetting on the host DB (no X-Tenant-ID/subdomain,
+    # request scope None) could still disable and clear the
+    # credentials of a tenant-stamped storage record sitting in the
+    # host DB (e.g. planted before the create guard) — the stamp
+    # check passes because the record carries the caller's own
+    # tenant_id. Legitimate tenant resets happen in the caller's own
+    # tenant DB, where the middleware scope equals their tenant id,
+    # and host callers (tenant_id None) are unaffected by this
+    # guard (the endpoint's own tenant check below still rejects
+    # them). Raised before the try block below so a blocked attempt
+    # fails closed before any write and does not log a misleading
+    # reset-error audit.
+    if current_user.tenant_id is not None and (
+        request_tenant_id is None or str(request_tenant_id) != str(current_user.tenant_id)
+    ):
+        raise ForbiddenException(
+            "Storage settings cannot be reset outside your tenant's scope."
+        )
+
+
 @router.patch("/{storage_id}/reset", status_code=status.HTTP_204_NO_CONTENT)
 async def reset_storage(
     storage_id: str,
     current_user: CurrentUser,
-    setting_service: StorageSettingsService = Depends(get_storage_settings_service)
+    setting_service: StorageSettingsService = Depends(get_storage_settings_service),
+    request_tenant_id=Depends(get_tenant_id),
 ):
+    _assert_reset_scope(current_user, request_tenant_id)
+
     logger.debug(f"Received request to reset storage settings for ID: {storage_id}")
 
     try:
