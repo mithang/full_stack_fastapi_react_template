@@ -115,11 +115,16 @@ _SECURITY_HEADERS = {
     # never calls navigator.getGamepads and has no gamepad flow, so
     # no controller feature exists to break; a compromised script
     # could otherwise enumerate connected gamepads for
-    # fingerprinting).
+    # fingerprinting). Web share is disabled for the same reason
+    # (verified by grep: the SPA never calls navigator.share and
+    # has no share-sheet flow — sharing is via copy buttons using
+    # clipboard-write, a separate directive left alone — so no
+    # share flow exists to break; a compromised script could
+    # otherwise open the OS share sheet on the app's origin).
     # Clipboard-write is a separate directive and is deliberately left
     # alone, as are the WebAuthn directives: passkey login/registration
     # must keep working, including USB/BLE/NFC authenticators.
-    b"permissions-policy": b"camera=(), microphone=(), geolocation=(), payment=(), clipboard-read=(), display-capture=(), fullscreen=(), accelerometer=(), gyroscope=(), magnetometer=(), xr-spatial-tracking=(), idle-detection=(), picture-in-picture=(), browsing-topics=(), attribution-reporting=(), window-management=(), keyboard-map=(), ambient-light-sensor=(), wake-lock=(), usb=(), bluetooth=(), hid=(), nfc=(), serial=(), gamepad=()",
+    b"permissions-policy": b"camera=(), microphone=(), geolocation=(), payment=(), clipboard-read=(), display-capture=(), fullscreen=(), accelerometer=(), gyroscope=(), magnetometer=(), xr-spatial-tracking=(), idle-detection=(), picture-in-picture=(), browsing-topics=(), attribution-reporting=(), window-management=(), keyboard-map=(), ambient-light-sensor=(), wake-lock=(), usb=(), bluetooth=(), hid=(), nfc=(), serial=(), gamepad=(), web-share=()",
 }
 
 
