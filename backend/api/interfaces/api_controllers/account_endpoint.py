@@ -218,7 +218,7 @@ async def password_reset_confirm(
     auth_service: AuthService = Depends(get_auth_service)
 
 ):
-    logger.info(f"Password reset confirmation attempt for user_id: {user_id} with tenant_id: {tenant_id}")
+    logger.info(f"Password reset confirmation attempt for user_id: {_safe_log_value(user_id)} with tenant_id: {_safe_log_value(tenant_id)}")
     await auth_service.change_password(
         new_password=request.new_password,
         token=token,
@@ -452,7 +452,7 @@ async def email_magic_link_validate(
 ):
     from urllib.parse import unquote
     token = unquote(token)
-    logger.info(f"Magic link validation attempt for user_id: {user_id} with tenant_id: {tenant_id}")
+    logger.info(f"Magic link validation attempt for user_id: {_safe_log_value(user_id)} with tenant_id: {_safe_log_value(tenant_id)}")
     is_valid = await magic_link_service.validate_magic_link(user_id=user_id, token=token)
     if is_valid is False:
         raise ForbiddenException("Invalid or expired magic link.")
