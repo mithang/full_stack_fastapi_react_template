@@ -7,6 +7,14 @@ from api.infrastructure.persistence.repositories.payment_repository_impl import 
 
 logger = get_logger(__name__)
 
+
+def _safe_log_value(value: object) -> str:
+    # Price/product ids arrive as a {price_id:path} URL param (Starlette
+    # percent-decodes it) or as a plain JSON-body str, so a
+    # newline-bearing id would otherwise reach log lines and the
+    # ApiBaseException handler's ex.message log line verbatim.
+    return str(value).replace("\r", " ").replace("\n", " ")
+
 class PricingService:
     def __init__(self, payment_repository: PaymentRepository, stripe_resolver: StripeResolver):
         self.payment_repository: PaymentRepository = payment_repository
@@ -24,7 +32,7 @@ class PricingService:
             # that product does not exist, not the price being created.
             # Anything else is a pricing error, not a 404.
             if getattr(e, "http_status", None) == 404:
-                raise ProductNotFoundException(price.product) from e
+                raise ProductNotFoundException(_safe_log_value(price.product)) from e
             # Generic message only: the Stripe/resolver detail stays in
             # the logger.error line above instead of reaching the client
             # verbatim via the ApiBaseException handler.
@@ -57,17 +65,18 @@ class PricingService:
                 "metadata": update.metadata or {}
             })
         except Exception as e:
-            logger.error(f"Error updating price {price_id}: {e}")
+            logger.error(f"Error updating price {_safe_log_value(price_id)}: {e}")
             # Only a Stripe 404 (unknown price id; stripe errors carry
             # http_status) is a genuine not-found, mirroring the
             # product-delete and billing get/delete fixes. Anything else
             # — auth failure, Stripe outage, resolver error — is a
             # pricing error, not a 404 claiming the price does not exist.
             if getattr(e, "http_status", None) == 404:
-                raise PricingNotFoundException(price_id) from e
-            # Generic message only (price_id is client-supplied, so it is
-            # safe to retain): the Stripe/resolver detail stays in the
-            # logger.error line above instead of reaching the client
-            # verbatim via the ApiBaseException handler.
-            raise PricingException(f"Failed to update price {price_id}.")
+                raise PricingNotFoundException(_safe_log_value(price_id)) from e
+            # Generic message only, with the id sanitized: the raw id
+            # would otherwise reach the logs again via the
+            # ApiBaseException handler's ex.message log line. The
+            # Stripe/resolver detail stays in the logger.error line
+            # above instead of reaching the client verbatim.
+            raise PricingException(f"Failed to update price {_safe_log_value(price_id)}.")
     
