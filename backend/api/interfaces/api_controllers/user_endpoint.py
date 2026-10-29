@@ -8,6 +8,7 @@ from api.usecases.file_service import FileService
 from api.usecases.user_service import UserService
 from api.core.container import get_file_service, get_role_service, get_user_service
 from api.infrastructure.security.current_user import CurrentUser
+from api.interfaces.middlewares.tenant_middleware import get_tenant_id
 from api.usecases.role_service import RoleService
 from api.domain.enum.role import RoleType
 
@@ -15,6 +16,26 @@ from api.domain.enum.role import RoleType
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/users", tags=["Users"])
+
+
+def _assert_create_scope(current_user: CurrentUser, request_tenant_id) -> None:
+    # Create-in-wrong-DB guard, mirroring the role, branding,
+    # banner, and SSO guards: tenancy is per-database, so a tenant
+    # caller creating on the host DB (no X-Tenant-ID/subdomain,
+    # request scope None) would plant a user in the host DB that host
+    # callers then see in their global list — stamped with the
+    # caller's tenant_id but living in the wrong database, so the
+    # caller's own tenant DB never sees them. Legitimate tenant user
+    # creation happens in the caller's own tenant DB, where the
+    # middleware scope equals their tenant id, and host callers
+    # (tenant_id None) are unaffected. A mismatched scope fails closed
+    # rather than stamping a record into the wrong DB. The stamp
+    # itself was already server-side (line below); only the scope
+    # guard was missing, unlike the role create which has both.
+    if current_user.tenant_id is not None and (
+        request_tenant_id is None or str(request_tenant_id) != str(current_user.tenant_id)
+    ):
+        raise ForbiddenException("User cannot be created outside your tenant's scope.")
 
 
 @router.get("/", response_model=UserListDto)
@@ -55,8 +76,10 @@ async def create_user(
     current_user: CurrentUser,
     service: UserService = Depends(get_user_service),
     role_service: RoleService = Depends(get_role_service),
-    _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.USER_READ_AND_WRITE_ONLY]))
+    _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.USER_READ_AND_WRITE_ONLY])),
+    request_tenant_id = Depends(get_tenant_id)
 ):
+    _assert_create_scope(current_user, request_tenant_id)
 
     data.tenant_id = current_user.tenant_id
     role_guest = await role_service.find_by_name(name=RoleType.GUEST)
