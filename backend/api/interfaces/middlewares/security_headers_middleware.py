@@ -125,11 +125,16 @@ _SECURITY_HEADERS = {
     # SPA never calls navigator.fonts.queryLocalFonts and has no
     # local-font enumeration flow, so no font feature exists to
     # break; a compromised script could otherwise enumerate the
-    # user's installed fonts for fingerprinting).
+    # user's installed fonts for fingerprinting). OTP credentials
+    # are disabled for the same reason (verified by grep: the SPA
+    # never uses OTPCredential / the WebOTP API — its OTP input is
+    # a typed-code UI component only — so no SMS auto-read flow
+    # exists to break; a compromised script could otherwise
+    # auto-read SMS one-time codes delivered to the device).
     # Clipboard-write is a separate directive and is deliberately left
     # alone, as are the WebAuthn directives: passkey login/registration
     # must keep working, including USB/BLE/NFC authenticators.
-    b"permissions-policy": b"camera=(), microphone=(), geolocation=(), payment=(), clipboard-read=(), display-capture=(), fullscreen=(), accelerometer=(), gyroscope=(), magnetometer=(), xr-spatial-tracking=(), idle-detection=(), picture-in-picture=(), browsing-topics=(), attribution-reporting=(), window-management=(), keyboard-map=(), ambient-light-sensor=(), wake-lock=(), usb=(), bluetooth=(), hid=(), nfc=(), serial=(), gamepad=(), web-share=(), local-fonts=()",
+    b"permissions-policy": b"camera=(), microphone=(), geolocation=(), payment=(), clipboard-read=(), display-capture=(), fullscreen=(), accelerometer=(), gyroscope=(), magnetometer=(), xr-spatial-tracking=(), idle-detection=(), picture-in-picture=(), browsing-topics=(), attribution-reporting=(), window-management=(), keyboard-map=(), ambient-light-sensor=(), wake-lock=(), usb=(), bluetooth=(), hid=(), nfc=(), serial=(), gamepad=(), web-share=(), local-fonts=(), otp-credentials=()",
 }
 
 
