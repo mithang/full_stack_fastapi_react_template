@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, Query, Response, status
-from api.common.exceptions import InvalidOperationException
+from api.common.exceptions import ForbiddenException, InvalidOperationException
 from api.core.container import get_billing_record_service, get_tenant_service
 from api.domain.dtos.billing_dto import BillingRecordListDto
 from api.domain.dtos.checkout_dto import CheckoutRequestDto, CheckoutResponseDto
@@ -7,6 +7,7 @@ from api.domain.enum.feature import Feature
 from api.domain.enum.permission import Permission
 from api.domain.security.feature_access_management import check_feature_access
 from api.infrastructure.security.current_user import CurrentUser
+from api.interfaces.middlewares.tenant_middleware import get_tenant_id
 from api.interfaces.security.role_checker import check_permissions_for_current_role
 from api.usecases.billing_record_service import BillingRecordService
 from api.usecases.tenant_service import TenantService
@@ -14,6 +15,33 @@ from api.usecases.tenant_service import TenantService
 from api.common.utils import get_host_main_domain_name, get_logger
 
 logger = get_logger(__name__)
+
+
+def _assert_create_scope(current_user: CurrentUser, request_tenant_id) -> None:
+    # Write-in-wrong-scope guard, mirroring the product/price/plan
+    # guards (iterations 886-888): a tenant checkout session is a
+    # Stripe-object write (customer + session), not just a DB record,
+    # but its scope still comes from the current DB — the tenant
+    # Stripe resolver reads the singleton settings record in the
+    # current DB with no tenant filter. So a tenant caller without a
+    # tenant DB selected (no X-Tenant-ID/subdomain, hitting the host
+    # DB) would create the customer and session in the WRONG Stripe
+    # account and save the billing record in the host DB, hiding the
+    # session from the caller's own tenant account. Legitimate tenant
+    # checkout happens with the middleware scope equal to the caller's
+    # tenant id, and host callers (tenant_id None) are unaffected —
+    # they still hit the existing tenant-required error below. A
+    # mismatched scope fails closed rather than writing into the
+    # wrong Stripe account. The host checkout endpoint above is
+    # deliberately not guarded: it is host-scope by design (host
+    # Stripe keys, host record), regardless of which DB serves it.
+    if current_user.tenant_id is not None and (
+        request_tenant_id is None or str(request_tenant_id) != str(current_user.tenant_id)
+    ):
+        raise ForbiddenException(
+            "Tenant checkout sessions cannot be created outside your tenant's scope."
+        )
+
 
 router = APIRouter(prefix="/checkouts", dependencies=[
     Depends(check_feature_access(feature_name=Feature.STRIPE)),
@@ -61,8 +89,10 @@ async def create_tenant_checkout_session(
     checkout_req: CheckoutRequestDto,
     current_user: CurrentUser,
     tenant_service: TenantService = Depends(get_tenant_service),
-    billing_service: BillingRecordService = Depends(get_billing_record_service)
+    billing_service: BillingRecordService = Depends(get_billing_record_service),
+    request_tenant_id = Depends(get_tenant_id)
 ):
+    _assert_create_scope(current_user, request_tenant_id)
     if current_user and current_user.tenant_id is not None:
         if checkout_req.tenant_id != current_user.tenant_id:
             logger.error(f"Tenant ID mismatch for the current user. And current user's tenant id is: {current_user.tenant_id} and requested tenant id is: {checkout_req.tenant_id}")
