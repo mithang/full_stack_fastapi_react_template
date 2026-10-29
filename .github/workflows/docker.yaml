@@ -73,7 +73,7 @@ jobs:
       - name: Trigger deployment fsrapp
         run: |
           echo "Triggering deployment via Coolify webhook"
-          curl --request GET "${{ secrets.COOLIFY_WEBHOOK_URI }}" --header "Authorization: Bearer ${{ secrets.COOLIFY_DEPLOY_KEY }}"
+          curl --fail --request GET "${{ secrets.COOLIFY_WEBHOOK_URI }}" --header "Authorization: Bearer ${{ secrets.COOLIFY_DEPLOY_KEY }}"
           echo "Deployment triggered."
 
 
@@ -139,6 +139,6 @@ jobs:
       - name: Trigger deployment fsrappworker
         run: |
           echo "Triggering deployment via Coolify webhook"
-          curl --request GET "${{ secrets.COOLIFY_FSRAPP_WORKER_WEBHOOK_URI }}" --header "Authorization: Bearer ${{ secrets.COOLIFY_DEPLOY_KEY }}"
+          curl --fail --request GET "${{ secrets.COOLIFY_FSRAPP_WORKER_WEBHOOK_URI }}" --header "Authorization: Bearer ${{ secrets.COOLIFY_DEPLOY_KEY }}"
           echo "Deployment triggered."
 
