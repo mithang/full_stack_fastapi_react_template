@@ -441,10 +441,10 @@ class BillingRecordService:
             # Only a Stripe 404 (stripe errors carry http_status) is a
             # not-found; everything else is a billing error.
             if getattr(e, "http_status", None) == 404:
-                raise BillingRecordNotFoundException(session_id) from e
-            logger.error(f"Error retrieving checkout session {session_id}: {e}")
+                raise BillingRecordNotFoundException(_safe_log_value(session_id)) from e
+            logger.error(f"Error retrieving checkout session {_safe_log_value(session_id)}: {e}")
             raise BillingRecordException(
-                f"Failed to retrieve checkout session {session_id}."
+                f"Failed to retrieve checkout session {_safe_log_value(session_id)}."
             ) from e
         if session.payment_status != "paid":
             raise BillingRecordException(
@@ -526,10 +526,10 @@ class BillingRecordService:
             # Only a Stripe 404 (stripe errors carry http_status) is a
             # not-found; everything else is a billing error.
             if getattr(e, "http_status", None) == 404:
-                raise BillingRecordNotFoundException(session_id) from e
-            logger.error(f"Error retrieving checkout session {session_id}: {e}")
+                raise BillingRecordNotFoundException(_safe_log_value(session_id)) from e
+            logger.error(f"Error retrieving checkout session {_safe_log_value(session_id)}: {e}")
             raise BillingRecordException(
-                f"Failed to retrieve checkout session {session_id}."
+                f"Failed to retrieve checkout session {_safe_log_value(session_id)}."
             ) from e
         if session.payment_status != "paid":
             raise BillingRecordException(
