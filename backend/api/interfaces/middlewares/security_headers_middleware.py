@@ -261,10 +261,19 @@ _SECURITY_HEADERS = {
     # such flow exists to break; a compromised script could
     # otherwise read battery level and charging state on the app's
     # origin for fingerprinting).
+    # High-entropy user-agent values are disabled for the same reason
+    # (verified by grep: the SPA never calls
+    # navigator.userAgentData.getHighEntropyValues — it has no
+    # user-agent-based adaptation flow — so no such flow exists to
+    # break; a compromised script could otherwise retrieve
+    # high-entropy values such as full version, platform version,
+    # architecture and model on the app's origin for fingerprinting.
+    # Low-entropy values (brands, mobile, platform) are unaffected,
+    # since the directive only gates getHighEntropyValues).
     # Clipboard-write is a separate directive and is deliberately left
     # alone, as are the WebAuthn directives: passkey login/registration
     # must keep working, including USB/BLE/NFC authenticators.
-    b"permissions-policy": b"camera=(), microphone=(), geolocation=(), payment=(), clipboard-read=(), display-capture=(), fullscreen=(), accelerometer=(), gyroscope=(), magnetometer=(), xr-spatial-tracking=(), idle-detection=(), picture-in-picture=(), browsing-topics=(), attribution-reporting=(), window-management=(), keyboard-map=(), ambient-light-sensor=(), wake-lock=(), usb=(), bluetooth=(), hid=(), nfc=(), serial=(), gamepad=(), web-share=(), local-fonts=(), otp-credentials=(), identity-credentials=(), storage-access=(), private-state-token=(), speaker-selection=(), encrypted-media=(), shared-storage=(), compute-pressure=(), sync-xhr=(), autoplay=(), midi=(), join-ad-interest-group=(), run-ad-auction=(), document-domain=(), eyedropper=(), all-screens-capture=(), digital-credentials=(), unload=(), aria-notify=(), captured-surface-control=(), deferred-fetch-minimal=(), battery=()",
+    b"permissions-policy": b"camera=(), microphone=(), geolocation=(), payment=(), clipboard-read=(), display-capture=(), fullscreen=(), accelerometer=(), gyroscope=(), magnetometer=(), xr-spatial-tracking=(), idle-detection=(), picture-in-picture=(), browsing-topics=(), attribution-reporting=(), window-management=(), keyboard-map=(), ambient-light-sensor=(), wake-lock=(), usb=(), bluetooth=(), hid=(), nfc=(), serial=(), gamepad=(), web-share=(), local-fonts=(), otp-credentials=(), identity-credentials=(), storage-access=(), private-state-token=(), speaker-selection=(), encrypted-media=(), shared-storage=(), compute-pressure=(), sync-xhr=(), autoplay=(), midi=(), join-ad-interest-group=(), run-ad-auction=(), document-domain=(), eyedropper=(), all-screens-capture=(), digital-credentials=(), unload=(), aria-notify=(), captured-surface-control=(), deferred-fetch-minimal=(), battery=(), ch-ua-high-entropy-values=()",
 }
 
 
