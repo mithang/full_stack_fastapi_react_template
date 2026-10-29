@@ -12,7 +12,16 @@ class EmailAlreadyExistsException(ConflictException):
 
 class InvalidSubdomainException(InvalidOperationException):
     def __init__(self, subdomain: str):
-        message = f"Subdomain '{subdomain}' is invalid format (3–63 chars, letters/digits/hyphens, no leading/trailing hyphen)."
+        # The ApiBaseException handler logs ex.message verbatim, and
+        # validate_subdomain is also called directly on the free-form
+        # UserDto.sub_domain during registration (auth_service), so a
+        # newline-bearing subdomain would otherwise forge extra log
+        # lines on every failed validation. Flatten CR/LF here, at the
+        # message's single construction site, covering both raise sites
+        # in validate_subdomain; the raw value still drives validation,
+        # and normal subdomains render identically.
+        safe_subdomain = str(subdomain).replace("\r", " ").replace("\n", " ")
+        message = f"Subdomain '{safe_subdomain}' is invalid format (3–63 chars, letters/digits/hyphens, no leading/trailing hyphen)."
         super().__init__(message)
 
 class InvalidCustomDomainException(InvalidOperationException):
