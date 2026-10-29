@@ -1,14 +1,38 @@
 from fastapi import APIRouter, Depends, Response, status
 from fastapi.params import Query
 
+from api.common.exceptions import ForbiddenException
 from api.core.container import get_product_service
 from api.domain.dtos.product_dto import CreateProductDto, ProductDto, ProductListDto
 from api.domain.enum.feature import Feature
 from api.domain.enum.permission import Permission
 from api.domain.security.feature_access_management import check_feature_access
 from api.infrastructure.security.current_user import CurrentUser
+from api.interfaces.middlewares.tenant_middleware import get_tenant_id
 from api.interfaces.security.role_checker import check_permissions_for_current_role
 from api.usecases.product_service import ProductService
+
+
+def _assert_create_scope(current_user: CurrentUser, request_tenant_id) -> None:
+    # Write-in-wrong-scope guard, mirroring the Stripe settings
+    # (iteration 884) and storage configure (iteration 885) guards:
+    # product writes are Stripe-object writes, not DB records, but
+    # their scope still comes from the current DB — the tenant Stripe
+    # resolver reads the singleton settings record in the current DB
+    # with no tenant filter. So a tenant caller without a tenant DB
+    # selected (no X-Tenant-ID/subdomain, hitting the host DB) would
+    # create, update or delete products in the HOST Stripe account
+    # (scope "tenant" from the caller's tenant_id, keys from the host
+    # singleton), polluting the host catalog and hiding the objects
+    # from the caller's own tenant Stripe account. Legitimate tenant
+    # product management happens with the middleware scope equal to
+    # the caller's tenant id, and host callers (tenant_id None) are
+    # unaffected. A mismatched scope fails closed rather than writing
+    # into the wrong Stripe account.
+    if current_user.tenant_id is not None and (
+        request_tenant_id is None or str(request_tenant_id) != str(current_user.tenant_id)
+    ):
+        raise ForbiddenException("Products cannot be managed outside your tenant's scope.")
 
 
 router = APIRouter(
@@ -59,8 +83,10 @@ async def get_product_by_id(
 async def create_product(
     product_dto: CreateProductDto,
     current_user: CurrentUser,
-    product_service: ProductService = Depends(get_product_service)
+    product_service: ProductService = Depends(get_product_service),
+    request_tenant_id = Depends(get_tenant_id)
 ):
+    _assert_create_scope(current_user, request_tenant_id)
     scope = "tenant" if current_user.tenant_id else "host"
     await product_service.create_product(product_dto=product_dto, scope=scope)
     return status.HTTP_201_CREATED
@@ -72,8 +98,10 @@ async def update_product(
     product_id: str,
     product_dto: CreateProductDto,
     current_user: CurrentUser,
-    product_service: ProductService = Depends(get_product_service)
+    product_service: ProductService = Depends(get_product_service),
+    request_tenant_id = Depends(get_tenant_id)
 ):
+    _assert_create_scope(current_user, request_tenant_id)
     scope = "tenant" if current_user.tenant_id else "host"
     await product_service.update_product(product_id=product_id, product_dto=product_dto, scope=scope)
     return status.HTTP_204_NO_CONTENT
@@ -82,8 +110,10 @@ async def update_product(
 async def delete_product(
     product_id: str,
     current_user: CurrentUser,
-    product_service: ProductService = Depends(get_product_service)
+    product_service: ProductService = Depends(get_product_service),
+    request_tenant_id = Depends(get_tenant_id)
 ):
+    _assert_create_scope(current_user, request_tenant_id)
     scope = "tenant" if current_user.tenant_id else "host"
     await product_service.delete_product(product_id=product_id, scope=scope)
     return status.HTTP_202_ACCEPTED
