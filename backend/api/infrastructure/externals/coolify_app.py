@@ -9,6 +9,16 @@ from api.domain.dtos.coolify_app_dto import CoolifyAppDto, UpdateDomainDto
 from api.core.config import settings
 logger = get_logger(__name__)
 
+
+def _safe_log_value(value) -> str:
+    # Same pattern as celery_worker/base_repository: the domain list can
+    # carry a domain from an unvalidated worker payload (UpdateDomainDto
+    # .domain is a plain str), so flatten CR/LF to prevent log-line
+    # forgery. The raw value still drives the Coolify update, and normal
+    # domains render identically.
+    return str(value).replace("\r", " ").replace("\n", " ")
+
+
 class CoolifyApp:
     """Coolify application integration."""
 
@@ -75,7 +85,7 @@ class CoolifyApp:
                     domains.remove(data.domain)
             
             new_domains = ",".join(domains)
-            logger.debug(f"Updating Coolify app domains to: {new_domains}")
+            logger.debug(f"Updating Coolify app domains to: {_safe_log_value(new_domains)}")
 
             url = f"{self.api_url}/applications/{self.application_id}"
             payload = {
