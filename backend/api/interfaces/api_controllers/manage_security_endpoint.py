@@ -1,22 +1,49 @@
 from fastapi import APIRouter, Depends, Response
 
+from api.common.exceptions import ForbiddenException
 from api.core.container import get_audit_logs_service, get_passkey_service
 from api.domain.dtos.audit_logs_dto import AuditLogDto
 from api.domain.dtos.passkey_dto import RegisteredPasskeyCredentialsDto
 from api.infrastructure.security.current_user import CurrentUser
 from api.infrastructure.security.passkey_service import PasskeyService
+from api.interfaces.middlewares.tenant_middleware import get_tenant_id
 from api.usecases.audit_logs_service import AuditLogsService
 
 
 router = APIRouter(prefix="/security")
 router.tags = ["Manage Security"]
 
+
+def _assert_passkey_scope(current_user: CurrentUser, request_tenant_id) -> None:
+    # Read/delete-in-wrong-DB guard, mirroring the AI history guard:
+    # passkey reads and deletes are keyed by email only
+    # (PasskeyService.get_registered_passkeys /
+    # delete_registered_passkey look up UserPasskey by user_email)
+    # in the current DB, with no tenant filter, and UserPasskey
+    # carries no tenant_id. So a tenant caller without a tenant DB
+    # selected (no X-Tenant-ID/subdomain, hitting the host DB)
+    # would read — and could delete — host-DB passkey records
+    # matching their email (normally empty, but an email collision
+    # across DBs would expose another user's credentials and let
+    # the caller delete them), instead of their own tenant
+    # passkeys. Legitimate tenant calls go through ApiClient,
+    # which sends X-Tenant-ID whenever a tenant is selected, so
+    # the middleware scope equals their tenant id; host callers
+    # (tenant_id None) are unaffected. The delete endpoint reuses
+    # this guard: the failure mode (acting on the wrong DB's
+    # email-keyed record) is identical to the read.
+    if current_user.tenant_id is not None and (
+        request_tenant_id is None or str(request_tenant_id) != str(current_user.tenant_id)
+    ):
+        raise ForbiddenException("Passkeys cannot be accessed outside your tenant's scope.")
+
 @router.get("/passkeys", response_model=list[RegisteredPasskeyCredentialsDto], status_code=200)
 async def get_registered_passkeys(
     response: Response,
     current_user: CurrentUser,
     passkey_service: PasskeyService = Depends(get_passkey_service),
-    audit_log_service: AuditLogsService = Depends(get_audit_logs_service)
+    audit_log_service: AuditLogsService = Depends(get_audit_logs_service),
+    request_tenant_id = Depends(get_tenant_id),
 
 ):
     """
@@ -32,6 +59,7 @@ async def get_registered_passkeys(
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
 
+    _assert_passkey_scope(current_user, request_tenant_id)
     passkeys = await passkey_service.get_registered_passkeys(email=current_user.email)
     res = [RegisteredPasskeyCredentialsDto(**pk.model_dump()) for pk in passkeys]
     await audit_log_service.create_audit_log(
@@ -51,11 +79,13 @@ async def delete_registered_passkey(
     credential_id: str,
     current_user: CurrentUser,
     passkey_service: PasskeyService = Depends(get_passkey_service),
-    audit_log_service: AuditLogsService = Depends(get_audit_logs_service)
+    audit_log_service: AuditLogsService = Depends(get_audit_logs_service),
+    request_tenant_id = Depends(get_tenant_id)
 ):
     """
     Endpoint to delete a registered passkey for the current user.
     """
+    _assert_passkey_scope(current_user, request_tenant_id)
     try:
         await passkey_service.delete_registered_passkey(
             email=current_user.email,
