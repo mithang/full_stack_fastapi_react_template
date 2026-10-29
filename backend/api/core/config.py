@@ -32,8 +32,6 @@ class Settings(BaseSettings):
     host_main_domain: str = "fsrapp.com"
 
     redis_uri: str = "redis://localhost:6372"
-    celery_result_backend: str = "redis://localhost:6372/0"
-    celery_broker_url: str = "redis://localhost:6372/0"
 
 
     fastapi_env: str = "development"  # Options: "development", "production"
