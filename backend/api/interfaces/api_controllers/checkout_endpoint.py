@@ -183,8 +183,24 @@ async def host_checkout_canceled(
 async def tenant_checkout_success(
     session_id: str,
     current_user: CurrentUser,
-    billing_service: BillingRecordService = Depends(get_billing_record_service)
+    billing_service: BillingRecordService = Depends(get_billing_record_service),
+    request_tenant_id = Depends(get_tenant_id)
 ):
+    # Same wrong-scope guard as session creation (iteration 889):
+    # the success handler retrieves the session through the tenant
+    # Stripe resolver, which reads the singleton settings record in
+    # the current DB with no tenant filter, and finalises the record
+    # in the current DB. A tenant caller without a tenant DB selected
+    # (no X-Tenant-ID/subdomain, hitting the host DB) previously
+    # reached that retrieve — failing only incidentally as a Stripe
+    # 404, since the session lives in the tenant's Stripe account —
+    # instead of failing fast with a clear scope error. The service's
+    # record-level tenant/user checks already blocked cross-tenant
+    # finalisation, so this guard changes the failure mode, not the
+    # outcome, for mismatched callers; legitimate tenant finalisation
+    # (middleware scope == caller tenant, as ApiClient sends) and host
+    # callers (still hit the tenant-required error below) are unchanged.
+    _assert_create_scope(current_user, request_tenant_id)
     # A tenant payment success finalises the caller's tenant-scope
     # record, so a caller without a tenant — a host user, whose
     # tenant_id is None — previously proceeded to a Stripe retrieve
@@ -202,8 +218,18 @@ async def tenant_checkout_success(
 @router.post("/tenant/payment/cancel", status_code=status.HTTP_202_ACCEPTED)
 async def tenant_checkout_canceled(
     current_user: CurrentUser,
-    billing_service: BillingRecordService = Depends(get_billing_record_service)
+    billing_service: BillingRecordService = Depends(get_billing_record_service),
+    request_tenant_id = Depends(get_tenant_id)
 ):
+    # Same wrong-scope guard as the success endpoint above: cancel
+    # marks records in the current DB, so a tenant caller without a
+    # tenant DB selected previously reached the service and canceled
+    # only records already (wrongly) planted in the host DB, while a
+    # legitimate cancel in the tenant DB was never reached. Fail fast
+    # here instead; legitimate tenant cancels (middleware scope ==
+    # caller tenant) and host callers (still hit the tenant-required
+    # error below) are unchanged.
+    _assert_create_scope(current_user, request_tenant_id)
     # A tenant payment cancel marks the caller's tenant-scope records
     # canceled, so a caller without a tenant — a host user, whose
     # tenant_id is None — previously returned 202 having canceled
