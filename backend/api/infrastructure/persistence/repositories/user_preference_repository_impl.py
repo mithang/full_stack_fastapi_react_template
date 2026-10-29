@@ -9,6 +9,12 @@ from api.domain.entities.user_preference import UserPreference
 
 logger = get_logger(__name__)
 
+def _safe_log_keys(keys) -> list[str]:
+    # Preference keys are free-form request JSON strings, so strip CR/LF
+    # before logging: a key containing a newline could otherwise forge
+    # extra log lines.
+    return [str(k).replace("\r", " ").replace("\n", " ") for k in sorted(keys)]
+
 class UserPreferenceRepository(BaseRepository[UserPreference], AuditLogRepository): 
     def __init__(self):
         super().__init__(UserPreference)
@@ -28,7 +34,7 @@ class UserPreferenceRepository(BaseRepository[UserPreference], AuditLogRepositor
             )
             await self.create(data=new_pref.model_dump())
             # Log keys only, not values: full preference payloads must not reach server logs.
-            logger.debug(f"Created new preferences for user {user_id} (keys: {sorted(preferences.keys())})")
+            logger.debug(f"Created new preferences for user {user_id} (keys: {_safe_log_keys(preferences.keys())})")
             existing =  await self.get_preferences(user_id=user_id)
             await self.add_audit_log(AuditLogDto(
                 action="create",
@@ -45,7 +51,7 @@ class UserPreferenceRepository(BaseRepository[UserPreference], AuditLogRepositor
             preferences=prf
         )
         # Log keys only, not values: full preference payloads must not reach server logs.
-        logger.debug(f"Updating preferences for user {user_id} (keys: {sorted(payload.preferences.keys())})")
+        logger.debug(f"Updating preferences for user {user_id} (keys: {_safe_log_keys(payload.preferences.keys())})")
         await self.update(id=existing.id, data=payload.model_dump())
         logger.debug(f"Updated preferences for user {user_id}")
         await self.add_audit_log(AuditLogDto(
