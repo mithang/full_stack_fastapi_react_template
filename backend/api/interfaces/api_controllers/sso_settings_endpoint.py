@@ -34,6 +34,30 @@ def _assert_create_scope(current_user: CurrentUser, request_tenant_id) -> None:
     ):
         raise ForbiddenException("SSO settings cannot be created outside your tenant's scope.")
 
+
+def _assert_update_scope(current_user: CurrentUser, request_tenant_id) -> None:
+    # Update/delete-in-wrong-DB guard, mirroring the create guard
+    # above and the notification-banner update guard (iteration
+    # 902): the service already refuses a record stamped for
+    # another tenant, but it does not check which database served
+    # the request — and SSO login resolves a provider by first
+    # match in the current DB with no tenant filter. So a tenant
+    # caller updating/deleting on the host DB (no
+    # X-Tenant-ID/subdomain, request scope None) could still
+    # overwrite or delete a tenant-stamped SSO configuration
+    # sitting in the host DB (e.g. planted before the create
+    # guard), and host SSO logins could then pick up the edited
+    # credentials or lose the provider. Legitimate tenant SSO
+    # edits happen in the caller's own tenant DB, where the
+    # middleware scope equals their tenant id, and host callers
+    # (tenant_id None) are unaffected. A mismatched scope fails
+    # closed before any write, rather than editing a record in
+    # the wrong DB.
+    if current_user.tenant_id is not None and (
+        request_tenant_id is None or str(request_tenant_id) != str(current_user.tenant_id)
+    ):
+        raise ForbiddenException("SSO settings cannot be modified outside your tenant's scope.")
+
 @router.get("/", response_model=SSOSettingsListDto, response_model_exclude_none=True)
 async def list(
     response: Response,
@@ -102,8 +126,10 @@ async def create_sso_settings(
 async def delete_sso_settings(
     sso_id: str,
     current_user: CurrentUser,
-    sso_settings_service: SSOSettingsService = Depends(get_sso_settings_service)
+    sso_settings_service: SSOSettingsService = Depends(get_sso_settings_service),
+    request_tenant_id = Depends(get_tenant_id)
 ):
+    _assert_update_scope(current_user, request_tenant_id)
     return await sso_settings_service.delete_sso_settings(sso_id, tenant_id=current_user.tenant_id)
 
 
@@ -112,7 +138,9 @@ async def update_sso_settings(
     sso_id: str,
     sso_settings: UpdateSSOSettingsDto,
     current_user: CurrentUser,
-    sso_settings_service: SSOSettingsService = Depends(get_sso_settings_service)
+    sso_settings_service: SSOSettingsService = Depends(get_sso_settings_service),
+    request_tenant_id = Depends(get_tenant_id)
 ):
+    _assert_update_scope(current_user, request_tenant_id)
     await sso_settings_service.update_sso_settings(sso_id, sso_settings, tenant_id=current_user.tenant_id)
     return None
