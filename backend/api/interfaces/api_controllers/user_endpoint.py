@@ -275,6 +275,26 @@ async def delete_user(
 
 
 
+def _assert_profile_picture_scope(current_user: CurrentUser, request_tenant_id) -> None:
+    # Profile-picture-in-wrong-DB guard, mirroring
+    # _assert_remove_scope above: the service already scopes the
+    # target to the caller's tenant stamp, but nothing checks
+    # which database served the request. So a tenant caller
+    # updating on the host DB (no X-Tenant-ID/subdomain,
+    # request scope None) could still overwrite the avatar of a
+    # tenant-stamped user sitting in the host DB (e.g. planted
+    # before the create guard), including their own record.
+    # Legitimate tenant picture updates happen in the caller's
+    # own tenant DB, where the middleware scope equals their
+    # tenant id, and host callers (tenant_id None) are
+    # unaffected. A mismatched scope fails closed before any
+    # file validation, read, or storage write.
+    if current_user.tenant_id is not None and (
+        request_tenant_id is None or str(request_tenant_id) != str(current_user.tenant_id)
+    ):
+        raise ForbiddenException("User profile picture cannot be updated outside your tenant's scope.")
+
+
 @router.put("/{user_id}/update_profile_picture", response_model=UserProfileImageUpdateDto, status_code=status.HTTP_202_ACCEPTED)
 async def update_profile_picture(
     user_id: str,
@@ -285,7 +305,9 @@ async def update_profile_picture(
         allow_self_access=True)),
     user_service: UserService = Depends(get_user_service),
     file_service: FileService = Depends(get_file_service),
+    request_tenant_id = Depends(get_tenant_id)
 ):
+    _assert_profile_picture_scope(current_user, request_tenant_id)
     # The frontend checks for an image file, but a direct API call bypasses
     # it, so validate server-side (mirroring the branding logo upload):
     # anything stored as a profile picture is later served back via a
