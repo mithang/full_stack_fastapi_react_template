@@ -189,7 +189,7 @@ async def _update_coolify_domain(data: UpdateDomainDto):
         hostname = f"https://{data.domain}"
         success = await coolify_service.update_domain(data=UpdateDomainDto(domain=hostname, mode=data.mode))
         if success:
-            logger.info(f"Successfully updated Coolify domain with data: {data.domain}, mode: {data.mode}")
+            logger.info(f"Successfully updated Coolify domain with data: {_safe_log_value(data.domain)}, mode: {data.mode}")
             logger.info("Restarting Coolify application to apply domain changes.")
             if await coolify_service.restart_app():
                 logger.info("Coolify application restart initiated.")
