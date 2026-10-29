@@ -124,12 +124,12 @@ class PasskeyService():
             raise PassKeyException("User passkey record not found.")
 
         # Challenge/record tenant-scope guard: get_challenge() looks up by
-        # email + type only, so a stale challenge stamped for one tenant
-        # (save_challenge never deletes superseded challenges of the same
-        # type) must not complete against a passkey record stamped for
-        # another tenant in the same DB — the RP check below is derived
-        # from the challenge's tenant, so without this the ceremony could
-        # be verified for the wrong tenant's record. Both stamps are set
+        # email + type only, so a stale challenge (saved before the
+        # save-time supersede, or by a concurrent save) must not complete
+        # against a passkey record stamped for another tenant in the same
+        # DB — the RP check below is derived from the challenge's tenant,
+        # so without this the ceremony could be verified for the wrong
+        # tenant's record. Both stamps are set
         # from the same user record by register_options, so legitimate
         # completions always match; a mismatch fails closed before any
         # credential is stored.

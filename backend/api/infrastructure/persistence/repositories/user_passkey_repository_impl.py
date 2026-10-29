@@ -31,6 +31,14 @@ class UserPasskeyChallengesRepository(BaseRepository[Challenges], AuditLogReposi
         # the token/password/hash logs removed in earlier iterations.
         # Its length is all a debug line here needs.
         logger.debug(f"challenge bytes to a string of {len(cv)} characters")
+        # Single live challenge per email+type: get_challenge() returns
+        # the first match, so without this a second options request left
+        # the stale challenge shadowing the fresh one — the new ceremony
+        # then failed verification against the stale nonce, and the fresh
+        # challenge lingered orphaned until TTL. Supersede priors here.
+        prior = await self.model.find({"email": email, "type": type}).to_list()
+        for old in prior:
+            await old.delete()
         data = Challenges(
             email=email,
             challenge=cv,
@@ -56,10 +64,13 @@ class UserPasskeyChallengesRepository(BaseRepository[Challenges], AuditLogReposi
 
     async def delete_challenge(self, email: str, type: Literal["registration", "authentication"]) -> bool:
         """
-            Delete the current challenge for the given email, Returns False if its not found, Otherwise, True
+            Delete the current challenge(s) for the given email, Returns False if none found, Otherwise, True.
+            Deletes all matches, not just the first: duplicates saved before
+            the save-time supersede (or by concurrent saves) must not leave
+            a stale challenge usable after the ceremony completes.
         """
-        existing = await self.get_challenge(email=email, type=type)
-        if existing is None:
+        existing = await self.model.find({"email": email, "type": type}).to_list()
+        if not existing:
             logger.warning(f"Challenge not found for user {email} with type {type}")
             await self.add_audit_log(AuditLogDto(
                 action="delete",
@@ -69,13 +80,14 @@ class UserPasskeyChallengesRepository(BaseRepository[Challenges], AuditLogReposi
                 tenant_id=None
             ))
             return False
-        await existing.delete()
+        for doc in existing:
+            await doc.delete()
         await self.add_audit_log(AuditLogDto(
             action="delete",
             entity="UserPasskeyChallenges",
             user_id=email,
             changes={"Info": "Deleted challenge for user with type " + type},
-            tenant_id=str(existing.tenant_id) if existing.tenant_id else None
+            tenant_id=str(existing[0].tenant_id) if existing[0].tenant_id else None
         ))
         return True
 
