@@ -30,10 +30,12 @@ logger = get_logger(__name__)
 
 
 def _safe_log_value(value) -> str:
-    # The DNS-update payload is an unvalidated dict[str, str], so a
-    # newline-bearing custom_domain would otherwise forge extra log
-    # lines. Flatten CR/LF here; the raw value still drives the DNS
-    # lookup, and normal hostnames render identically.
+    # Worker payloads are not re-validated at the worker boundary: the
+    # DNS-update payload is an unvalidated dict[str, str] and the
+    # download-report tenant_id is a plain str, so a newline-bearing
+    # value would otherwise forge extra log lines (or, in a filename,
+    # break out of MIME headers). Flatten CR/LF here; the raw value
+    # still drives the lookup, and normal values render identically.
     return str(value).replace("\r", " ").replace("\n", " ")
 
 celery_app = Celery(
@@ -202,7 +204,7 @@ async def _handle_download_report_shared_task_async(payload: str):
     ct_id = str(worker_payload.tenant_id) if worker_payload.tenant_id else None
     if worker_payload.label == "email-sending":
 
-        logger.info(f"Starting download report email sending for tenant_id: {ct_id}")
+        logger.info(f"Starting download report email sending for tenant_id: {_safe_log_value(ct_id)}")
         if ct_id is None:
             db = Database(uri=mongo_uri, models=models)
             await db.init_db(db_name=mongo_db_default, is_tenant=False)
@@ -214,7 +216,11 @@ async def _handle_download_report_shared_task_async(payload: str):
         requesting_user: User = await user_service.get_user_by_id(user_id=worker_payload.data["requested_by"])
         from openpyxl import Workbook
         from api.common.utils import get_utc_now
-        attachment_file_name = f"audit_logs_report_{ct_id or 'host_'}{get_utc_now().strftime('%Y-%m-%d_%H-%M-%S')}.xlsx"
+        # ct_id is a plain str field on WorkerPayloadDto, so a forged
+        # payload could carry CR/LF: flatten it here so it can neither
+        # forge log lines nor break out of the attachment's MIME headers
+        # via fastapi-mail. The raw ct_id still drives the DB lookup.
+        attachment_file_name = f"audit_logs_report_{_safe_log_value(ct_id) if ct_id else 'host_'}{get_utc_now().strftime('%Y-%m-%d_%H-%M-%S')}.xlsx"
 
         res = await audit_log_service.generate_audit_logs_download(action=worker_payload.data.get("action", None), tenant_id=ct_id)
         # Create Excel workbook
@@ -235,7 +241,7 @@ async def _handle_download_report_shared_task_async(payload: str):
         buffer = BytesIO()
         wb.save(buffer)
         buffer.seek(0)
-        logger.info(f"Completed download report email sending for tenant_id: {ct_id}")
+        logger.info(f"Completed download report email sending for tenant_id: {_safe_log_value(ct_id)}")
         logger.info(f"Sending audit log report to email: {requesting_user.email}")
         await audit_log_service.send_audit_log_report_via_email(
             to_email=requesting_user.email,
