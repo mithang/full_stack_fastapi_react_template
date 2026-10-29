@@ -11,6 +11,16 @@ logger = logging.getLogger(__name__)
 
 class S3Storage:
     def __init__(self, bucket_name: str, aws_access_key: str, aws_secret_key: str, region: str):
+        # Fail closed on missing keys instead of letting boto3 silently
+        # resolve ambient credentials (env vars, shared config, IAM role):
+        # the configure-time validator (iteration 1105) only covers new
+        # configs, so a pre-existing enabled-S3 record with blank keys
+        # would otherwise upload to the tenant bucket under the
+        # deployment's credentials. Host-level settings keys are required
+        # fields (core/config.py), so this cannot trip a running
+        # deployment's settings-fallback path on None keys.
+        if not (aws_access_key or "").strip() or not (aws_secret_key or "").strip():
+            raise S3StorageException("S3 storage credentials are not configured.")
         self.bucket_name = bucket_name
         self.s3_client = boto3.client(
             "s3",
