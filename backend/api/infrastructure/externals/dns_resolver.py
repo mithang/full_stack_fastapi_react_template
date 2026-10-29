@@ -44,10 +44,10 @@ class DnsResolver:
                 # exception, and InvalidCustomDomainException's message
                 # would otherwise embed resolver internals verbatim).
                 logger.error(f"DNS resolution failed for {_safe_log_value(hostname)}: {e}")
-                raise InvalidOperationException(f"DNS resolution failed for {hostname}.")
+                raise InvalidOperationException(f"DNS resolution failed for {_safe_log_value(hostname)}.")
         except Exception as e:
             logger.error(f"DNS resolution failed for {_safe_log_value(hostname)}: {e}")
-            raise InvalidOperationException(f"DNS resolution failed for {hostname}.")
+            raise InvalidOperationException(f"DNS resolution failed for {_safe_log_value(hostname)}.")
 
         # if expected_target:
         #     if not any(expected_target in target for target in resolved_to):
