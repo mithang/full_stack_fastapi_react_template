@@ -12,6 +12,14 @@ from api.core.config import settings
 
 logger = get_logger(__name__)
 
+
+def _safe_log_value(value: object) -> str:
+    # The filename comes from the multipart header, so it is
+    # client-controlled: a newline-bearing name could forge extra log
+    # lines. Flatten CR/LF in the logged copy only; the raw filename
+    # still drives the storage key (basename-stripped below).
+    return str(value).replace("\r", " ").replace("\n", " ")
+
 class FileUpload:
     def __init__(self):
         from api.core.container import get_storage_settings_repository # To avoid circular imports
@@ -34,7 +42,7 @@ class FileUpload:
                 raise StorageNotEnabledException()
 
             if active_provider.provider.value == StorageProvider.AWS_S3.value:
-                logger.info(f"Uploading file to AWS S3: {file.filename}")   
+                logger.info(f"Uploading file to AWS S3: {_safe_log_value(file.filename)}")
                 s3 = S3Storage(
                     bucket_name=active_provider.aws_bucket_name,
                     aws_access_key=active_provider.aws_access_key,
@@ -43,7 +51,7 @@ class FileUpload:
                 )
                 return await s3.upload_file(file, active_provider.aws_bucket_name + "/" + safe_name)
             elif active_provider.provider.value == StorageProvider.AZURE_BLOB.value:
-                logger.info(f"Uploading file to Azure Blob Storage: {file.filename}")
+                logger.info(f"Uploading file to Azure Blob Storage: {_safe_log_value(file.filename)}")
                 azure = AzureBlobStorage(
                     connection_string=active_provider.azure_connection_string,
                     container_name=active_provider.azure_container_name
