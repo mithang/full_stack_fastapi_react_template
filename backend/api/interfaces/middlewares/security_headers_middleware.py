@@ -366,9 +366,22 @@ _SECURITY_HEADERS = {
     # compromised script could otherwise probe the user's LAN services
     # from the app's origin. Note the header already carries the
     # local-network-access alias, which modern browsers may not honor
-    # for local-network requests; loopback-network remains a future
-    # candidate.)
-    b"permissions-policy": b"camera=(), microphone=(), geolocation=(), payment=(), clipboard-read=(), display-capture=(), fullscreen=(), accelerometer=(), gyroscope=(), magnetometer=(), xr-spatial-tracking=(), idle-detection=(), picture-in-picture=(), browsing-topics=(), attribution-reporting=(), window-management=(), keyboard-map=(), ambient-light-sensor=(), wake-lock=(), usb=(), bluetooth=(), hid=(), nfc=(), serial=(), gamepad=(), web-share=(), local-fonts=(), otp-credentials=(), identity-credentials=(), storage-access=(), private-state-token=(), speaker-selection=(), encrypted-media=(), shared-storage=(), compute-pressure=(), sync-xhr=(), autoplay=(), midi=(), join-ad-interest-group=(), run-ad-auction=(), document-domain=(), eyedropper=(), all-screens-capture=(), digital-credentials=(), unload=(), aria-notify=(), captured-surface-control=(), deferred-fetch-minimal=(), battery=(), ch-ua-high-entropy-values=(), translator=(), summarizer=(), language-detector=(), language-model=(), screen-wake-lock=(), on-device-speech-recognition=(), identity-credentials-get=(), private-state-token-issuance=(), private-state-token-redemption=(), local-network-access=(), deferred-fetch=(), local-network=()",
+    # for local-network requests.)
+    # Loopback network access is disabled under its granular directive
+    # name (verified against MDN's Permissions-Policy: loopback-network
+    # page, whose default allowlist is self — so with this directive set
+    # to empty, loopback requests such as 127.0.0.1 / localhost are
+    # denied: the SPA never fetches loopback addresses from the browser
+    # — grep over frontend/app/src finds no localhost, 127.0.0.1, or
+    # ::1 fetch target, and in development API calls go through the
+    # Vite proxy as same-origin requests rather than direct loopback
+    # fetches — so no app flow exists to break; a compromised script
+    # could otherwise probe services running on the user's own machine
+    # from the app's origin. Note the header already carries the
+    # local-network-access alias and the local-network directive, which
+    # do not cover loopback addresses on browsers that honor the
+    # granular names.)
+    b"permissions-policy": b"camera=(), microphone=(), geolocation=(), payment=(), clipboard-read=(), display-capture=(), fullscreen=(), accelerometer=(), gyroscope=(), magnetometer=(), xr-spatial-tracking=(), idle-detection=(), picture-in-picture=(), browsing-topics=(), attribution-reporting=(), window-management=(), keyboard-map=(), ambient-light-sensor=(), wake-lock=(), usb=(), bluetooth=(), hid=(), nfc=(), serial=(), gamepad=(), web-share=(), local-fonts=(), otp-credentials=(), identity-credentials=(), storage-access=(), private-state-token=(), speaker-selection=(), encrypted-media=(), shared-storage=(), compute-pressure=(), sync-xhr=(), autoplay=(), midi=(), join-ad-interest-group=(), run-ad-auction=(), document-domain=(), eyedropper=(), all-screens-capture=(), digital-credentials=(), unload=(), aria-notify=(), captured-surface-control=(), deferred-fetch-minimal=(), battery=(), ch-ua-high-entropy-values=(), translator=(), summarizer=(), language-detector=(), language-model=(), screen-wake-lock=(), on-device-speech-recognition=(), identity-credentials-get=(), private-state-token-issuance=(), private-state-token-redemption=(), local-network-access=(), deferred-fetch=(), local-network=(), loopback-network=()",
 }
 
 
