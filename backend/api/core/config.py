@@ -78,7 +78,6 @@ class Settings(BaseSettings):
 
     # Stripe Settings for Billing and Payments - Host Level Settings
     stripe_api_key: str
-    stripe_publishable_key: str
     stripe_secret_key: str
     stripe_webhook_secret: str
 

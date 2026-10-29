@@ -371,7 +371,6 @@ To use the Stripe payment features, you need to configure your Stripe account:
 
          # Stripe credentials settings
          STRIPE_API_KEY="rk_test_5..."
-         STRIPE_PUBLISHABLE_KEY="pk_test_5..."
          STRIPE_SECRET_KEY="sk_test_$..."
          STRIPE_WEBHOOK_SECRET="whsec_..."
 
