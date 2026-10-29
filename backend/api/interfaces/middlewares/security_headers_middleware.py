@@ -359,7 +359,16 @@ _SECURITY_HEADERS = {
     # requests — so no app flow exists to break, and a compromised
     # script could otherwise probe the user's LAN/loopback services
     # from the app's origin.
-    b"permissions-policy": b"camera=(), microphone=(), geolocation=(), payment=(), clipboard-read=(), display-capture=(), fullscreen=(), accelerometer=(), gyroscope=(), magnetometer=(), xr-spatial-tracking=(), idle-detection=(), picture-in-picture=(), browsing-topics=(), attribution-reporting=(), window-management=(), keyboard-map=(), ambient-light-sensor=(), wake-lock=(), usb=(), bluetooth=(), hid=(), nfc=(), serial=(), gamepad=(), web-share=(), local-fonts=(), otp-credentials=(), identity-credentials=(), storage-access=(), private-state-token=(), speaker-selection=(), encrypted-media=(), shared-storage=(), compute-pressure=(), sync-xhr=(), autoplay=(), midi=(), join-ad-interest-group=(), run-ad-auction=(), document-domain=(), eyedropper=(), all-screens-capture=(), digital-credentials=(), unload=(), aria-notify=(), captured-surface-control=(), deferred-fetch-minimal=(), battery=(), ch-ua-high-entropy-values=(), translator=(), summarizer=(), language-detector=(), language-model=(), screen-wake-lock=(), on-device-speech-recognition=(), identity-credentials-get=(), private-state-token-issuance=(), private-state-token-redemption=(), local-network-access=(), deferred-fetch=()",
+    # Local network access is disabled under its granular directive
+    # name (verified by grep: the SPA never fetches local addresses
+    # from the browser — no localhost, 127.0.0.1, or private-IP fetch
+    # target in frontend/app/src — so no app flow exists to break; a
+    # compromised script could otherwise probe the user's LAN services
+    # from the app's origin. Note the header already carries the
+    # local-network-access alias, which modern browsers may not honor
+    # for local-network requests; loopback-network remains a future
+    # candidate.)
+    b"permissions-policy": b"camera=(), microphone=(), geolocation=(), payment=(), clipboard-read=(), display-capture=(), fullscreen=(), accelerometer=(), gyroscope=(), magnetometer=(), xr-spatial-tracking=(), idle-detection=(), picture-in-picture=(), browsing-topics=(), attribution-reporting=(), window-management=(), keyboard-map=(), ambient-light-sensor=(), wake-lock=(), usb=(), bluetooth=(), hid=(), nfc=(), serial=(), gamepad=(), web-share=(), local-fonts=(), otp-credentials=(), identity-credentials=(), storage-access=(), private-state-token=(), speaker-selection=(), encrypted-media=(), shared-storage=(), compute-pressure=(), sync-xhr=(), autoplay=(), midi=(), join-ad-interest-group=(), run-ad-auction=(), document-domain=(), eyedropper=(), all-screens-capture=(), digital-credentials=(), unload=(), aria-notify=(), captured-surface-control=(), deferred-fetch-minimal=(), battery=(), ch-ua-high-entropy-values=(), translator=(), summarizer=(), language-detector=(), language-model=(), screen-wake-lock=(), on-device-speech-recognition=(), identity-credentials-get=(), private-state-token-issuance=(), private-state-token-redemption=(), local-network-access=(), deferred-fetch=(), local-network=()",
 }
 
 
