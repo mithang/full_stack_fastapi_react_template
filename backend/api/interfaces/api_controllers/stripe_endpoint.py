@@ -89,12 +89,33 @@ async def configure_stripe_setting(
     return status.HTTP_201_CREATED
 
 
+def _assert_read_scope(current_user: CurrentUser, request_tenant_id) -> None:
+    # Read-in-wrong-DB guard, mirroring the storage, SSO, and roles
+    # read guards: the service already checks the stored record's
+    # tenant stamp against the caller (iteration 883), but it does
+    # not check which database served the request. So a tenant caller
+    # reading on the host DB (no X-Tenant-ID/subdomain, request
+    # scope None) could still read a tenant-stamped settings record
+    # sitting in the host DB (e.g. planted before the configure
+    # guard). Legitimate tenant reads happen in the caller's own
+    # tenant DB, where the middleware scope equals their tenant id.
+    # Raised before any read, so a blocked attempt leaks no settings.
+    if current_user.tenant_id is not None and (
+        request_tenant_id is None or str(request_tenant_id) != str(current_user.tenant_id)
+    ):
+        raise ForbiddenException(
+            "Stripe settings cannot be read outside your tenant's scope."
+        )
+
+
 @router.get("/stripe", response_model=StripeSettingDto, status_code=status.HTTP_200_OK)
 async def get_stripe_settings(
     response: Response,
     current_user: CurrentUser,
     stripe_setting_service: StripeSettingService = Depends(get_stripe_setting_service),
+    request_tenant_id=Depends(get_tenant_id),
 ):
+    _assert_read_scope(current_user, request_tenant_id)
     # Tenant payment settings: a browser/proxy-cached 200 could serve
     # one tenant's Stripe configuration to another admin after an
     # account switch, or hide a freshly updated configuration — same
