@@ -33,6 +33,19 @@ from api.domain.enum.role import RoleType
 
 logger = get_logger(__name__)
 
+
+def _safe_log_value(value) -> str:
+    # OAuth2PasswordRequestForm username is a free-form form field, and
+    # this log line runs before LoginRequestDto's EmailStr validation,
+    # so a newline in a login attempt could otherwise forge extra log
+    # lines — unauthenticated (same class as the tenant-name,
+    # preference-key, cache-path and user-update fixes in iterations
+    # 951-954). Only the logged copy is flattened. x_tenant_id needs no
+    # such treatment: it arrives as an HTTP header value, which cannot
+    # carry a raw newline.
+    return str(value).replace("\r", " ").replace("\n", " ")
+
+
 router = APIRouter(prefix="/account", tags=["Account"])
 
 @router.post("/login", response_model=TokenSetDto, status_code=status.HTTP_200_OK)
@@ -42,7 +55,7 @@ async def login(
     auth_service: AuthService = Depends(get_auth_service),
     x_tenant_id: str | None = Depends(get_tenant_id)
 ):
-    logger.info(f"Login attempt for user: {login_request.username} x_tenant_id: {x_tenant_id}")
+    logger.info(f"Login attempt for user: {_safe_log_value(login_request.username)} x_tenant_id: {x_tenant_id}")
     token_set: TokenSetDto = await auth_service.login(LoginRequestDto(
         email=login_request.username,
         password=login_request.password
