@@ -10,6 +10,17 @@ from api.common.base_repository import BaseRepository
 from api.common.audit_logs_repository import AuditLogRepository
 
 logger = get_logger(__name__)
+
+
+def _safe_log_value(value) -> str:
+    # Path ids arrive percent-decoded, and BaseRepository.get() returns
+    # None (rather than raising) for a malformed id, so a newline-bearing
+    # id reaches the "not found" error lines below and could forge extra
+    # log lines. Flatten CR/LF in the logged copy only; the raw id still
+    # drives the lookup and the audit-log entries.
+    return str(value).replace("\r", " ").replace("\n", " ")
+
+
 class UserRepository(BaseRepository[User], AuditLogRepository):
     def __init__(self):
         super().__init__(User)
@@ -76,7 +87,7 @@ class UserRepository(BaseRepository[User], AuditLogRepository):
                 ))
                 return updated_user
         except NotFoundException as e:
-            logger.error(f"No user found for the given user id: {user_id}")
+            logger.error(f"No user found for the given user id: {_safe_log_value(user_id)}")
             await self.add_audit_log(AuditLogDto(
                 action="update",
                 entity="User",
@@ -103,7 +114,7 @@ class UserRepository(BaseRepository[User], AuditLogRepository):
                 ))
             return result
         except NotFoundException as e:
-            logger.error(f"No user found for the given user id: {user_id}")
+            logger.error(f"No user found for the given user id: {_safe_log_value(user_id)}")
             await self.add_audit_log(AuditLogDto(
                 action="delete",
                 entity="User",
