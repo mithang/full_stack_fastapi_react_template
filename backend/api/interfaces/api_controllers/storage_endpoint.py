@@ -15,6 +15,13 @@ from api.usecases.storage_settings_service import StorageSettingsService
 
 logger = get_logger(__name__)
 
+
+def _safe_log_value(value: object) -> str:
+    # Storage ids arrive as percent-decoded path params, so a newline
+    # in the id would otherwise forge extra log lines; flatten CR/LF
+    # in the logged copy only, never in the value used for lookups.
+    return str(value).replace("\r", " ").replace("\n", " ")
+
 router = APIRouter(
     prefix="/storage",
     dependencies=[
@@ -169,7 +176,7 @@ async def reset_storage(
 ):
     _assert_reset_scope(current_user, request_tenant_id)
 
-    logger.debug(f"Received request to reset storage settings for ID: {storage_id}")
+    logger.debug(f"Received request to reset storage settings for ID: {_safe_log_value(storage_id)}")
 
     try:
         # We don't expect storage settings to be configured with host context as they are global settings. Only tenants with proper permissions can configure them.
