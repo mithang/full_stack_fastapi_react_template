@@ -105,8 +105,6 @@ env:
       secretKeyRef:
         name: app-secrets
         key: smtp-mail-from
-  - name: SMTP_MAIL_FROM_NAME
-    value: "FastAPI React App"
   - name: BASE_URL
     value: "https://your-app.example.com"
 

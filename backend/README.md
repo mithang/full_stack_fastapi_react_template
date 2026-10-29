@@ -318,7 +318,6 @@ To use the Stripe payment features, you need to configure your Stripe account:
         SMTP_USER=""
         SMTP_PASSWORD=""
         SMTP_MAIL_FROM=noreply@example.com
-        SMTP_MAIL_FROM_NAME="Full-Stack Fast API"
         SMTP_STARTTLS=False
         SMTP_SSL_TLS=False
         SMTP_USE_CREDENTIALS=False

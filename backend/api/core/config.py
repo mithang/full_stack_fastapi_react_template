@@ -53,7 +53,6 @@ class Settings(BaseSettings):
     smtp_password: str
     smtp_host: str
     smtp_port: int
-    smtp_mail_from_name: str = "FSR App"
     smtp_mail_from: EmailStr
     smtp_starttls: bool = False
     smtp_ssl_tls: bool = False
