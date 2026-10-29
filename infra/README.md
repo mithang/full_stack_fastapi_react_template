@@ -64,7 +64,7 @@ The chart automatically configures:
 - MongoDB connection
 - JWT secrets
 - SMTP configuration
-- Base URL for frontend
+- Host domain (HOST_MAIN_DOMAIN, kept in sync with the ingress host) and production mode (FASTAPI_ENV=production)
 
 ## Features
 
