@@ -112,14 +112,26 @@ async def upload_logo(
     if file.content_type not in ["image/png", "image/jpeg", "image/svg+xml"]:
         raise BrandingException("Unsupported file type. Please upload a PNG, JPEG, or SVG image.")
     
-    key = await file_service.upload_file(file=file)
-    logger.debug(f"Logo uploaded successfully with key: {key}")
+    # Resolve the branding record before uploading: the create-scope
+    # guard below used to run only after the upload, so a tenant
+    # caller on the wrong DB (no X-Tenant-ID/subdomain, request scope
+    # None) still wrote their logo into the current scope's storage
+    # before being refused — an orphaned object in the wrong bucket,
+    # the same wrong-scope class as the POST create guard, even
+    # though the record creation itself was blocked. Failing fast
+    # here keeps the upload out of the refused path; legitimate
+    # uploads (branding exists, or a matching-scope creation) are
+    # unchanged, and the update path below still runs its
+    # service-level scope check.
     branding = await branding_service.get_branding()
     if branding is None:
         # Same create-scope guard as the POST route: a logo-first
         # creation by a tenant caller on the host DB would squat the
         # singleton slot just as a POST creation would.
         _assert_create_scope(current_user, request_tenant_id)
+    key = await file_service.upload_file(file=file)
+    logger.debug(f"Logo uploaded successfully with key: {key}")
+    if branding is None:
         # Stamp the logo-first creation with the caller's tenant, as
         # the POST route does: without it the record is host-stamped
         # (tenant_id None) and the update scope check in
