@@ -43,7 +43,15 @@ class RoleAlreadyExistsException(ConflictException):
 
 class TenantNotActiveException(InvalidOperationException):
     def __init__(self, tenant_id: str):
-        message = f"Tenant with ID '{tenant_id}' is not active."
+        # The ApiBaseException handler logs ex.message verbatim, so
+        # flatten CR/LF here at the message's single construction site,
+        # matching the NotFound/Conflict sanitization in iteration 978.
+        # No raise sites exist today, but a future caller passing a raw
+        # path/query identifier would otherwise re-open the log-forging
+        # vector; the raw value still drives any lookup, and normal
+        # identifiers render identically.
+        safe_tenant_id = str(tenant_id).replace("\r", " ").replace("\n", " ")
+        message = f"Tenant with ID '{safe_tenant_id}' is not active."
         super().__init__(message)
 
 
