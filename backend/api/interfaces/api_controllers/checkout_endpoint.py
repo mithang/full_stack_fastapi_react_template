@@ -23,8 +23,10 @@ def _safe_log_value(value) -> str:
     # tenant_id is a Query str that Starlette percent-decodes — so a
     # mismatched tenant_id could otherwise forge extra log lines
     # (same class as the account-endpoint fixes in iterations 955 and
-    # 958). Only the logged copy is flattened; the mismatch checks
-    # and the exception messages still use the raw value. The email
+    # 958). Only the logged/exception-message copy is flattened; the
+    # mismatch checks still use the raw value, and the ApiBaseException
+    # handler logs ex.message verbatim, so a raw id in the raise would
+    # re-expose it even where the logger line is sanitized. The email
     # fields need no such treatment: they are EmailStr-validated.
     return str(value).replace("\r", " ").replace("\n", " ")
 
@@ -91,7 +93,7 @@ async def create_host_checkout_session(
     if current_user and current_user.tenant_id is not None:
         if checkout_req.tenant_id != current_user.tenant_id:
             logger.error(f"Tenant ID mismatch for the current user. And current user's tenant id is: {current_user.tenant_id} and requested tenant id is: {_safe_log_value(checkout_req.tenant_id)}")
-            raise InvalidOperationException(f"Tenant ID mismatch for the current user. {checkout_req.tenant_id}")
+            raise InvalidOperationException(f"Tenant ID mismatch for the current user. {_safe_log_value(checkout_req.tenant_id)}")
 
         # Mirror the tenant checkout session endpoint below: the Stripe
         # customer for this session is created with checkout_req.email,
@@ -130,7 +132,7 @@ async def create_tenant_checkout_session(
     if current_user and current_user.tenant_id is not None:
         if checkout_req.tenant_id != current_user.tenant_id:
             logger.error(f"Tenant ID mismatch for the current user. And current user's tenant id is: {current_user.tenant_id} and requested tenant id is: {_safe_log_value(checkout_req.tenant_id)}")
-            raise InvalidOperationException(f"Tenant ID mismatch for the current user. {checkout_req.tenant_id}")
+            raise InvalidOperationException(f"Tenant ID mismatch for the current user. {_safe_log_value(checkout_req.tenant_id)}")
 
     # A tenant checkout session is created for the caller's tenant, so a
     # caller without a tenant — a host user, whose tenant_id is None —
@@ -185,7 +187,7 @@ async def host_checkout_success(
         raise InvalidOperationException("A tenant is required to confirm a host checkout session.")
     if current_user.tenant_id != tenant_id:
         logger.error(f"Tenant ID mismatch for the current user. And current user's tenant id is: {current_user.tenant_id} and requested tenant id is: {_safe_log_value(tenant_id)}")
-        raise InvalidOperationException(f"Tenant ID mismatch for the current user. {tenant_id}")
+        raise InvalidOperationException(f"Tenant ID mismatch for the current user. {_safe_log_value(tenant_id)}")
 
     await billing_service.handle_host_checkout_success(session_id=session_id, tenant_id=current_user.tenant_id)
     return status.HTTP_202_ACCEPTED
@@ -207,7 +209,7 @@ async def host_checkout_canceled(
         raise InvalidOperationException("A tenant is required to cancel a host checkout session.")
     if current_user.tenant_id != tenant_id:
         logger.error(f"Tenant ID mismatch for the current user. And current user's tenant id is: {current_user.tenant_id} and requested tenant id is: {_safe_log_value(tenant_id)}")
-        raise InvalidOperationException(f"Tenant ID mismatch for the current user. {tenant_id}")
+        raise InvalidOperationException(f"Tenant ID mismatch for the current user. {_safe_log_value(tenant_id)}")
 
     await billing_service.handle_host_checkout_canceled(tenant_id=current_user.tenant_id)
     return status.HTTP_202_ACCEPTED
