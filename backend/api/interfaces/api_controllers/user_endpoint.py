@@ -59,6 +59,24 @@ def _assert_update_scope(current_user: CurrentUser, request_tenant_id) -> None:
         raise ForbiddenException("User cannot be updated outside your tenant's scope.")
 
 
+def _assert_list_scope(current_user: CurrentUser, request_tenant_id) -> None:
+    # List-in-wrong-DB guard, mirroring the get guard below: the
+    # service already scopes the list to the caller's tenant stamp,
+    # but nothing checks which database served the request. So a
+    # tenant caller listing on the host DB (no X-Tenant-ID/subdomain,
+    # request scope None) could still read tenant-stamped users
+    # sitting in the host DB (e.g. planted before the create guard)
+    # — names and emails of users host callers resolve with no
+    # tenant scope. Legitimate tenant lists happen in the caller's
+    # own tenant DB, where the middleware scope equals their tenant
+    # id, and host callers (tenant_id None) are unaffected. A
+    # mismatched scope fails closed before any read.
+    if current_user.tenant_id is not None and (
+        request_tenant_id is None or str(request_tenant_id) != str(current_user.tenant_id)
+    ):
+        raise ForbiddenException("Users cannot be listed outside your tenant's scope.")
+
+
 @router.get("/", response_model=UserListDto)
 async def list_users(
     response: Response,
@@ -71,8 +89,10 @@ async def list_users(
     skip: int = Query(0, ge=0, le=10000),
     limit: int = Query(10, ge=1, le=100),
     service: UserService = Depends(get_user_service),
-    _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.USER_VIEW_ONLY]))
+    _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.USER_VIEW_ONLY])),
+    request_tenant_id = Depends(get_tenant_id)
 ):
+    _assert_list_scope(current_user, request_tenant_id)
     # This GET returns the tenant's user list (names, emails, roles), so
     # it must never be served from a browser or proxy cache: a cached
     # 200 could serve one tenant's list to another admin after an
