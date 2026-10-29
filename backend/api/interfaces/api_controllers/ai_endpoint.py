@@ -136,12 +136,33 @@ async def delete_session(
     return status.HTTP_202_ACCEPTED
 
 
+def _assert_preference_scope(current_user: CurrentUser, request_tenant_id) -> None:
+    # Write-in-wrong-DB guard, mirroring the /ask create guard:
+    # set_model_preference saves a user preference keyed by user_id
+    # only (UserPreferenceService.set_preferences) in the current
+    # DB, with no tenant filter. So a tenant caller without a tenant
+    # DB selected (no X-Tenant-ID/subdomain, hitting the host DB)
+    # would write their model preference into the host DB —
+    # invisible to their own tenant DB, and under a user-id
+    # collision across DBs it would overwrite another user's
+    # preference. Legitimate tenant calls carry X-Tenant-ID
+    # (AiService goes through ApiClient, which sends it whenever a
+    # tenant is selected), so the middleware scope equals their
+    # tenant id; host callers (tenant_id None) are unaffected.
+    if current_user.tenant_id is not None and (
+        request_tenant_id is None or str(request_tenant_id) != str(current_user.tenant_id)
+    ):
+        raise ForbiddenException("AI model preference cannot be saved outside your tenant's scope.")
+
+
 @router.put("/set_model_preference/{model_name}", status_code=status.HTTP_204_NO_CONTENT)
 async def set_preferred_model(
     current_user: CurrentUser,
     model_name: str,
-    user_preference: UserPreferenceService = Depends(get_user_preference_service)
+    user_preference: UserPreferenceService = Depends(get_user_preference_service),
+    request_tenant_id = Depends(get_tenant_id),
 ):
+    _assert_preference_scope(current_user, request_tenant_id)
     if model_name is None or model_name.strip() == "":
         raise InvalidOperationException("Model name cannot be empty")
 
