@@ -333,7 +333,6 @@ To use the Stripe payment features, you need to configure your Stripe account:
 
         # App configuration
         APP_TITLE="Full-Stack FastAPI React Template"
-        APP_VERSION="0.1.0"
 
         API_ENDPOINT_BASE="http://localhost:8000/api"
 
