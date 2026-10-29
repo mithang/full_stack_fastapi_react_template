@@ -5,7 +5,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Response, status
 from fastapi.responses import StreamingResponse
 
 from api.common.dtos.new_session_dto import NewSessionResponseDto
-from api.common.exceptions import InvalidOperationException
+from api.common.exceptions import ForbiddenException, InvalidOperationException
 from api.core.container import get_local_ai_service, get_user_preference_service
 from api.domain.dtos.ai_dto import AIAskRequestDto, AIModelInfoDto, AIHistoriesDto
 from api.infrastructure.security.current_user import CurrentUser
@@ -14,10 +14,34 @@ from api.usecases.local_ai_service import LocalAIService
 from api.domain.dtos.ai_dto import AISessionByUserIdDto
 from api.usecases.user_preference_service import UserPreferenceService
 from api.domain.security.feature_access_management import check_feature_access
+from api.interfaces.middlewares.tenant_middleware import get_tenant_id
 from api.domain.enum.feature import Feature as FeatureEnum
 
 router = APIRouter(prefix="/ai", dependencies=[Depends(check_feature_access(FeatureEnum.CHAT))])
 router.tags = ["AI"]
+
+
+def _assert_create_scope(current_user: CurrentUser, request_tenant_id) -> None:
+    # Create-in-wrong-DB guard, mirroring the product/price/plan and
+    # checkout guards: /ask saves the exchange as chat history and
+    # session records in the current DB, stamped with the caller's
+    # tenant_id (LocalAIService.save_user_query), and its session
+    # lookup runs in that same DB. So a tenant caller without a
+    # tenant DB selected (no X-Tenant-ID/subdomain, request scope
+    # None) would have their chat history written to the host DB —
+    # invisible to their own tenant DB's history list, and a
+    # duplicate session row under the same session_id, since the
+    # existing tenant-DB session is not found in the host DB.
+    # Legitimate tenant asks carry X-Tenant-ID (ai-chat.tsx sends
+    # it whenever a tenant is selected), so the middleware scope
+    # equals their tenant id; host callers (tenant_id None) are
+    # unaffected. A mismatched scope fails closed before any LLM
+    # call or history write, rather than stamping records into the
+    # wrong DB.
+    if current_user.tenant_id is not None and (
+        request_tenant_id is None or str(request_tenant_id) != str(current_user.tenant_id)
+    ):
+        raise ForbiddenException("AI chat history cannot be saved outside your tenant's scope.")
 
 @router.get("/models", response_model=List[AIModelInfoDto])
 async def get_models(
@@ -105,7 +129,9 @@ async def ask_ai(
     query: AIAskRequestDto,
     background_tasks: BackgroundTasks,
     local_ai_service: LocalAIService = Depends(get_local_ai_service),
+    request_tenant_id = Depends(get_tenant_id),
 ):
+    _assert_create_scope(current_user, request_tenant_id)
     if query.question is None or query.question.strip() == "":
         raise InvalidOperationException("Question cannot be empty")
 
