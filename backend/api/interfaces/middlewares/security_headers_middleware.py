@@ -95,10 +95,22 @@ _SECURITY_HEADERS = {
     # keep-awake flow, so no wake-lock feature exists to break; a
     # compromised script could otherwise keep the screen awake to
     # aid fingerprinting or annoy the user).
+    # The device-transport APIs are disabled for the same reason
+    # (verified by grep: the SPA never calls navigator.usb /
+    # navigator.bluetooth / navigator.hid / navigator.nfc and has no
+    # such dependency, so no WebUSB/WebBluetooth/WebHID/WebNFC flow
+    # exists to break; a compromised script could otherwise talk to
+    # plugged-in devices on the app's origin). This does NOT break
+    # passkey login/registration: that goes through WebAuthn
+    # (navigator.credentials via @simplewebauthn/browser), which is
+    # gated by the publickey-credentials-get/create directives, not
+    # by these transport directives — the browser talks CTAP to USB /
+    # BLE / NFC authenticators internally, so those authenticators
+    # keep working with the transport APIs disabled.
     # Clipboard-write is a separate directive and is deliberately left
     # alone, as are the WebAuthn directives: passkey login/registration
     # must keep working, including USB/BLE/NFC authenticators.
-    b"permissions-policy": b"camera=(), microphone=(), geolocation=(), payment=(), clipboard-read=(), display-capture=(), fullscreen=(), accelerometer=(), gyroscope=(), magnetometer=(), xr-spatial-tracking=(), idle-detection=(), picture-in-picture=(), browsing-topics=(), attribution-reporting=(), window-management=(), keyboard-map=(), ambient-light-sensor=(), wake-lock=()",
+    b"permissions-policy": b"camera=(), microphone=(), geolocation=(), payment=(), clipboard-read=(), display-capture=(), fullscreen=(), accelerometer=(), gyroscope=(), magnetometer=(), xr-spatial-tracking=(), idle-detection=(), picture-in-picture=(), browsing-topics=(), attribution-reporting=(), window-management=(), keyboard-map=(), ambient-light-sensor=(), wake-lock=(), usb=(), bluetooth=(), hid=(), nfc=()",
 }
 
 
