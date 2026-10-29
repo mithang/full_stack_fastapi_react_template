@@ -23,12 +23,34 @@ router = APIRouter(
 )
 router.tags = ["Storage Settings"]
 
+def _assert_read_scope(current_user: CurrentUser, request_tenant_id) -> None:
+    # Read-in-wrong-DB guard, mirroring the SSO list/get and roles
+    # get guards: the service already filters by the caller's tenant
+    # stamp, but it does not check which database served the request.
+    # So a tenant caller reading on the host DB (no X-Tenant-ID/
+    # subdomain, request scope None) could still read a tenant-stamped
+    # storage record sitting in the host DB (e.g. planted before the
+    # configure guard) — masked secrets included. Legitimate tenant
+    # reads happen in the caller's own tenant DB, where the middleware
+    # scope equals their tenant id, and host callers (tenant_id None)
+    # are unaffected by this guard. Raised before any read, so a
+    # blocked attempt leaks no settings.
+    if current_user.tenant_id is not None and (
+        request_tenant_id is None or str(request_tenant_id) != str(current_user.tenant_id)
+    ):
+        raise ForbiddenException(
+            "Storage settings cannot be read outside your tenant's scope."
+        )
+
+
 @router.get("/", response_model=List[AvailableStorageProviderDto], response_model_exclude_none=True)
 async def get_storage_settings(
     response: Response,
     current_user: CurrentUser,
-    setting_service: StorageSettingsService = Depends(get_storage_settings_service)
+    setting_service: StorageSettingsService = Depends(get_storage_settings_service),
+    request_tenant_id=Depends(get_tenant_id),
 ):
+    _assert_read_scope(current_user, request_tenant_id)
     # Tenant storage configuration (masked secrets included): a
     # browser/proxy-cached 200 could serve one tenant's storage
     # settings to another admin after an account switch, or hide
