@@ -377,13 +377,34 @@ async def patch_user(
   
 
 
+def _assert_remove_scope(current_user: CurrentUser, request_tenant_id) -> None:
+    # Remove-in-wrong-DB guard, mirroring _assert_assign_scope
+    # above: the service already scopes the target to the caller's
+    # tenant stamp, but nothing checks which database served the
+    # request. So a tenant caller removing on the host DB (no
+    # X-Tenant-ID/subdomain, request scope None) could still strip
+    # the role of a tenant-stamped user sitting in the host DB
+    # (e.g. planted before the create guard). Legitimate tenant
+    # role removals happen in the caller's own tenant DB, where
+    # the middleware scope equals their tenant id, and host
+    # callers (tenant_id None) are unaffected. A mismatched scope
+    # fails closed before any read or write, so it also leaks no
+    # existence signal via the self-removal check below.
+    if current_user.tenant_id is not None and (
+        request_tenant_id is None or str(request_tenant_id) != str(current_user.tenant_id)
+    ):
+        raise ForbiddenException("User role cannot be removed outside your tenant's scope.")
+
+
 @router.patch("/{user_id}/remove_role", response_model=UserDto, status_code=status.HTTP_202_ACCEPTED)
 async def remove_user_role(
      user_id: str, role_update: UserRoleUpdateRequestDto,
     current_user: CurrentUser,
     _: bool = Depends(check_permissions_for_current_role([Permission.USER_ROLE_ASSIGN_OR_REMOVE_ONLY])),
-    user_service: UserService = Depends(get_user_service)
+    user_service: UserService = Depends(get_user_service),
+    request_tenant_id = Depends(get_tenant_id)
 ):
+    _assert_remove_scope(current_user, request_tenant_id)
     if str(current_user.id) == user_id:
         raise ForbiddenException("Users cannot remove a role from themselves.")
     exsisting_user = await user_service.get_user_by_id(user_id, tenant_id=current_user.tenant_id)
