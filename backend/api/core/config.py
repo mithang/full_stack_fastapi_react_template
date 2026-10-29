@@ -27,8 +27,6 @@ class Settings(BaseSettings):
 
     app_title: str = "Full-Stack FastAPI React Template"
 
-    api_endpoint_base: str = "http://localhost:8000/api"
-
     multi_tenancy_strategy: str = "header"
     
     host_main_domain: str = "fsrapp.com"
