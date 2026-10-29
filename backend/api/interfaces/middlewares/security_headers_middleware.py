@@ -63,10 +63,15 @@ _SECURITY_HEADERS = {
     # grep: the SPA never uses IdleDetector, so no idle-presence
     # flow exists to break; a compromised script could otherwise
     # learn when the user is away from the keyboard).
+    # Picture-in-picture is disabled for the same reason (verified
+    # by grep: the SPA has no video/audio element and never calls
+    # requestPictureInPicture, so no PiP flow exists to break; a
+    # compromised script could otherwise pop app content out into
+    # a floating window for UI spoofing).
     # Clipboard-write is a separate directive and is deliberately left
     # alone, as are the WebAuthn directives: passkey login/registration
     # must keep working, including USB/BLE/NFC authenticators.
-    b"permissions-policy": b"camera=(), microphone=(), geolocation=(), payment=(), clipboard-read=(), display-capture=(), fullscreen=(), accelerometer=(), gyroscope=(), magnetometer=(), xr-spatial-tracking=(), idle-detection=()",
+    b"permissions-policy": b"camera=(), microphone=(), geolocation=(), payment=(), clipboard-read=(), display-capture=(), fullscreen=(), accelerometer=(), gyroscope=(), magnetometer=(), xr-spatial-tracking=(), idle-detection=(), picture-in-picture=()",
 }
 
 
