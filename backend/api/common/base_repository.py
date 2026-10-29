@@ -6,6 +6,13 @@ from api.common.utils import get_logger, get_utc_now
 
 logger = get_logger(__name__)
 
+
+def _safe_log_value(value: Any) -> str:
+    # Path ids arrive percent-decoded (same premise as the cache-middleware
+    # fix), so a newline-bearing id could forge extra log lines. Flatten
+    # CR/LF in the logged copy only; the raw id still drives the lookup.
+    return str(value).replace("\r", " ").replace("\n", " ")
+
 T = TypeVar("T", bound=Document)
 
 class BaseRepository(Generic[T]):
@@ -73,7 +80,7 @@ class BaseRepository(Generic[T]):
 
     async def delete(self, id: str) -> bool:
         doc = await self.get(id)
-        logger.info(f"Deleting document with id: {id}, Found doc: {doc is not None}")
+        logger.info(f"Deleting document with id: {_safe_log_value(id)}, Found doc: {doc is not None}")
         if not doc:
             return False
         await doc.delete()
