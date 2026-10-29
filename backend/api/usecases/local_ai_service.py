@@ -95,7 +95,12 @@ class LocalAIService:
         if not session:
             return
         logger.debug(f"Deleted session for user_id: {user_id}, session_id: {session_id}")
-        history = await self.chat_history_repository.single_or_none(id=session.history_id)
+        # _id, not id: single_or_none passes its kwargs verbatim as a
+        # raw Mongo filter, and documents store _id — the id= form was
+        # the only lookup in this file not using _id, so a session
+        # delete could leave its history orphaned. The other history
+        # lookups here already use _id.
+        history = await self.chat_history_repository.single_or_none(_id=session.history_id)
         if history:
             logger.debug(f"Deleting history for session_id: {session_id}, user_id: {user_id} and history_id: {session.history_id}")
             await history.delete()
