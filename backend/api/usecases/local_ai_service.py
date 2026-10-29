@@ -10,6 +10,12 @@ from api.infrastructure.persistence.repositories.chat_session_ai_repository_impl
 logger = get_logger(__name__)
 
 
+def _safe_log_value(value: object) -> str:
+    # Log lines are single-line records: flatten CR/LF in a
+    # client-supplied value so it cannot forge extra log lines.
+    return str(value).replace("\r", " ").replace("\n", " ")
+
+
 def _is_valid_object_id(value: str | None) -> bool:
     # Session ids reach this service straight from the URL / request
     # body (ai-chat reads ?session_id=... verbatim), so a malformed one
@@ -113,7 +119,7 @@ class LocalAIService:
             # Runs as a post-response background task, so a raise here
             # would surface only as a logged task failure while the
             # streamed answer was already delivered; drop it explicitly.
-            logger.error(f"Refusing to save chat history for malformed session_id: {session_id}")
+            logger.error(f"Refusing to save chat history for malformed session_id: {_safe_log_value(session_id)}")
             return
         # session_id is Optional in AIAskRequestDto, and the create-new-
         # session branch below already handles a falsy one by generating
