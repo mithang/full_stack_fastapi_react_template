@@ -27,7 +27,7 @@ class CreatePlanDto(BaseModel):
     currency: str = Field(default="eur", max_length=3, description="Must be a supported currency: https://docs.stripe.com/currencies")
     interval: Literal["month", "year"] # Add day or week later... if needed.
     product_id: str = Field(..., description="The product whose pricing the created plan will represent. This must be the ID of an existing product.")
-    amount: int    
+    amount: int = Field(..., ge=1, description="Amount in cents; must be greater than 0, matching the add-a-new-plan form's min(1) validation.")
 
 
 class UpdatePlanDto(BaseModel):
