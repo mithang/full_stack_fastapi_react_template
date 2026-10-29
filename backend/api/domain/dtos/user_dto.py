@@ -79,5 +79,11 @@ class UserProfileImageUpdateDto(BaseModel):
 
 
 class UserRoleUpdateRequestDto(BaseModel):
-    role_id: str
+    # Both PATCH endpoints (assign_role / remove_role) take this DTO, and
+    # a role id is always an existing role's id, never empty: an empty
+    # value previously fell through to a role lookup (404) or a
+    # role-mismatch error instead of failing at validation. Reject it
+    # with FastAPI validation (422) before any service call, matching
+    # the other min_length=1 request-DTO caps in this sweep.
+    role_id: str = Field(min_length=1)
 
