@@ -10,6 +10,18 @@ from api.domain.enum.feature import Feature as FeatureEnum
 
 logger = get_logger(__name__)
 
+
+def _safe_log_value(value: object) -> str:
+    # The ApiBaseException handler logs ex.message verbatim, so an
+    # identifier embedded in a TenantNotFoundException message reaches
+    # the log lines unescaped (same shape as the billing plan/product/
+    # price fixes in iterations 971-973). Flatten CR/LF so a
+    # newline-bearing path-param value cannot forge extra log lines;
+    # the raw value still drives the lookup, and normal ids/names
+    # render identically.
+    return str(value).replace("\r", " ").replace("\n", " ")
+
+
 class TenantService:
     def __init__(self, tenant_repository: TenantRepository):
         self.tenant_repository = tenant_repository
@@ -24,7 +36,7 @@ class TenantService:
         """Get tenant by name. Raises TenantNotFoundException if not found."""
         exisiting = await self.tenant_repository.single_or_none(name=name)
         if exisiting is None:
-            raise TenantNotFoundException(name)
+            raise TenantNotFoundException(_safe_log_value(name))
         return exisiting
 
     async def find_by_custom_domain(self, custom_domain: str) -> Tenant | None:
@@ -45,7 +57,7 @@ class TenantService:
         """Get tenant by ID. Raises TenantNotFoundException if not found."""
         existing = await self.tenant_repository.get(id=tenant_id)
         if existing is None:
-            raise TenantNotFoundException(tenant_id)
+            raise TenantNotFoundException(_safe_log_value(tenant_id))
         return existing
 
     async def create_tenant(self, tenant_data: CreateTenantDto) -> PydanticObjectId | None:
@@ -67,7 +79,7 @@ class TenantService:
         # today is unchanged; this fixes the service contract for any
         # direct caller.
         if await self.tenant_repository.delete(id=tenant_id) is False:
-            raise TenantNotFoundException(tenant_id)
+            raise TenantNotFoundException(_safe_log_value(tenant_id))
 
     async def total_count(self) -> int:
         """Get total count of tenants. Returns an integer."""
