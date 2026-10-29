@@ -13,6 +13,19 @@ import asyncio
 logger = get_logger(__name__)
 
 
+def _safe_log_value(value) -> str:
+    # OllamaChat.username is current_user.first_name (ai_endpoint.py),
+    # a free-form string with no CR/LF validation in the user DTOs, so
+    # a newline in a display name could otherwise forge extra log lines
+    # from this line (same class as the login-username fix in iteration
+    # 955). Only the logged copy is flattened; the username used in
+    # the chat prompt is untouched. The session id needs no such
+    # treatment: sessions are server-minted ObjectIds, so a client
+    # string carrying a newline never matches an existing session and
+    # this line never runs for it.
+    return str(value).replace("\r", " ").replace("\n", " ")
+
+
 class OllamaModels:
     """
         Interacts with the local Ollama AI models. Requires Ollama to be installed and configured in the environment.
@@ -79,7 +92,7 @@ class OllamaChat:
             logger.debug("No previous chat history session found!")
             return
 
-        logger.info(f"Using existing session: {self.current_session} for user: {self.username}")
+        logger.info(f"Using existing session: {self.current_session} for user: {_safe_log_value(self.username)}")
         # Do not log history contents: they are user/AI chat content, and
         # the api logger runs at DEBUG in all environments.
         logger.debug(f"Current history before fetching from DB: {len(self.history)} messages")
