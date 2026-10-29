@@ -49,11 +49,16 @@ _SECURITY_HEADERS = {
     # Fullscreen is disabled for the same reason (verified by grep: the
     # SPA never calls requestFullscreen and has no video/audio element,
     # so no fullscreen flow exists to break; a compromised script could
-    # otherwise fullscreen-spoof the app UI).
+    # otherwise fullscreen-spoof the app UI). The motion/environmental
+    # sensors are disabled for the same reason (verified by grep: the
+    # SPA never uses DeviceMotion/DeviceOrientation or the
+    # Accelerometer/Gyroscope/Magnetometer sensor APIs, so no
+    # sensor-driven flow exists to break; a compromised script could
+    # otherwise read device motion for fingerprinting).
     # Clipboard-write is a separate directive and is deliberately left
     # alone, as are the WebAuthn directives: passkey login/registration
     # must keep working, including USB/BLE/NFC authenticators.
-    b"permissions-policy": b"camera=(), microphone=(), geolocation=(), payment=(), clipboard-read=(), display-capture=(), fullscreen=()",
+    b"permissions-policy": b"camera=(), microphone=(), geolocation=(), payment=(), clipboard-read=(), display-capture=(), fullscreen=(), accelerometer=(), gyroscope=(), magnetometer=()",
 }
 
 
