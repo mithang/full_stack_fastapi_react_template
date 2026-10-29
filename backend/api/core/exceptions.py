@@ -55,14 +55,25 @@ class TenantNotActiveException(InvalidOperationException):
         super().__init__(message)
 
 
+def _safe_message(message: str) -> str:
+    # The ApiBaseException handler logs ex.message verbatim, and these
+    # generic wrappers embed the caller-supplied message verbatim, so a
+    # future caller embedding a raw path/query/JSON identifier would
+    # re-open the log-forging vector even where today's call sites pass
+    # fixed strings or already-sanitized ids. Flatten CR/LF here, at
+    # each wrapper's single construction site, covering all current and
+    # future raise sites at once; the raw value still drives any lookup,
+    # and normal messages render identically.
+    return str(message).replace("\r", " ").replace("\n", " ")
+
 class S3StorageException(AwsException):
     def __init__(self, message: str):
-        local_message = f"S3 Storage Error: {message}"
+        local_message = f"S3 Storage Error: {_safe_message(message)}"
         super().__init__(local_message)
 
 class AzureBlobStorageException(AzureException):
     def __init__(self, message: str):
-        local_message = f"Azure Blob Storage Error: {message}"
+        local_message = f"Azure Blob Storage Error: {_safe_message(message)}"
         super().__init__(local_message)
 
 
@@ -73,13 +84,13 @@ class StorageNotEnabledException(InvalidOperationException):
 
 class CoolifyIntegrationException(InvalidOperationException):
     def __init__(self, message: str):
-        local_message = f"Coolify Integration Error: {message}"
+        local_message = f"Coolify Integration Error: {_safe_message(message)}"
         super().__init__(local_message)
 
 
 class PassKeyException(InvalidOperationException):
     def __init__(self, message: str):
-        local_message = f"PassKey Error: {message}"
+        local_message = f"PassKey Error: {_safe_message(message)}"
         super().__init__(local_message)
 
 
@@ -95,7 +106,7 @@ class StripeSettingsNotFoundException(NotFoundException):
 
 class ProductException(InvalidOperationException):
     def __init__(self, message: str):
-        local_message = f"Product Error: {message}"
+        local_message = f"Product Error: {_safe_message(message)}"
         super().__init__(local_message)
 
 class ProductNotFoundException(NotFoundException):
@@ -106,7 +117,7 @@ class ProductNotFoundException(NotFoundException):
 
 class PricingException(InvalidOperationException):
     def __init__(self, message: str):
-        local_message = f"Pricing Error: {message}"
+        local_message = f"Pricing Error: {_safe_message(message)}"
         super().__init__(local_message)
 
 class PricingNotFoundException(NotFoundException):
@@ -117,7 +128,7 @@ class PricingNotFoundException(NotFoundException):
 
 class BillingRecordException(InvalidOperationException):
     def __init__(self, message: str):
-        local_message = f"BillingRecord Error: {message}"
+        local_message = f"BillingRecord Error: {_safe_message(message)}"
         super().__init__(local_message)
 
 
@@ -128,5 +139,5 @@ class BillingRecordNotFoundException(NotFoundException):
 
 class BrandingException(InvalidOperationException):
     def __init__(self, message: str):
-        local_message = f"Branding Error: {message}"
+        local_message = f"Branding Error: {_safe_message(message)}"
         super().__init__(local_message)
