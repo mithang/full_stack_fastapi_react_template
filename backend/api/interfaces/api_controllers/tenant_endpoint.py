@@ -293,8 +293,21 @@ async def check_dns_status(
     response: Response,
     current_user: CurrentUser,
     tenant_service: TenantService = Depends(get_tenant_service),
-    _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.HOST_MANAGE_TENANTS, Permission.MANAGE_TENANT_SETTINGS]))
+    _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.HOST_MANAGE_TENANTS, Permission.MANAGE_TENANT_SETTINGS])),
+    request_tenant_id = Depends(get_tenant_id)
 ):
+    # Same wrong-DB class as update_dns (iteration 921): the stamp
+    # check below only compares against the record the request's
+    # database returned, so a tenant caller on the host DB (no
+    # X-Tenant-ID/subdomain, scope None) could read the DNS status
+    # of, and enqueue DNS-update jobs for, a tenant-stamped record
+    # sitting in the host DB (e.g. planted before the create guard).
+    # This guard fails closed before any read or job enqueue; the
+    # message's "updated" wording still fits because this endpoint
+    # enqueues a DNS-update job. Legitimate tenant checks happen in
+    # the caller's own tenant DB (the frontend ApiClient sends
+    # X-Tenant-ID) and host callers (tenant_id None) are unaffected.
+    _assert_update_scope(current_user, request_tenant_id)
     # This GET enqueues a Celery DNS-update job (for tenants in
     # activation-progress or failed status) and returns a status message
     # that changes as activation proceeds, so it must never be served
