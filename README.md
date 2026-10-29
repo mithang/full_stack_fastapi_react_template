@@ -348,6 +348,11 @@ To use the Stripe payment features, you need to configure your Stripe account:
         # Environment
         FASTAPI_ENV="development"  # Options: "development", "production"
 
+        # CORS settings — comma-separated origins allowed to call the API from a
+        # different origin (e.g. a separately hosted frontend). Empty = no CORS
+        # middleware (same-origin served UI only). Never use "*" with credentials.
+        CORS_ALLOW_ORIGINS=""
+
         # Ollama settings
         OLLAMA_HOST="http://localhost:11434"
       
