@@ -43,7 +43,14 @@ class ConfigureStorageSettingsDto(StorageSettingsDto):
     # plus enabled Azure configs (whose client is built from the
     # connection string, not region) legitimately carry an empty
     # region and are unaffected; likewise, disabled Azure configs
-    # legitimately carry a blank connection string.
+    # legitimately carry a blank connection string. The same deferred
+    # failure existed for the S3 keys: an enabled s3 config with a
+    # blank access/secret key persisted verbatim, and at upload time
+    # file_upload / file_retrieval built boto3.client with None keys,
+    # which boto3 silently resolves through its ambient credential
+    # chain (env, shared config, EC2/ECS IAM role) — uploading to the
+    # tenant-configured bucket under the deployment's credentials
+    # instead of failing. Both keys are now required the same way.
     @model_validator(mode="after")
     def require_fields_for_enabled_provider(self):
         if self.provider == "s3" and self.is_enabled and not self.region.strip():
@@ -55,6 +62,22 @@ class ConfigureStorageSettingsDto(StorageSettingsDto):
         ):
             raise ValueError(
                 "aws_bucket_name is required when S3 storage is enabled"
+            )
+        if (
+            self.provider == "s3"
+            and self.is_enabled
+            and not (self.aws_access_key or "").strip()
+        ):
+            raise ValueError(
+                "aws_access_key is required when S3 storage is enabled"
+            )
+        if (
+            self.provider == "s3"
+            and self.is_enabled
+            and not (self.aws_secret_key or "").strip()
+        ):
+            raise ValueError(
+                "aws_secret_key is required when S3 storage is enabled"
             )
         if (
             self.provider == "azure_blob"
