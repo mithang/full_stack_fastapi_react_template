@@ -3,7 +3,14 @@ from pydantic import BaseModel, Field
 
 class RecurringDto(BaseModel):
    interval: Literal["day", "week", "month", "year"] = Field(default="month", description="Billing interval, e.g., 'month'")
-   interval_count: int = Field(default=1, description="Number of intervals between each billing cycle")
+   # Stripe requires a positive interval count and create_price passes
+   # the DTO verbatim to Stripe prices.create_async, so a 0/negative
+   # value previously failed only there. ge=1 fails FastAPI validation
+   # (422) first. Capping the shared RecurringDto (rather than only the
+   # create DTO) is safe for the response path too: Stripe itself only
+   # ever returns interval_count >= 1, so a stored price cannot violate
+   # it. No upper bound is invented — the form sets none.
+   interval_count: int = Field(default=1, ge=1, description="Number of intervals between each billing cycle")
    usage_type: Literal["licensed", "metered"] = Field(default="licensed", description="Configures how the quantity per period should be determined. Can be either metered or licensed. licensed automatically bills the quantity set when adding it to a subscription. metered aggregates the total usage based on usage records. Defaults to licensed.")
    
 class CreatePricingDto(BaseModel):
