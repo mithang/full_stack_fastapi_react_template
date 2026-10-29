@@ -10,6 +10,15 @@ from api.domain.entities.role import Role
 logger = get_logger(__name__)
 
 
+def _safe_log_value(value) -> str:
+    # Path ids arrive percent-decoded, and BaseRepository.get() returns
+    # None (rather than raising) for a malformed id, so a newline-bearing
+    # id reaches the "not found" warnings below and could forge extra log
+    # lines. Flatten CR/LF in the logged copy only; the raw id still
+    # drives the lookup and the audit-log entries.
+    return str(value).replace("\r", " ").replace("\n", " ")
+
+
 class RoleRepository(BaseRepository[Role], AuditLogRepository):
     def __init__(self):
         super().__init__(Role)
@@ -66,7 +75,7 @@ class RoleRepository(BaseRepository[Role], AuditLogRepository):
                 user_id=None # Todo: Need to add a new property in role.. to determine who updated it.
             ))
             return updated_role
-        logger.warning(f"No role found for the given role id: {role_id}")
+        logger.warning(f"No role found for the given role id: {_safe_log_value(role_id)}")
         await self.add_audit_log(AuditLogDto(
             action="update",
             changes={"Info": f"Attempted to update role with id {role_id}, but it was not found."},
@@ -79,7 +88,7 @@ class RoleRepository(BaseRepository[Role], AuditLogRepository):
     async def delete(self, id: str) -> bool:
         existing_role = await super().get(id)
         if not existing_role:
-            logger.warning(f"No role found for the given role id: {id}")
+            logger.warning(f"No role found for the given role id: {_safe_log_value(id)}")
             await self.add_audit_log(AuditLogDto(
                 action="delete",
                 changes={"Info": f"Attempted to delete role with id {id}, but it was not found."},
