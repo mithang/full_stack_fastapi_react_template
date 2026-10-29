@@ -43,6 +43,28 @@ def _assert_create_scope(current_user: CurrentUser, request_tenant_id) -> None:
         )
 
 
+def _assert_list_scope(current_user: CurrentUser, request_tenant_id) -> None:
+    # List-in-wrong-DB guard, mirroring the roles list guard
+    # (iteration 927) and the Stripe settings read guard (iteration
+    # 932): the service already scopes the list to the caller's
+    # tenant stamp, but it does not check which database served the
+    # request. So a tenant caller listing on the host DB (no
+    # X-Tenant-ID/subdomain, request scope None) could still read
+    # tenant-stamped checkout records sitting in the host DB (e.g.
+    # planted before the create guard) — financial records, not just
+    # names. Legitimate tenant record lists happen in the caller's
+    # own tenant DB, where the middleware scope equals their tenant
+    # id (the frontend ApiClient sends X-Tenant-ID), and host callers
+    # (tenant_id None) are unaffected. A mismatched scope fails
+    # closed before any read.
+    if current_user.tenant_id is not None and (
+        request_tenant_id is None or str(request_tenant_id) != str(current_user.tenant_id)
+    ):
+        raise ForbiddenException(
+            "Checkout records cannot be listed outside your tenant's scope."
+        )
+
+
 router = APIRouter(prefix="/checkouts", dependencies=[
     Depends(check_feature_access(feature_name=Feature.STRIPE)),
 ])
@@ -255,7 +277,9 @@ async def list_checkout_records(
     skip: int = Query(0, ge=0, le=10000), limit: int = Query(100, ge=1, le=100),
     _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.MANAGE_BILLING])),
     billing_service: BillingRecordService = Depends(get_billing_record_service),
+    request_tenant_id = Depends(get_tenant_id)
 ):
+    _assert_list_scope(current_user, request_tenant_id)
     # Financial records: a browser/proxy-cached 200 could serve one
     # tenant's billing records to another admin after an account
     # switch, or hide freshly written records — same class as the
