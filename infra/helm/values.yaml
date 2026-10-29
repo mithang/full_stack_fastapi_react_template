@@ -110,6 +110,12 @@ env:
   # Keep this in sync with the ingress host above.
   - name: HOST_MAIN_DOMAIN
     value: "your-app.example.com"
+  # The backend defaults FASTAPI_ENV to "development", which builds SSO
+  # redirect URIs as http://<domain>:3000 (the Vite dev server), leaves
+  # auth cookies without Secure, and allows dev data seeding. This chart
+  # serves production traffic behind a TLS ingress, so pin production.
+  - name: FASTAPI_ENV
+    value: "production"
 
 # Health checks
 livenessProbe:
