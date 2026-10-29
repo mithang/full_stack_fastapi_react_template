@@ -23,6 +23,16 @@ _SECURITY_HEADERS = {
     b"x-content-type-options": b"nosniff",
     b"x-frame-options": b"DENY",
     b"referrer-policy": b"strict-origin-when-cross-origin",
+    # Isolate the app's top-level window from a cross-origin opener, so
+    # a page that links to the app cannot retain a handle to it (and
+    # vice versa) for cross-window attacks. same-origin-allow-popups
+    # rather than plain same-origin: the app currently opens no popups
+    # (SSO is full-page navigation), but allow-popups keeps any future
+    # popup flow working instead of breaking it. Deliberately no
+    # Cross-Origin-Resource-Policy here: the frontend may be hosted
+    # separately from the backend and fetch it cross-origin under CORS,
+    # which a same-origin CORP would block.
+    b"cross-origin-opener-policy": b"same-origin-allow-popups",
     b"strict-transport-security": b"max-age=31536000; includeSubDomains",
     # The SPA uses no camera, microphone, or geolocation (verified by
     # grep over frontend/app/src), so disable those powerful features
