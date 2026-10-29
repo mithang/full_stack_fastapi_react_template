@@ -74,6 +74,25 @@ def _assert_update_scope(current_user: CurrentUser, request_tenant_id) -> None:
         raise ForbiddenException("Role cannot be updated outside your tenant's scope.")
 
 
+def _assert_list_scope(current_user: CurrentUser, request_tenant_id) -> None:
+    # List-in-wrong-DB guard, mirroring the users list guard and the
+    # update guard above: the service already scopes the list to the
+    # caller's tenant stamp, but it does not check which database
+    # served the request. So a tenant caller listing on the host DB
+    # (no X-Tenant-ID/subdomain, request scope None) could still read
+    # tenant-stamped roles sitting in the host DB (e.g. planted before
+    # the create guard) — names and permissions of roles host callers
+    # resolve by id with no tenant scope. Legitimate tenant role lists
+    # happen in the caller's own tenant DB, where the middleware scope
+    # equals their tenant id (the frontend ApiClient sends X-Tenant-ID),
+    # and host callers (tenant_id None) are unaffected. A mismatched
+    # scope fails closed before any read.
+    if current_user.tenant_id is not None and (
+        request_tenant_id is None or str(request_tenant_id) != str(current_user.tenant_id)
+    ):
+        raise ForbiddenException("Roles cannot be listed outside your tenant's scope.")
+
+
 @router.get("/", response_model=RoleListDto)
 async def list_roles(
     response: Response,
@@ -85,9 +104,10 @@ async def list_roles(
     skip: int = Query(0, ge=0, le=10000),
     limit: int = Query(10, ge=1, le=100),
     service: RoleService = Depends(get_role_service),
-    _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.ROLE_VIEW_ONLY]))
-
+    _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.ROLE_VIEW_ONLY])),
+    request_tenant_id = Depends(get_tenant_id)
 ):
+    _assert_list_scope(current_user, request_tenant_id)
     # This GET returns the tenant's role list (names and permissions), so
     # it must never be served from a browser or proxy cache: a cached
     # 200 could serve one tenant's roles to another admin after an
