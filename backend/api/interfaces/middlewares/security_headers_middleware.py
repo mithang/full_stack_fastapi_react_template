@@ -43,11 +43,13 @@ _SECURITY_HEADERS = {
     # (it only writes: writeText in ai-chat plus an execCommand copy
     # fallback), so payment and clipboard-read are disabled too:
     # clipboard-read in particular could otherwise let such a script
-    # prompt to read a just-copied password or token. Clipboard-write
-    # is a separate directive and is deliberately left alone, as are
-    # the WebAuthn directives: passkey login/registration must keep
-    # working, including USB/BLE/NFC authenticators.
-    b"permissions-policy": b"camera=(), microphone=(), geolocation=(), payment=(), clipboard-read=()",
+    # prompt to read a just-copied password or token. Display capture
+    # is disabled for the same reason (verified by grep: the SPA never
+    # calls getDisplayMedia, so no screen-sharing flow exists to break).
+    # Clipboard-write is a separate directive and is deliberately left
+    # alone, as are the WebAuthn directives: passkey login/registration
+    # must keep working, including USB/BLE/NFC authenticators.
+    b"permissions-policy": b"camera=(), microphone=(), geolocation=(), payment=(), clipboard-read=(), display-capture=()",
 }
 
 
