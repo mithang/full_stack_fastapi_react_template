@@ -6,6 +6,7 @@ def password_reset_email_template_html(user_first_name: str, password_reset_link
     HTML email template for password reset.
     """
     user_first_name = html.escape(user_first_name or "")
+    password_reset_link = html.escape(password_reset_link or "", quote=True)
     return f"""
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <h2 style="color: #333;">Password Reset Request</h2>

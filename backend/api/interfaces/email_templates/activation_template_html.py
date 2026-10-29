@@ -7,8 +7,11 @@ def activation_template_html(user_first_name: str, activation_link: str) -> str:
     # no character validation) and the recipient is the account holder,
     # not the caller — so an unescaped name would let a permissioned
     # caller inject arbitrary HTML into another user's inbox. Escape it;
-    # the activation link itself is server-generated and untouched.
+    # the activation link is server-generated, but escape it with
+    # quote=True too (mirroring dns_notification_html) so it can never
+    # break out of the href attribute it is interpolated into.
     user_first_name = html.escape(user_first_name or "")
+    activation_link = html.escape(activation_link or "", quote=True)
     return f"""
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <h2 style="color: #333;">Welcome to Full-Stack FastAPI React Template</h2>

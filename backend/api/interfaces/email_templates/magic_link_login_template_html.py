@@ -4,6 +4,7 @@ import html
 def magic_link_login_template(user_first_name: str, magic_link: str) -> str:
     """HTML email template for magic link login."""
     user_first_name = html.escape(user_first_name or "")
+    magic_link = html.escape(magic_link or "", quote=True)
     return f"""
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <h2 style="color: #333;">Welcome to Full-Stack FastAPI React Template</h2>

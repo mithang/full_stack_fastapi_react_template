@@ -6,6 +6,7 @@ def email_changes_confirmation_template_html(user_first_name: str, email_change_
     HTML email template for confirming email changes.
     """
     user_first_name = html.escape(user_first_name or "")
+    email_change_link = html.escape(email_change_link or "", quote=True)
     return f"""
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <h2 style="color: #333;">Notification!</h2>
