@@ -233,13 +233,35 @@ async def get_profile_image(
         logger.error(f"Error fetching profile image: {e}")
         raise
     
+def _assert_delete_scope(current_user: CurrentUser, request_tenant_id) -> None:
+    # Delete-in-wrong-DB guard, mirroring the update guard above and
+    # the role delete guard: the service already scopes the target to
+    # the caller's tenant stamp, but it does not check which database
+    # served the request. So a tenant caller deleting on the host DB
+    # (no X-Tenant-ID/subdomain, request scope None) could still
+    # delete a tenant-stamped user sitting in the host DB (e.g.
+    # planted before the create guard), removing a user host callers
+    # resolve by id with no tenant scope. Legitimate tenant user
+    # deletes happen in the caller's own tenant DB, where the
+    # middleware scope equals their tenant id, and host callers
+    # (tenant_id None) are unaffected. A mismatched scope fails closed
+    # before any read or write, so it also leaks no existence signal
+    # via the self-delete check below.
+    if current_user.tenant_id is not None and (
+        request_tenant_id is None or str(request_tenant_id) != str(current_user.tenant_id)
+    ):
+        raise ForbiddenException("User cannot be deleted outside your tenant's scope.")
+
+
 @router.delete("/{user_id}", status_code=status.HTTP_202_ACCEPTED)
 async def delete_user(
     user_id: str,
     current_user: CurrentUser,
     service: UserService = Depends(get_user_service),
-    _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.USER_DELETE_ONLY]))
+    _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.USER_DELETE_ONLY])),
+    request_tenant_id = Depends(get_tenant_id)
 ):
+    _assert_delete_scope(current_user, request_tenant_id)
     if str(current_user.id) == user_id:
         raise ForbiddenException("Users cannot delete their own account.")
     # Scope the delete to the caller's tenant, mirroring get_user():
