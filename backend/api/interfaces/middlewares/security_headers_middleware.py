@@ -302,10 +302,17 @@ _SECURITY_HEADERS = {
     # wake-lock alias, which modern browsers may not honor — so no
     # wake-lock flow exists to break; a compromised script could
     # otherwise keep the user's screen awake from the app's origin).
+    # On-device speech recognition is disabled under its current
+    # directive name (verified by grep: the SPA never calls
+    # SpeechRecognition and has no voice-input flow — microphone is
+    # already disabled in this header, so no speech flow exists to
+    # break; a compromised script could otherwise run on-device speech
+    # recognition on the app's origin and download speech models to
+    # the user's device).
     # Clipboard-write is a separate directive and is deliberately left
     # alone, as are the WebAuthn directives: passkey login/registration
     # must keep working, including USB/BLE/NFC authenticators.
-    b"permissions-policy": b"camera=(), microphone=(), geolocation=(), payment=(), clipboard-read=(), display-capture=(), fullscreen=(), accelerometer=(), gyroscope=(), magnetometer=(), xr-spatial-tracking=(), idle-detection=(), picture-in-picture=(), browsing-topics=(), attribution-reporting=(), window-management=(), keyboard-map=(), ambient-light-sensor=(), wake-lock=(), usb=(), bluetooth=(), hid=(), nfc=(), serial=(), gamepad=(), web-share=(), local-fonts=(), otp-credentials=(), identity-credentials=(), storage-access=(), private-state-token=(), speaker-selection=(), encrypted-media=(), shared-storage=(), compute-pressure=(), sync-xhr=(), autoplay=(), midi=(), join-ad-interest-group=(), run-ad-auction=(), document-domain=(), eyedropper=(), all-screens-capture=(), digital-credentials=(), unload=(), aria-notify=(), captured-surface-control=(), deferred-fetch-minimal=(), battery=(), ch-ua-high-entropy-values=(), translator=(), summarizer=(), language-detector=(), language-model=(), screen-wake-lock=()",
+    b"permissions-policy": b"camera=(), microphone=(), geolocation=(), payment=(), clipboard-read=(), display-capture=(), fullscreen=(), accelerometer=(), gyroscope=(), magnetometer=(), xr-spatial-tracking=(), idle-detection=(), picture-in-picture=(), browsing-topics=(), attribution-reporting=(), window-management=(), keyboard-map=(), ambient-light-sensor=(), wake-lock=(), usb=(), bluetooth=(), hid=(), nfc=(), serial=(), gamepad=(), web-share=(), local-fonts=(), otp-credentials=(), identity-credentials=(), storage-access=(), private-state-token=(), speaker-selection=(), encrypted-media=(), shared-storage=(), compute-pressure=(), sync-xhr=(), autoplay=(), midi=(), join-ad-interest-group=(), run-ad-auction=(), document-domain=(), eyedropper=(), all-screens-capture=(), digital-credentials=(), unload=(), aria-notify=(), captured-surface-control=(), deferred-fetch-minimal=(), battery=(), ch-ua-high-entropy-values=(), translator=(), summarizer=(), language-detector=(), language-model=(), screen-wake-lock=(), on-device-speech-recognition=()",
 }
 
 
