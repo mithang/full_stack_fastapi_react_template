@@ -59,12 +59,35 @@ async def create_notification_banner(
     _assert_create_scope(current_user, request_tenant_id)
     await notification_banner_service.create_banner_setting(created_banner.is_enabled, created_banner.message, current_user.tenant_id)
 
+def _assert_update_scope(current_user: CurrentUser, request_tenant_id) -> None:
+    # Update-in-wrong-DB guard, mirroring the create guard above:
+    # the service already refuses a banner stamped for another
+    # tenant, but it does not check which database served the
+    # request — and the banner GET serves the first record in the
+    # current DB with no tenant filter. So a tenant caller updating
+    # on the host DB (no X-Tenant-ID/subdomain, request scope None)
+    # could still overwrite a tenant-stamped banner record sitting
+    # in the host DB (e.g. planted before the create guard), and
+    # the host banner GET would then serve the edited message
+    # app-wide. Legitimate tenant banner edits happen in the
+    # caller's own tenant DB, where the middleware scope equals
+    # their tenant id, and host callers (tenant_id None) are
+    # unaffected. A mismatched scope fails closed before any write,
+    # rather than editing a record in the wrong DB.
+    if current_user.tenant_id is not None and (
+        request_tenant_id is None or str(request_tenant_id) != str(current_user.tenant_id)
+    ):
+        raise ForbiddenException("Notification banner cannot be updated outside your tenant's scope.")
+
+
 @router.put("/banner/{id}", description="Update an existing notification banner setting.", response_model=None, status_code=status.HTTP_204_NO_CONTENT)
 async def update_notification_banner(
     id: str,
     updated_banner: CreateNotificationBannerSettingDto,
     current_user: CurrentUser,
     _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.FULL_ACCESS])),
-    notification_banner_service: NotificationBannerService = Depends(get_notification_banner_service)
+    notification_banner_service: NotificationBannerService = Depends(get_notification_banner_service),
+    request_tenant_id = Depends(get_tenant_id)
 ):
+    _assert_update_scope(current_user, request_tenant_id)
     await notification_banner_service.update_banner_setting(id, updated_banner.is_enabled, updated_banner.message, tenant_id=current_user.tenant_id)
