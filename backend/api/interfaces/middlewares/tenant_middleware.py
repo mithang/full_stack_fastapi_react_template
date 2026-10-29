@@ -19,8 +19,10 @@ def _safe_log_value(value) -> str:
     # newline-bearing value would otherwise forge extra log lines on
     # every request carrying it — unauthenticated, before any handler
     # runs (same class as the endpoint/service fixes in iterations
-    # 951-969). Only the logged copy is flattened; the raw value still
-    # drives the PydanticObjectId conversion and its fallback.
+    # 951-969). The tenant host is logged on the same unauthenticated
+    # path, so it goes through the same flattening. Only the logged
+    # copy is flattened; the raw value still drives the
+    # PydanticObjectId conversion and its fallback.
     return str(value).replace("\r", " ").replace("\n", " ")
 
 
@@ -28,24 +30,24 @@ class TenantMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         tenant_id: Optional[str] = None
         tenant_host = get_tenant_host(request)
-        logger.debug(f"Tenant host found: {tenant_host}")
+        logger.debug(f"Tenant host found: {_safe_log_value(tenant_host)}")
         tenant_service = get_tenant_service()
 
         if tenant_host:
             try:
                 tenant: Tenant
                 if is_subdomain(tenant_host):
-                    logger.debug(f"Host '{tenant_host}' identified as subdomain.")
+                    logger.debug(f"Host '{_safe_log_value(tenant_host)}' identified as subdomain.")
                     tenant = await tenant_service.find_by_subdomain(tenant_host)
                 else:
-                    logger.debug(f"Host '{tenant_host}' identified as custom domain.")
+                    logger.debug(f"Host '{_safe_log_value(tenant_host)}' identified as custom domain.")
                     tenant = await tenant_service.find_by_custom_domain(tenant_host)
                 
                 tenant_id = str(tenant.id)
-                logger.debug(f"Tenant ID resolved from custom domain '{tenant_host}': {tenant_id}")
+                logger.debug(f"Tenant ID resolved from custom domain '{_safe_log_value(tenant_host)}': {tenant_id}")
                 request.state.frontend_host = tenant_host
             except TenantNotFoundException as e:
-                logger.warning(f"Error resolving tenant from custom domain '{tenant_host}': {e}")
+                logger.warning(f"Error resolving tenant from custom domain '{_safe_log_value(tenant_host)}': {e}")
                 
         
         if tenant_id is None:
@@ -62,7 +64,7 @@ class TenantMiddleware(BaseHTTPMiddleware):
                 # init and the return, instead of falling through to
                 # them with tenant_id=None.
                 await db.init_db(f"tenant_{tenant_id}", is_tenant=True)
-                logger.debug(f"Database initialized for tenant: tenant_{tenant_id}")
+                logger.debug(f"Database initialized for tenant: tenant_{_safe_log_value(tenant_id)}")
                 return await call_next(request)
             except Exception:
                 # Guard a malformed X-Tenant-ID / tenant_id query value
@@ -119,7 +121,7 @@ def get_tenant_host(request: Request) -> Optional[str]:
         # Handle localhost with optional
         return None
     
-    logger.debug(f"Extracted host: {host}")
+    logger.debug(f"Extracted host: {_safe_log_value(host)}")
     return host
 
 def get_tenant_id(request: Request) -> PydanticObjectId | None:
