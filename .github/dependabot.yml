@@ -33,3 +33,17 @@ updates:
       include: "scope"
     open-pull-requests-limit: 10
     rebase-strategy: "auto"
+
+  # --- 4. Container base images (backend Dockerfiles) ---
+  # Covers backend/Dockerfile and backend/Dockerfile.celery
+  # (python:3.13-alpine, ghcr.io/astral-sh/uv); without this entry
+  # no other ecosystem above watches base-image updates.
+  - package-ecosystem: "docker"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+    open-pull-requests-limit: 10
+    rebase-strategy: "auto"
