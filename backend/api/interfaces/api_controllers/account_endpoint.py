@@ -9,7 +9,7 @@ from api.common.dtos.passkey_rep_dto import HasPasskeysDto
 from api.common.dtos.token_dto import TokenRefreshRequestDto, TokenSetDto
 from api.common.dtos.worker_dto import WorkerPayloadDto
 from api.common.exceptions import ApiBaseException, ForbiddenException, InvalidOperationException
-from api.common.utils import get_logger, is_tenancy_enabled
+from api.common.utils import get_logger, is_tenancy_enabled, validate_password
 from api.core.container import get_auth_service, get_email_magic_link_service, get_passkey_service, get_role_service, get_sso_auth_provider, get_user_magic_link_repository
 from api.core.exceptions import PassKeyException, UserNotFoundException
 from api.domain.dtos.auth_dto import ChangeEmailConfirmRequestDto, ChangeEmailRequestDto, ChangeEmailResponseDto, MagicLinkResponseDto, MeResponseDto, PasswordResetConfirmRequestDto, PasswordResetRequestDto, PasswordResetResponseDto
@@ -27,6 +27,7 @@ from api.interfaces.security.role_checker import check_permissions_for_current_r
 from api.usecases.auth_service import AuthService
 from api.core.config import settings
 from api.common.dtos.cookies import Cookies
+from api.common.security import hash_it
 from api.usecases.magic_link_service import EmailMagicLinkService
 from api.usecases.role_service import RoleService
 from api.domain.enum.role import RoleType
@@ -147,9 +148,21 @@ async def register(
     def process_user_creation(tenant_id: PydanticObjectId):
         logger.info(f"Processing user creation for tenant_id: {tenant_id}")
         data.tenant_id = tenant_id
+        # The Celery payload is persisted in the broker until consumed,
+        # so it must never carry the plaintext password (iteration
+        # 1004): validate the plaintext policy here first — the worker
+        # now skips validation — then hash it, and let the worker skip
+        # re-hashing. Only this payload copy is hashed — `data` itself
+        # stays plaintext, so the direct create_user() branches in
+        # AuthService.register() (subdomain-taken path) still validate
+        # and hash normally and are unaffected. A weak password now
+        # fails synchronously here instead of failing later in the
+        # worker after a false 201.
+        validate_password(data.password)
+        payload_user = data.model_copy(update={"password": hash_it(data.password)})
         payload=WorkerPayloadDto[CreateUserDto](
             label="post-tenant-creation",
-            data=data,
+            data=payload_user,
             tenant_id=str(tenant_id)
         )
         handle_post_tenant_creation.delay(

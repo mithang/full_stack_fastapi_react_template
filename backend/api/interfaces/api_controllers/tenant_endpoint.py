@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, Query, Response, status
 
 from api.common.dtos.worker_dto import WorkerPayloadDto
+from api.common.security import hash_it
 from api.common.exceptions import ApiBaseException, ForbiddenException, InvalidOperationException
 from api.common.utils import get_host_main_domain_name, get_logger, get_utc_now
 from api.core.container import    get_billing_record_service, get_subscription_plan_service, get_tenant_service
@@ -208,7 +209,11 @@ async def create_tenant(
     
     admin_user = CreateUserDto(
         email=data.admin_email,
-        password=data.admin_password,
+        # Hash before enqueueing (iteration 1004): this DTO exists only
+        # for the Celery payload, which is persisted in the broker until
+        # consumed, so it must never carry the plaintext admin password;
+        # the worker skips re-hashing (see post_tenant_creation_task_service).
+        password=hash_it(data.admin_password),
         first_name=data.first_name,
         last_name=data.last_name,
         gender=data.gender,

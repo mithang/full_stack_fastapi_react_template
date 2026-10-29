@@ -42,7 +42,13 @@ class PostTenantCreationTaskService(IBackgroundTask):
 
         try:
             await self._seed_roles(tenant_id=admin_user.tenant_id)
-            response  = await self.user_service.create_user(admin_user)
+            # The Celery payload carries a password hashed at the
+            # enqueue site (iteration 1004), never plaintext, so skip
+            # both validation (a hash is not a user-chosen password)
+            # and hashing (hashing again would double-hash and break
+            # login). The policy was already enforced on the plaintext
+            # at the enqueue site before hashing.
+            response  = await self.user_service.create_user(admin_user, skip_password_validation=True, skip_password_hashing=True)
             user = await self.user_service.get_user_by_id(user_id=str(response))
             logger.info(f"Created admin user with ID: {user.id} and email: {user.email}")
             role = await self.role_service.find_by_name(name=RoleType.ADMIN)

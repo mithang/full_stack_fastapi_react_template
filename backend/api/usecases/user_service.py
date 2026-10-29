@@ -108,7 +108,7 @@ class UserService:
         if not any(_caller_may_access(owner.tenant_id, tenant_id) for owner in owners):
             raise UserNotFoundException(image_key)
 
-    async def create_user(self, user_data: CreateUserDto, *, skip_password_validation: bool = False) -> PydanticObjectId:
+    async def create_user(self, user_data: CreateUserDto, *, skip_password_validation: bool = False, skip_password_hashing: bool = False) -> PydanticObjectId:
         """Create a new user and returns its ID. Raises EmailAlreadyExistsException if email already exists."""
         # Enforce the same password policy as tenant creation (iteration 427)
         # and password reset (iteration 428) for user-chosen passwords.
@@ -120,7 +120,13 @@ class UserService:
         existing = await self.user_repository.single_or_none(email=user_data.email)
         if existing is not None:
             raise EmailAlreadyExistsException(user_data.email)
-        user_data.password = hash_it(user_data.password)
+        # skip_password_hashing is only for the post-tenant-creation
+        # Celery path (iteration 1004): its payload carries a password
+        # already hashed at the enqueue site, so hashing again here
+        # would double-hash and break login. Every other caller passes
+        # a plaintext password and keeps the default hashing.
+        if not skip_password_hashing:
+            user_data.password = hash_it(user_data.password)
         user_id = await self.user_repository.create(user_data)
         
         # Todo: Refactor this to use Celery task to Or fire and forget 
