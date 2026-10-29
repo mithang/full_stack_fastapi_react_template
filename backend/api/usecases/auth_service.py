@@ -291,12 +291,12 @@ class AuthService:
                     ))
                     raise InvalidOperationException(f"Subdomain '{new_user.sub_domain}' is already taken.")
             except InvalidOperationException as ioe:
-                logger.warning(f"Subdomain validation failed for '{new_user.sub_domain}': {ioe}")
+                logger.warning(f"Subdomain validation failed for '{_safe_log_value(new_user.sub_domain)}': {ioe}")
                 # If it is coming here.. that means the request is valid and made by a legit tenant.. because the tenant middleware has already validated it.
                 await self.user_service.create_user(user_data=new_user)
         
             except TenantNotFoundException as tnfe:
-                logger.warning(f"Tenant not found for subdomain '{new_user.sub_domain}': {tnfe} - Proceeding to create new tenant.")
+                logger.warning(f"Tenant not found for subdomain '{_safe_log_value(new_user.sub_domain)}': {tnfe} - Proceeding to create new tenant.")
                 create_new_tenant = CreateTenantDto(
                     name=new_user.sub_domain.split('.')[0],
                     subdomain=new_user.sub_domain,
@@ -307,7 +307,7 @@ class AuthService:
                     gender=new_user.gender,
                 )
                 newly_created_tenant_id = await self.tenant_service.create_tenant(tenant_data=create_new_tenant)
-                logger.info(f"New tenant created with ID: {newly_created_tenant_id} for subdomain '{new_user.sub_domain}' and user creation will be procssed...")
+                logger.info(f"New tenant created with ID: {newly_created_tenant_id} for subdomain '{_safe_log_value(new_user.sub_domain)}' and user creation will be procssed...")
                 cb(newly_created_tenant_id)
 
 
