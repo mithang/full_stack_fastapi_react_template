@@ -36,6 +36,15 @@ from typing import Callable, Optional
 
 logger = get_logger(__name__)
 
+
+def _safe_log_value(value) -> str:
+    # login_with_magic_link's user_id arrives as a Query(str) that
+    # Starlette percent-decodes, so a newline in a magic-link validation
+    # attempt could otherwise forge extra log lines — unauthenticated
+    # (same class as the endpoint log lines fixed in iteration 958).
+    # Only the logged copy is flattened.
+    return str(value).replace("\r", " ").replace("\n", " ")
+
 # Dummy password hash, computed once per process, used only to equalize
 # login timing for unknown emails (see AuthService.login): it hashes a
 # random value, so no supplied password can ever match it, and the
@@ -124,7 +133,7 @@ class AuthService:
             # error audit log uses only the user_id parameter, which is
             # always bound, so every failure path now yields the generic
             # 401 instead of leaking internals.
-            logger.error(f"Login attempt failed for user_id: {user_id}")
+            logger.error(f"Login attempt failed for user_id: {_safe_log_value(user_id)}")
             await self.audit_log_service.create_audit_log(audit_log=AuditLogDto(
                 entity="User",
                 action="error",
