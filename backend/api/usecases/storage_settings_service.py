@@ -8,6 +8,10 @@ from api.domain.entities.storage_settings import StorageProvider, StorageSetting
 
 logger = get_logger(__name__)
 
+def _safe_log_value(value) -> str:
+    """Flatten CR/LF in a logged value so it cannot forge extra log lines."""
+    return str(value).replace("\r", " ").replace("\n", " ")
+
 class StorageSettingsService:
     def __init__(self, storage_settings_repository: StorageSettingsRepository):
         self.storage_settings_repository = storage_settings_repository
@@ -48,7 +52,7 @@ class StorageSettingsService:
         storage_setting: StorageSettings | None = await self.storage_settings_repository.get(id=storage_id)
         # Do not log the full document: at this point it still carries the live
         # aws_secret_key / azure_connection_string (cleared only below).
-        logger.debug(f"Resetting storage setting: id={storage_id}, provider={storage_setting.provider if storage_setting else None}")
+        logger.debug(f"Resetting storage setting: id={_safe_log_value(storage_id)}, provider={storage_setting.provider if storage_setting else None}")
         if storage_setting is None:
             raise NotFoundException("StorageSetting", storage_id)
         
