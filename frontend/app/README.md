@@ -99,6 +99,25 @@ The `vite.config.ts` includes:
 - **Build Output**: Builds to `../../backend/api/ui` for integrated deployment
 - **Tailwind Integration**: Native Tailwind CSS 4 support
 
+### Environment Variables
+
+The frontend has two environment knobs (no others exist in the code):
+
+- **`VITE_API_BASE_URL`** (in `.env`, see `.env.example`): base URL of the
+  backend API. Leave empty for the default — same-origin when served by
+  the backend, or the Vite dev proxy in development. Set it only when the
+  frontend is served from a separate origin or by a mobile client that
+  cannot rely on same origin or the dev proxy. `getApiBaseUrl()` trims
+  whitespace, strips trailing slashes, and strips one trailing `/api/v1`
+  segment, so `https://api.example.com` and
+  `https://api.example.com/api/v1` are equivalent.
+- **`VITE_BACKEND_URL`** (shell environment variable when running
+  `pnpm dev`, e.g. `VITE_BACKEND_URL=http://192.168.1.10:8000 pnpm dev`):
+  overrides the dev proxy target, which defaults to
+  `http://localhost:8000`. `vite.config.ts` reads it from `process.env`,
+  so a `.env` file entry alone does not change the proxy target — that is
+  why it is deliberately not in `.env.example`.
+
 ### TypeScript Configuration
 
 - **Strict Mode**: Full TypeScript strict mode enabled
