@@ -409,7 +409,16 @@ _SECURITY_HEADERS = {
     # the user's device. Verified against Chrome's Rewriter API doc,
     # which delegates the API to cross-origin iframes via the
     # allow="rewriter" Permissions Policy attribute.)
-    b"permissions-policy": b"camera=(), microphone=(), geolocation=(), payment=(), clipboard-read=(), display-capture=(), fullscreen=(), accelerometer=(), gyroscope=(), magnetometer=(), xr-spatial-tracking=(), idle-detection=(), picture-in-picture=(), browsing-topics=(), attribution-reporting=(), window-management=(), keyboard-map=(), ambient-light-sensor=(), wake-lock=(), usb=(), bluetooth=(), hid=(), nfc=(), serial=(), gamepad=(), web-share=(), local-fonts=(), otp-credentials=(), identity-credentials=(), storage-access=(), private-state-token=(), speaker-selection=(), encrypted-media=(), shared-storage=(), compute-pressure=(), sync-xhr=(), autoplay=(), midi=(), join-ad-interest-group=(), run-ad-auction=(), document-domain=(), eyedropper=(), all-screens-capture=(), digital-credentials=(), unload=(), aria-notify=(), captured-surface-control=(), deferred-fetch-minimal=(), battery=(), ch-ua-high-entropy-values=(), translator=(), summarizer=(), language-detector=(), language-model=(), screen-wake-lock=(), on-device-speech-recognition=(), identity-credentials-get=(), private-state-token-issuance=(), private-state-token-redemption=(), local-network-access=(), deferred-fetch=(), local-network=(), loopback-network=(), execution-while-not-rendered=(), execution-while-out-of-viewport=(), rewriter=()",
+    # The on-device Writer API is disabled for the same reason
+    # (verified by grep: the SPA never uses Writer — its AI chat
+    # calls the backend, not the browser's on-device writing, and
+    # it has no text-generation flow — so no such flow exists to
+    # break; a compromised script could otherwise run on-device
+    # writing on the app's origin and download language models to
+    # the user's device. Verified against Chrome's Writer API doc,
+    # which delegates the API to cross-origin iframes via the
+    # allow="writer" Permissions Policy attribute.)
+    b"permissions-policy": b"camera=(), microphone=(), geolocation=(), payment=(), clipboard-read=(), display-capture=(), fullscreen=(), accelerometer=(), gyroscope=(), magnetometer=(), xr-spatial-tracking=(), idle-detection=(), picture-in-picture=(), browsing-topics=(), attribution-reporting=(), window-management=(), keyboard-map=(), ambient-light-sensor=(), wake-lock=(), usb=(), bluetooth=(), hid=(), nfc=(), serial=(), gamepad=(), web-share=(), local-fonts=(), otp-credentials=(), identity-credentials=(), storage-access=(), private-state-token=(), speaker-selection=(), encrypted-media=(), shared-storage=(), compute-pressure=(), sync-xhr=(), autoplay=(), midi=(), join-ad-interest-group=(), run-ad-auction=(), document-domain=(), eyedropper=(), all-screens-capture=(), digital-credentials=(), unload=(), aria-notify=(), captured-surface-control=(), deferred-fetch-minimal=(), battery=(), ch-ua-high-entropy-values=(), translator=(), summarizer=(), language-detector=(), language-model=(), screen-wake-lock=(), on-device-speech-recognition=(), identity-credentials-get=(), private-state-token-issuance=(), private-state-token-redemption=(), local-network-access=(), deferred-fetch=(), local-network=(), loopback-network=(), execution-while-not-rendered=(), execution-while-out-of-viewport=(), rewriter=(), writer=()",
 }
 
 
