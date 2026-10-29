@@ -132,8 +132,16 @@ async def search_role_by_name(
     name: str,
     current_user: CurrentUser,
     _bool: bool = Depends(check_permissions_for_current_role(required_permissions=[Permission.ROLE_VIEW_ONLY])),
-    service: RoleService = Depends(get_role_service)
+    service: RoleService = Depends(get_role_service),
+    request_tenant_id = Depends(get_tenant_id)
 ):
+    # Same list-in-wrong-DB guard as GET /roles/ (iteration 927):
+    # the search is stamp-filtered but, without a middleware-scope
+    # check, a tenant caller searching on the host DB (no
+    # X-Tenant-ID/subdomain, request scope None) could still read
+    # tenant-stamped roles sitting in the host DB (e.g. planted
+    # before the create guard). Guard runs before any read.
+    _assert_list_scope(current_user, request_tenant_id)
     # Same no-store hardening as the GET /roles/ list above: this GET
     # returns matching roles (names and permissions), so a cached 200
     # could serve one tenant's roles to another admin after an account
