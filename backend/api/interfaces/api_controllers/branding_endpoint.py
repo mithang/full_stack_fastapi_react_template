@@ -109,8 +109,18 @@ async def upload_logo(
     logger.debug(f"Received logo file: {file.filename}, size: {size} bytes")
     if size == 0:
         raise BrandingException("Uploaded file is empty.")
-    if file.content_type not in ["image/png", "image/jpeg", "image/svg+xml"]:
-        raise BrandingException("Unsupported file type. Please upload a PNG, JPEG, or SVG image.")
+    # PNG/JPEG only, matching the LogoType literal on BrandingDto /
+    # UpdateBrandingDto (and the frontend file picker's accept list):
+    # SVG was listed here, but constructing those DTOs with
+    # logo_type="image/svg+xml" fails validation — after the file had
+    # already been uploaded, so an SVG upload orphaned a storage object
+    # and surfaced as a validation error instead of this clean
+    # "Unsupported file type" rejection. Rejecting it here, before any
+    # storage write, keeps the allowlist and the DTO in agreement; no
+    # legitimate SVG branding can exist to lose, since the DTO path
+    # could never have stored one.
+    if file.content_type not in ["image/png", "image/jpeg"]:
+        raise BrandingException("Unsupported file type. Please upload a PNG or JPEG image.")
     
     # Resolve the branding record before uploading: the create-scope
     # guard below used to run only after the upload, so a tenant
