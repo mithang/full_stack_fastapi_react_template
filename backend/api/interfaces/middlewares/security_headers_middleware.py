@@ -27,8 +27,17 @@ _SECURITY_HEADERS = {
     # The SPA uses no camera, microphone, or geolocation (verified by
     # grep over frontend/app/src), so disable those powerful features
     # outright: a compromised third-party script embedded in the page
-    # cannot then prompt for them on the app's origin.
-    b"permissions-policy": b"camera=(), microphone=(), geolocation=()",
+    # cannot then prompt for them on the app's origin. Likewise it
+    # uses no Payment Request API / Stripe Elements (Stripe is only
+    # configured via dashboard links) and never reads the clipboard
+    # (it only writes: writeText in ai-chat plus an execCommand copy
+    # fallback), so payment and clipboard-read are disabled too:
+    # clipboard-read in particular could otherwise let such a script
+    # prompt to read a just-copied password or token. Clipboard-write
+    # is a separate directive and is deliberately left alone, as are
+    # the WebAuthn directives: passkey login/registration must keep
+    # working, including USB/BLE/NFC authenticators.
+    b"permissions-policy": b"camera=(), microphone=(), geolocation=(), payment=(), clipboard-read=()",
 }
 
 
