@@ -22,7 +22,15 @@ class TenantDto(BaseModel):
 
 
 class CreateTenantDto(BaseModel):
-    name: str
+    # The UI sends the subdomain as the tenant name (create-new-tenant
+    # dialog) and the SSO/register auto-creation path sends the
+    # subdomain's first label, so every legitimate name is non-empty;
+    # an empty name from a direct API call would otherwise persist a
+    # nameless tenant shown in tenant lists. min_length=1 rejects it
+    # (422) before any creation, matching the first/last-name caps
+    # added to this DTO. The response DTO is deliberately left uncapped
+    # so a pre-existing nameless record can still be read.
+    name: str = Field(min_length=1)
     subdomain: Subdomain
     admin_email: EmailStr
     admin_password: str
