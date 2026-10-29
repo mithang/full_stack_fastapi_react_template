@@ -320,15 +320,39 @@ async def update_profile_picture(
     return UserProfileImageUpdateDto(image_url=file_location)
 
 
+def _assert_assign_scope(current_user: CurrentUser, request_tenant_id) -> None:
+    # Assign-in-wrong-DB guard, mirroring the update and delete
+    # guards above: the service already scopes the target to the
+    # caller's tenant stamp (and the role check below scopes the
+    # role), but neither checks which database served the request.
+    # So a tenant caller assigning on the host DB (no
+    # X-Tenant-ID/subdomain, request scope None) could still change
+    # the role of a tenant-stamped user sitting in the host DB (e.g.
+    # planted before the create guard) — including assigning an
+    # admin role to a user host callers resolve by id with no tenant
+    # scope. Legitimate tenant role assignments happen in the
+    # caller's own tenant DB, where the middleware scope equals
+    # their tenant id, and host callers (tenant_id None) are
+    # unaffected. A mismatched scope fails closed before any read
+    # or write, so it also leaks no existence signal via the
+    # self-assignment check below.
+    if current_user.tenant_id is not None and (
+        request_tenant_id is None or str(request_tenant_id) != str(current_user.tenant_id)
+    ):
+        raise ForbiddenException("User role cannot be assigned outside your tenant's scope.")
+
+
 @router.patch("/{user_id}/assign_role", response_model=UserDto, status_code=status.HTTP_202_ACCEPTED)
 async def patch_user(
     user_id: str, role_update: UserRoleUpdateRequestDto,
     current_user: CurrentUser,
     _: bool = Depends(check_permissions_for_current_role([Permission.USER_ROLE_ASSIGN_OR_REMOVE_ONLY])),
     user_service: UserService = Depends(get_user_service),
-    role_service: RoleService = Depends(get_role_service)
+    role_service: RoleService = Depends(get_role_service),
+    request_tenant_id = Depends(get_tenant_id)
 
 ):
+    _assert_assign_scope(current_user, request_tenant_id)
     if str(current_user.id) == user_id:
         raise ForbiddenException("Users cannot assign a role to themselves.")
 
