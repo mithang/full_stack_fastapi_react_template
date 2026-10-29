@@ -25,8 +25,8 @@ class RoleListDto(BaseModel):
 
 
 class CreateRoleDto(BaseModel):
-    name: str = Field(max_length=20)
-    description: Optional[str] | None = Field(default=None, max_length=200)
+    name: str = Field(min_length=2, max_length=20)
+    description: Optional[str] | None = Field(default=None, min_length=10, max_length=200)
     tenant_id: PydanticObjectId | None = None
 
 class UpdateRoleDto(CreateRoleDto):
