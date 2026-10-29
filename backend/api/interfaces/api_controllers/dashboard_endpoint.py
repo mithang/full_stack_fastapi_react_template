@@ -1,10 +1,12 @@
 from typing import Literal
 
 from fastapi import Depends, Query, APIRouter, Response
+from api.common.exceptions import ForbiddenException
 from api.common.utils import get_date_range
 from api.core.container import get_user_service
 from api.domain.dtos.dashboard_dto import DashboardMetricsDto
 from api.infrastructure.security.current_user import CurrentUser
+from api.interfaces.middlewares.tenant_middleware import get_tenant_id
 from api.usecases.user_service import UserService
 
 
@@ -12,13 +14,35 @@ router = APIRouter(prefix="/dashboard") # type: ignore
 router.tags = ["Dashboard"]
 
 
+def _assert_dashboard_scope(current_user: CurrentUser, request_tenant_id) -> None:
+    # Read-in-wrong-DB guard, mirroring the user-list and invoice
+    # guards: the metrics below are already filtered to the caller's
+    # tenant stamp, but nothing checks which database served the
+    # request. So a tenant caller hitting the host DB (no
+    # X-Tenant-ID/subdomain, request scope None) would still read
+    # tenant-stamped users sitting in the host DB (e.g. planted
+    # before the user-create guard) — user counts and a signup
+    # timeseries from the wrong database, presented as the tenant's
+    # own dashboard. Legitimate tenant dashboard calls go through
+    # ApiClient, which sends X-Tenant-ID whenever a tenant is
+    # selected, so the middleware scope equals their tenant id;
+    # host callers (tenant_id None) are unaffected. A mismatched
+    # scope fails closed before any aggregation runs.
+    if current_user.tenant_id is not None and (
+        request_tenant_id is None or str(request_tenant_id) != str(current_user.tenant_id)
+    ):
+        raise ForbiddenException("Dashboard metrics cannot be read outside your tenant's scope.")
+
+
 @router.get("/",  response_model=DashboardMetricsDto)
 async def get_dashboard_metrics(
     response: Response,
     current_user: CurrentUser,
     filter: Literal["today", "this_week", "last_3_months", "all"] = Query("all"),
-    user_service: UserService = Depends(get_user_service)
+    user_service: UserService = Depends(get_user_service),
+    request_tenant_id = Depends(get_tenant_id)
 ):
+    _assert_dashboard_scope(current_user, request_tenant_id)
     # Per-tenant metrics (user counts, signup timeseries): a
     # browser/proxy-cached 200 could serve one tenant's metrics to
     # another admin after an account switch, or hide fresh signups —
