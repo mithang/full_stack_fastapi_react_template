@@ -307,6 +307,11 @@ To use the Stripe payment features, you need to configure your Stripe account:
         # JWT settings
         JWT_SECRET=your_jwt_secret_key
         REFRESH_TOKEN_SECRET=your_refresh_jwt_secret_key
+# Token lifetimes and signing algorithms (defaults shown; omit to use them)
+ACCESS_TOKEN_EXPIRE_MINUTES=15
+REFRESH_TOKEN_EXPIRE_DAYS=7
+ALGORITHM="HS256"
+REFRESH_ALGORITHM="HS512"
 
         # Configure your default app admin credentials.
         ADMIN_EMAIL=admin@example.com
