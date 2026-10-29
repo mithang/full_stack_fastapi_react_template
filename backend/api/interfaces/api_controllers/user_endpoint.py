@@ -38,6 +38,27 @@ def _assert_create_scope(current_user: CurrentUser, request_tenant_id) -> None:
         raise ForbiddenException("User cannot be created outside your tenant's scope.")
 
 
+def _assert_update_scope(current_user: CurrentUser, request_tenant_id) -> None:
+    # Update-in-wrong-DB guard, mirroring the create guard above and
+    # the role/banner/SSO/storage update guards (iterations
+    # 902-906): the service already scopes the target to the
+    # caller's tenant stamp, but it does not check which database
+    # served the request. So a tenant caller updating on the host
+    # DB (no X-Tenant-ID/subdomain, request scope None) could still
+    # edit a tenant-stamped user sitting in the host DB (e.g.
+    # planted before the create guard), changing their name, email,
+    # or role where host callers resolve users by id with no tenant
+    # scope. Legitimate tenant user edits happen in the caller's own
+    # tenant DB, where the middleware scope equals their tenant id,
+    # and host callers (tenant_id None) are unaffected. A mismatched
+    # scope fails closed before any read or write, so it also leaks
+    # no existence signal via the role-change checks below.
+    if current_user.tenant_id is not None and (
+        request_tenant_id is None or str(request_tenant_id) != str(current_user.tenant_id)
+    ):
+        raise ForbiddenException("User cannot be updated outside your tenant's scope.")
+
+
 @router.get("/", response_model=UserListDto)
 async def list_users(
     response: Response,
@@ -128,9 +149,11 @@ async def update_user(
     _bool: bool = Depends(check_permissions_for_current_role(
         required_permissions=[Permission.USER_READ_AND_WRITE_ONLY, Permission.USER_SELF_READ_AND_WRITE_ONLY],
         allow_self_access=True)
-    )
+    ),
+    request_tenant_id = Depends(get_tenant_id)
 
 ):
+    _assert_update_scope(current_user, request_tenant_id)
     # Role changes must go through the dedicated assign/remove endpoints'
     # permission (USER_ROLE_ASSIGN_OR_REMOVE_ONLY). UpdateUserDto carries
     # role_id and the service applies it, so without this check a caller
