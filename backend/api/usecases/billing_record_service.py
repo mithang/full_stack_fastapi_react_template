@@ -23,6 +23,16 @@ from stripe import StripeClient
 logger = get_logger(__name__)
 
 
+def _safe_log_value(value: object) -> str:
+    # Plan ids arrive as a {plan_id:path} URL param, which Starlette
+    # percent-decodes, so a newline-bearing id would otherwise reach
+    # the log lines below (and, via the exception messages, the API
+    # exception handler's log line) and forge extra log lines. Only
+    # the logged/reported copy is flattened; the raw id still drives
+    # the Stripe call, and normal ids render identically.
+    return str(value).replace("\r", " ").replace("\n", " ")
+
+
 class BillingRecordService:
     def __init__(
         self,
@@ -227,7 +237,7 @@ class BillingRecordService:
                 },
             )
         except Exception as e:
-            logger.error(f"Error updating plan {plan_id}: {e}")
+            logger.error(f"Error updating plan {_safe_log_value(plan_id)}: {e}")
             # Only a Stripe 404 (unknown plan id; stripe errors carry
             # http_status) is a genuine not-found, mirroring get_plan
             # and delete_plan in this file and the pricing update fix.
@@ -235,30 +245,30 @@ class BillingRecordService:
             # error — is a billing error (406 via
             # BillingRecordException), not a 404.
             if getattr(e, "http_status", None) == 404:
-                raise BillingRecordNotFoundException(plan_id) from e
-            raise BillingRecordException(f"Failed to update plan {plan_id}.") from e
+                raise BillingRecordNotFoundException(_safe_log_value(plan_id)) from e
+            raise BillingRecordException(f"Failed to update plan {_safe_log_value(plan_id)}.") from e
 
     async def get_plan(self, plan_id: str, scope: ScopeType) -> PlanDto:
         try:
             sc = await self.stripe_resolver.get_stripe_client(scope=scope)
             return await sc.v1.plans.retrieve_async(plan=plan_id)
         except Exception as e:
-            logger.error(f"Error retrieving plan {plan_id}: {e}")
+            logger.error(f"Error retrieving plan {_safe_log_value(plan_id)}: {e}")
             # Only a Stripe 404 (unknown plan id; stripe errors carry
             # http_status) is a genuine not-found, mirroring the
             # product-delete fix. Anything else — auth failure, Stripe
             # outage, resolver error — is a billing error, not a 404
             # claiming the plan does not exist.
             if getattr(e, "http_status", None) == 404:
-                raise BillingRecordNotFoundException(plan_id) from e
-            raise BillingRecordException(f"Failed to retrieve plan {plan_id}.") from e
+                raise BillingRecordNotFoundException(_safe_log_value(plan_id)) from e
+            raise BillingRecordException(f"Failed to retrieve plan {_safe_log_value(plan_id)}.") from e
 
     async def delete_plan(self, plan_id: str, scope: ScopeType) -> None:
         try:
             sc = await self.stripe_resolver.get_stripe_client(scope=scope)
             result = await sc.v1.plans.delete_async(plan=plan_id)
         except Exception as e:
-            logger.error(f"Error deleting plan {plan_id}: {e}")
+            logger.error(f"Error deleting plan {_safe_log_value(plan_id)}: {e}")
             # The delete was unwrapped, so a Stripe failure reached the
             # client as a raw 500 instead of a mapped API error — and
             # an unknown plan id was indistinguishable from an outage.
@@ -267,10 +277,10 @@ class BillingRecordService:
             # else — auth failure, Stripe outage, resolver error — is a
             # billing error (406 via BillingRecordException).
             if getattr(e, "http_status", None) == 404:
-                raise BillingRecordNotFoundException(plan_id) from e
-            raise BillingRecordException(f"Failed to delete plan {plan_id}.") from e
+                raise BillingRecordNotFoundException(_safe_log_value(plan_id)) from e
+            raise BillingRecordException(f"Failed to delete plan {_safe_log_value(plan_id)}.") from e
         if result.deleted is False:
-            raise BillingRecordException(f"Unable to delete the plan {plan_id}.")
+            raise BillingRecordException(f"Unable to delete the plan {_safe_log_value(plan_id)}.")
 
     async def list_invoices(self, scope: ScopeType) -> InvoiceListDto:
         try:
