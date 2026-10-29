@@ -24,6 +24,11 @@ _SECURITY_HEADERS = {
     b"x-frame-options": b"DENY",
     b"referrer-policy": b"strict-origin-when-cross-origin",
     b"strict-transport-security": b"max-age=31536000; includeSubDomains",
+    # The SPA uses no camera, microphone, or geolocation (verified by
+    # grep over frontend/app/src), so disable those powerful features
+    # outright: a compromised third-party script embedded in the page
+    # cannot then prompt for them on the app's origin.
+    b"permissions-policy": b"camera=(), microphone=(), geolocation=()",
 }
 
 
