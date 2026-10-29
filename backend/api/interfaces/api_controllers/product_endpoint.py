@@ -35,6 +35,27 @@ def _assert_create_scope(current_user: CurrentUser, request_tenant_id) -> None:
         raise ForbiddenException("Products cannot be managed outside your tenant's scope.")
 
 
+def _assert_read_scope(current_user: CurrentUser, request_tenant_id) -> None:
+    # Read-in-wrong-scope guard, mirroring the invoice guard
+    # (iteration 891): product listing/detail are Stripe-object
+    # reads, not DB records, but their scope still comes from the
+    # current DB — the tenant Stripe resolver reads the singleton
+    # settings record in the current DB with no tenant filter. So a
+    # tenant caller without a tenant DB selected (no X-Tenant-ID /
+    # subdomain, hitting the host DB) would list the HOST Stripe
+    # account's products (scope "tenant" from the caller's
+    # tenant_id, keys from the host singleton) — a catalog leak to a
+    # tenant admin, not just a wrong catalog. Legitimate tenant
+    # product browsing happens with the middleware scope equal to
+    # the caller's tenant id, and host callers (tenant_id None)
+    # are unaffected. A mismatched scope fails closed rather than
+    # serving another account's catalog.
+    if current_user.tenant_id is not None and (
+        request_tenant_id is None or str(request_tenant_id) != str(current_user.tenant_id)
+    ):
+        raise ForbiddenException("Products cannot be listed outside your tenant's scope.")
+
+
 router = APIRouter(
     prefix="/products",
     dependencies=[
@@ -49,8 +70,10 @@ async def list_products(
     response: Response,
     current_user: CurrentUser,
     product_service: ProductService = Depends(get_product_service),
-    active: bool = Query(default=True, description="Filter active products, defaults to True")
+    active: bool = Query(default=True, description="Filter active products, defaults to True"),
+    request_tenant_id = Depends(get_tenant_id)
 ):
+    _assert_read_scope(current_user, request_tenant_id)
     # The list is scope-dependent (tenant vs host) and changes when
     # products are created/updated/deleted, so it must not be served
     # from a browser or proxy cache: a cached 200 could show one
@@ -67,8 +90,10 @@ async def get_product_by_id(
     response: Response,
     product_id: str,
     current_user: CurrentUser,
-    product_service: ProductService = Depends(get_product_service)
+    product_service: ProductService = Depends(get_product_service),
+    request_tenant_id = Depends(get_tenant_id)
 ):
+    _assert_read_scope(current_user, request_tenant_id)
     # Same no-store hardening as the GET /products/ list: a single
     # product record is scope-dependent and changes on update/delete,
     # so a cached 200 could show one tenant's product to another tenant
