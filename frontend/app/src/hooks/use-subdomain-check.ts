@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useDebounce } from "./use-debounce";
 import { getApiClient, extractErrorMessage } from "@/lib/utils";
 import { useAppConfig } from "@/components/providers/app-config-provider";
@@ -11,9 +11,15 @@ export function useSubdomainCheck() {
     const [subdomainAvailability, setSubdomainAvailability] = useState<SubdomainAvailabilityDto | null>(null);
     const [isChecking, setIsChecking] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    // Monotonic id of the latest check: responses can arrive out of
+    // order (a slow check for an earlier input landing after a newer
+    // one), and without this the stale verdict would overwrite the
+    // current input's availability on screen.
+    const latestCheckRef = useRef(0);
 
     async function checkSubdomainAvailability() {
         const apiClient = getApiClient();
+        const checkId = ++latestCheckRef.current;
         try {
             setIsChecking(true);
             // Trim before querying: both callers (register, create-tenant)
@@ -25,9 +31,11 @@ export function useSubdomainCheck() {
             const response = await apiClient.tenants.checkSubdomainAvailabilityApiV1TenantsCheckSubdomainSubdomainGet({
                 subdomain: `${debouncedText.trim()}.${host_main_domain}`
             });
+            if (checkId !== latestCheckRef.current) return;
             setSubdomainAvailability(response);
             setError(null);
         } catch (error) {
+            if (checkId !== latestCheckRef.current) return;
             console.error("Error checking subdomain availability:", error);
             if (error instanceof ApiError) {
                 // Backend error bodies come in two shapes ({"error": ...} from
@@ -44,7 +52,9 @@ export function useSubdomainCheck() {
             }
             setSubdomainAvailability(null);
         } finally {
-            setIsChecking(false);
+            // Only the latest check may clear the spinner: a stale
+            // check finishing must not hide a newer check still in flight.
+            if (checkId === latestCheckRef.current) setIsChecking(false);
         }
     }
     useEffect(() => {
@@ -54,6 +64,10 @@ export function useSubdomainCheck() {
         if (debouncedText.trim()) {
             checkSubdomainAvailability();
         } else {
+            // Invalidate any check still in flight for the previous
+            // input, so its late response cannot repopulate the verdict
+            // just cleared for the now-empty input.
+            latestCheckRef.current++;
             setSubdomainAvailability(null);
             setError(null);
         }
