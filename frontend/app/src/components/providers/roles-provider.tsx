@@ -139,8 +139,15 @@ export function RolesProvider({ children }: RolesProviderProps) {
     async function onSelectRole(action?: Action) {
         if (action?.type === 'clone') {
             try {
+                // Backend CreateRoleDto caps name at 20 chars (the create
+                // dialog enforces the same), but the clone suffix alone
+                // can push a long role name over that limit and fail with
+                // a 422 surfaced only as "Failed to clone role". Truncate
+                // the base name so the suffixed clone name always fits.
+                const cloneSuffix = ` copy(${roleResponse.total + 1})`;
+                const cloneName = `${action.role.name.slice(0, 20 - cloneSuffix.length)}${cloneSuffix}`;
                 await onCreateNewRole({
-                    name: `${action.role.name} copy(${roleResponse.total + 1})`,
+                    name: cloneName,
                     description: action.role.description
                 });
                 toast.success("Role cloned successfully", {
