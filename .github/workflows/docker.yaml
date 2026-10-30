@@ -56,11 +56,6 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          # Add build args for version info
-          build-args: |
-            VERSION=${{ github.ref_name }}
-            BUILD_DATE=${{ steps.meta.outputs.labels['org.opencontainers.image.created'] }}
-            VCS_REF=${{ github.sha }}
 
       - name: Show build results
         run: |
@@ -124,11 +119,6 @@ jobs:
           labels: ${{ steps.meta-celery.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          # Add build args for version info
-          build-args: |
-            VERSION=${{ github.ref_name }}
-            BUILD_DATE=${{ steps.meta-celery.outputs.labels['org.opencontainers.image.created'] }}
-            VCS_REF=${{ github.sha }}
 
       - name: Show Celery build results
         run: |
