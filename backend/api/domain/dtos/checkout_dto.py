@@ -33,6 +33,19 @@ class CheckoutRequestDto(BaseModel):
             if not value:
                 raise ValueError("price_id must not be blank")
             self.price_id = value
+        # Same class for tenant_id: both checkout endpoints compare it
+        # with == against current_user.tenant_id before any Stripe
+        # work, so a padded id for the caller's own tenant failed the
+        # "Tenant ID mismatch" check instead of resolving — and would
+        # otherwise have been stamped verbatim into the Stripe
+        # customer metadata, the success/cancel URLs, and the billing
+        # record. Tenant ids never carry surrounding whitespace, so
+        # the value is stripped; None still means "not provided", and
+        # a whitespace-only value becomes "" and still fails the
+        # mismatch check exactly as before, so the error path is
+        # unchanged. The email is already validated by EmailStr.
+        if isinstance(self.tenant_id, str):
+            self.tenant_id = self.tenant_id.strip()
         return self
 
 
