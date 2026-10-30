@@ -16,7 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Logo } from "@/components/shared/logo";
-import { getApiClient } from "@/lib/utils";
+import { extractErrorMessage, getApiClient } from "@/lib/utils";
 import { toast } from "sonner";
 
 
@@ -90,9 +90,21 @@ export function PasswordResetConfirmation() {
             // the generated client rejects network failures with a
             // raw TypeError, while HTTP failures arrive as ApiError.
             const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
-            setError(hasStatus
-                ? "Failed to reset password. The link may be invalid or expired."
-                : "Unable to reach the server. Check your connection and try again.");
+            // Surface the server's own reason (e.g. "Password reset
+            // token has expired" vs "Invalid password reset token" from
+            // jwt_token_service/auth_service) instead of only the fixed
+            // hint, so the user knows whether to request a new link;
+            // the generic fallback adds nothing to the hint, so the
+            // hint is kept in that case — the same fallback-aware
+            // idiom already used in ai-chat.tsx. The network branch
+            // is unchanged, and this cannot enumerate accounts: the
+            // caller already holds a reset link for this user.
+            const serverMessage = hasStatus ? extractErrorMessage(error) : undefined;
+            setError(serverMessage && serverMessage !== "Something went wrong."
+                ? serverMessage
+                : hasStatus
+                    ? "Failed to reset password. The link may be invalid or expired."
+                    : "Unable to reach the server. Check your connection and try again.");
         } finally {
             setIsLoading(false);
         }
