@@ -24,6 +24,22 @@ def _normalize_stripe_secrets(dto):
             if not value:
                 raise ValueError(f"{field} must not be blank")
             setattr(dto, field, value)
+    # default_currency has the same hole in the opposite direction as
+    # the plan/pricing currencies: the exactly-3-char cap rejects "" and
+    # padded values, but a 3-space string passes it and is then stored
+    # verbatim by store_stripe_settings, failing only later when the
+    # stored currency is used. Iteration 1207 left this field alone on
+    # the grounds that padded values fail loudly at configure time —
+    # true, but a whitespace-only value does not fail at all, so reject
+    # it here (422) before persistence. A padded value never reaches
+    # this validator (the length cap already rejects it), legitimate
+    # 3-letter codes are unchanged, and None on update still means
+    # "leave unchanged" (only str values are touched).
+    if isinstance(getattr(dto, "default_currency", None), str):
+        value = dto.default_currency.strip()
+        if not value:
+            raise ValueError("default_currency must not be blank")
+        dto.default_currency = value
     return dto
 
 
