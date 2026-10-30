@@ -17,12 +17,16 @@ import { useUsers } from "@/components/providers/users-provider";
 
 const editUserSchema = z.object({
 
+    // trim() must come before min(): Zod checks run in chain order, so
+    // .min(1).trim() validated the untrimmed value — a whitespace-only
+    // name passed the form, trimmed to "", and was rejected server-side
+    // (UpdateUserDto min_length=1) with only a generic failure toast.
     firstName: z.string()
-        .min(1, { message: "First name cannot be empty" })
-        .trim(),
+        .trim()
+        .min(1, { message: "First name cannot be empty" }),
     lastName: z.string()
-        .min(1, { message: "Last name cannot be empty" })
-        .trim(),
+        .trim()
+        .min(1, { message: "Last name cannot be empty" }),
     gender: z.enum([Gender.MALE, Gender.FEMALE, Gender.OTHER, Gender.UNKNOWN], {
         message: "Gender must be either male, female, other, or unknown"
     })

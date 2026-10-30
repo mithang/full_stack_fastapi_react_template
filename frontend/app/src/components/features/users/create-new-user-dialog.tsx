@@ -27,12 +27,16 @@ const createUserSchema = z.object({
         .regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/, {
             message: "Password must contain at least 1 lowercase letter, 1 uppercase letter, 1 number, and 1 symbol",
         }),
+    // trim() must come before min(): Zod checks run in chain order, so
+    // .min(1).trim() validated the untrimmed value — a whitespace-only
+    // name passed the form, trimmed to "", and was rejected server-side
+    // (CreateUserDto min_length=1) with only a generic failure toast.
     firstName: z.string()
-        .min(1, { message: "First name cannot be empty" })
-        .trim(),
+        .trim()
+        .min(1, { message: "First name cannot be empty" }),
     lastName: z.string()
-        .min(1, { message: "Last name cannot be empty" })
-        .trim(),
+        .trim()
+        .min(1, { message: "Last name cannot be empty" }),
     gender: z.enum([Gender.MALE, Gender.FEMALE, Gender.OTHER, Gender.UNKNOWN], {
         message: "Gender must be either male, female, other, or unknown"
     })
