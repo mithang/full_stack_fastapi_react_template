@@ -1,5 +1,5 @@
 from typing import  List, Optional
-from pydantic import BaseModel, EmailStr, Field, field_serializer
+from pydantic import BaseModel, EmailStr, Field, field_serializer, model_validator
 from beanie import PydanticObjectId
 from api.common.enums.gender import Gender
 
@@ -13,6 +13,32 @@ class BaseUserDto(BaseModel):
     tenant_id: PydanticObjectId | None = None
     role_id: PydanticObjectId | None = None
     sso_provider_id: Optional[str] = None
+
+    @model_validator(mode="after")
+    def normalize_names(self):
+        # Normalize before use: the create-user dialog, register form
+        # and user-edit dialog all trim names, but a direct API client
+        # bypasses the forms — so a whitespace-only first/last name
+        # passed min_length=1 and persisted verbatim, leaving a blank
+        # name in user lists, and a padded name persisted with its
+        # padding (the same deferred-failure class as the tenant DTO
+        # validator, iteration 1273, and the role DTO validator,
+        # iteration 1272). This covers CreateUserDto (admin create,
+        # register, tenant-admin worker payload, SSO signup, seeder).
+        # A value trimming to empty is rejected outright (422)
+        # instead of persisting a blank; padded values are stored
+        # trimmed. The password is deliberately NOT trimmed
+        # (credential semantics), the email is already validated by
+        # EmailStr, and the response DTO is deliberately left alone
+        # so a pre-existing blank record can still be read.
+        for field_name in ("first_name", "last_name"):
+            value = getattr(self, field_name)
+            if isinstance(value, str):
+                trimmed = value.strip()
+                if not trimmed:
+                    raise ValueError(f"{field_name} must not be blank")
+                setattr(self, field_name, trimmed)
+        return self
 
 class CreateUserDto(BaseUserDto):
     password: str
@@ -28,6 +54,25 @@ class CreateUserDto(BaseUserDto):
 class UpdateUserDto(BaseModel):
     first_name: Optional[str] = Field(default=None, min_length=1)
     last_name: Optional[str] = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def normalize_names(self):
+        # Same class as BaseUserDto.normalize_names above, for the
+        # update path (PUT /users/{id} and profile update): a
+        # whitespace-only name passed min_length=1 and persisted
+        # verbatim. None still means "leave unchanged" (partial
+        # updates and internal role-only/image-only constructions),
+        # and a provided value trimming to empty is rejected (422)
+        # instead of persisting a blank; padded values are stored
+        # trimmed.
+        for field_name in ("first_name", "last_name"):
+            value = getattr(self, field_name)
+            if isinstance(value, str):
+                trimmed = value.strip()
+                if not trimmed:
+                    raise ValueError(f"{field_name} must not be blank")
+                setattr(self, field_name, trimmed)
+        return self
     email: Optional[EmailStr] = None
     gender: Optional[Gender] = None
     image_url: Optional[str] = None
