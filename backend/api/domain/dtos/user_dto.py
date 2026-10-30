@@ -132,3 +132,22 @@ class UserRoleUpdateRequestDto(BaseModel):
     # the other min_length=1 request-DTO caps in this sweep.
     role_id: str = Field(min_length=1)
 
+    @model_validator(mode="after")
+    def normalize_role_id(self):
+        # min_length=1 rejects "" but not a whitespace-only value, so
+        # " " still passed validation and failed only at the role
+        # lookup (404) or the already-assigned / not-assigned string
+        # comparison in the assign/remove endpoints, and a padded
+        # real role id failed the same comparisons instead of
+        # resolving. Role ids never carry surrounding whitespace, so
+        # the value is stripped and a value trimming to empty is
+        # rejected outright (422) before any service call, the same
+        # deferred-failure class as the checkout/pricing/billing
+        # DTO validators in this sweep.
+        if isinstance(self.role_id, str):
+            value = self.role_id.strip()
+            if not value:
+                raise ValueError("role_id must not be blank")
+            self.role_id = value
+        return self
+
