@@ -13,7 +13,9 @@ export function AuditLogs() {
             <PageHeader title="Audit Logs" subtitle="View and Download your audit logs" cta={{
                 label: "Download",
                 onClick: () => downloadAuditLogs(),
-                disabled: !canDownloadAuditLogs,
+                // Backend rejects total_records <= 0, so disable when there is
+                // nothing to download instead of surfacing an API error.
+                disabled: !canDownloadAuditLogs || data.total === 0,
                 icon: <IconDownload className="w-4 h-4" />
             }} />
             <AuditTable logs={data} />
