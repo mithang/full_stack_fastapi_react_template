@@ -1,5 +1,4 @@
-from typing import Annotated, List
-from beanie import PydanticObjectId
+from typing import List
 from fastapi import APIRouter, Depends, Query, Response, status
 from api.common.exceptions import ForbiddenException, InvalidOperationException
 from api.common.utils import get_logger
