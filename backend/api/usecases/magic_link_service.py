@@ -45,11 +45,19 @@ class EmailMagicLinkService:
                 
             link = get_email_sharing_link(token=record.token, user_id=str(record.user_id), domain=domain, type="magic_link_login", tenant_id=str(record.tenant_id))
             html_content = magic_link_login_template(user_first_name=user_dto.first_name, magic_link=link)
+            # The email IS the requested action, and the endpoint's contract
+            # is that a send failure for an existing user must NOT be
+            # reported as success (only the unknown-email response stays
+            # generic, to avoid enumerating accounts) — so opt in to
+            # surfacing it instead of the best-effort default swallow,
+            # which would return "a magic link has been sent" for a link
+            # that was never sent.
             await self.email_service.send_email(
                 to=user_dto.email,
                 subject="Your Magic Login Link",
                 type=MessageType.html,
-                body=html_content
+                body=html_content,
+                raise_on_failure=True
             )
         except ApiBaseException as e:
             raise e
