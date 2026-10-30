@@ -53,6 +53,30 @@ class ConfigureStorageSettingsDto(StorageSettingsDto):
     # instead of failing. Both keys are now required the same way.
     @model_validator(mode="after")
     def require_fields_for_enabled_provider(self):
+        # Normalize before validating and persisting: the checks below
+        # already use .strip() to detect blank values, but the values
+        # themselves were persisted verbatim — so a pasted region,
+        # bucket/container name, or credential with surrounding
+        # whitespace passed validation and only failed later, at
+        # upload time (boto3 / BlobServiceClient built with the padded
+        # value), with a generic upload error. None of these fields
+        # can legitimately carry leading/trailing whitespace (bucket
+        # and container names, regions, and keys forbid it; a
+        # connection string's meaningful content is its key=value
+        # pairs), and trimming leaves the "****" masked-secret
+        # placeholder untouched, so the repository's masked round-trip
+        # still matches exactly.
+        for field in (
+            "region",
+            "aws_access_key",
+            "aws_secret_key",
+            "aws_bucket_name",
+            "azure_connection_string",
+            "azure_container_name",
+        ):
+            value = getattr(self, field)
+            if isinstance(value, str):
+                setattr(self, field, value.strip())
         if self.provider == "s3" and self.is_enabled and not self.region.strip():
             raise ValueError("region is required when S3 storage is enabled")
         if (
