@@ -171,11 +171,15 @@ export function UsersProvider({ children }: UsersProviderProps) {
                 // failures with a raw TypeError, while HTTP failures arrive
                 // as ApiError.
                 const hasStatus = typeof (e as { status?: unknown } | null)?.status === "number";
+                // Surface the server's own reason (e.g. a 409/422 detail
+                // for an already-active user) instead of only the fixed
+                // title; network errors keep no description, as before.
                 toast.error(hasStatus
                     ? "Failed to resend user email"
                     : "Unable to reach the server. Check your connection and try again.", {
                     richColors: true,
                     position: "top-right",
+                    description: hasStatus ? extractErrorMessage(e) : undefined,
                 });
             }
             return;
