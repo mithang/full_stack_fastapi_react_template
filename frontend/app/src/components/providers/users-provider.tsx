@@ -1,7 +1,7 @@
 import { CreateUserDto, UserListDto, UpdateUserDto } from '@/api';
 import { createContext, useContext, useEffect, useState } from 'react';
 import { IResponseData } from '@/components/shared/iresponse-data.inteface';
-import { getApiClient } from '@/lib/utils';
+import { extractErrorMessage, getApiClient } from '@/lib/utils';
 import { useSearchParams } from 'react-router';
 import { toast } from 'sonner';
 import { useAuthContext } from '@/components/providers/auth-provider';
@@ -104,7 +104,15 @@ export function UsersProvider({ children }: UsersProviderProps) {
             // never reached the server.
             const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
             if (hasStatus && error instanceof Error) {
-                setUserError(error.message);
+                // ApiError.message is only the mapped status text (e.g.
+                // "Not Found") or a verbose Generic Error dump, so the
+                // server's own body.error/detail message was swallowed
+                // and the users error banner showed a generic status
+                // instead (same error-shape class as iterations
+                // 1213-1215). The central helper reads body.error /
+                // detail / message and validation lists, falling back
+                // to Error.message, so the no-body behaviour is unchanged.
+                setUserError(extractErrorMessage(error));
             } else if (hasStatus) {
                 setUserError("Failed to fetch users");
             } else {

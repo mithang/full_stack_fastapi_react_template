@@ -3,7 +3,7 @@ import { createContext, useContext, useEffect, useState } from 'react';
 import { IResponseData } from '@/components/shared/iresponse-data.inteface';
 import { useSearchParams } from 'react-router';
 import { toast } from 'sonner';
-import { getApiClient } from '@/lib/utils';
+import { extractErrorMessage, getApiClient } from '@/lib/utils';
 import { useAuthContext } from '@/components/providers/auth-provider';
 import { useAppConfig } from '@/components/providers/app-config-provider';
 import { NoPermissionToAccessResource } from '@/components/shared/no-permission-access-resource';
@@ -106,7 +106,15 @@ export function RolesProvider({ children }: RolesProviderProps) {
             // never reached the server.
             const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
             if (hasStatus && error instanceof Error) {
-                setRoleError(error.message);
+                // ApiError.message is only the mapped status text (e.g.
+                // "Not Found") or a verbose Generic Error dump, so the
+                // server's own body.error/detail message was swallowed
+                // and the roles error banner showed a generic status
+                // instead (same error-shape class as iterations
+                // 1213-1215). The central helper reads body.error /
+                // detail / message and validation lists, falling back
+                // to Error.message, so the no-body behaviour is unchanged.
+                setRoleError(extractErrorMessage(error));
             } else if (hasStatus) {
                 setRoleError("Failed to fetch roles");
             } else {
