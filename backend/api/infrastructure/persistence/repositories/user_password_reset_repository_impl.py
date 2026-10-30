@@ -46,7 +46,30 @@ class UserPasswordResetRepository(BaseRepository[UserPasswordReset], AuditLogRep
     
 
     async def delete_by_user_id(self, user_id: str) -> bool:
-        existing = await self.single_or_none(user_id=PydanticObjectId(user_id))
+        # Same malformed-id guard as retrieve_password_reset_data_by_user_id
+        # and the magic-link validate path: a tampered/truncated user_id
+        # cannot match any stored record, so treat it as "not found"
+        # (False, with the same audit entry) instead of letting the
+        # PydanticObjectId() conversion escape as a 500. This is the
+        # last unguarded direct conversion on a caller-supplied id in
+        # the repositories: the sibling lookups are already guarded,
+        # and the user-preference conversions only ever receive the
+        # JWT-validated current_user.id. The catch is broad on purpose,
+        # as in BaseRepository.get: bson raises InvalidId while the
+        # pydantic-validated paths raise ValidationError.
+        try:
+            user_oid = PydanticObjectId(user_id)
+        except Exception:
+            logger.warning(f"Password reset not found for malformed user {user_id}")
+            await self.add_audit_log(AuditLogDto(
+                action="delete",
+                entity="UserPasswordReset",
+                user_id=user_id,
+                changes={"Info": "Attempted to delete non-existing password reset"},
+                tenant_id=None
+            ))
+            return False
+        existing = await self.single_or_none(user_id=user_oid)
         if existing is None:
             logger.warning(f"Password reset not found for user {user_id}")
             await self.add_audit_log(AuditLogDto(
