@@ -30,9 +30,16 @@ import { useAuthContext } from "@/components/providers/auth-provider";
 import { ShowScreenLoader } from "@/components/shared/show-screen-loader";
 
 const stripeConfigSchema = z.object({
-    stripe_secret_key: z.string().min(1, "Stripe secret key is required"),
-    stripe_webhook_secret: z.string().min(1, "Webhook secret is required"),
-    default_currency: z.string().min(3, "Currency code is required").max(3, "Currency code must be 3 characters"),
+    // Trim before length checks (same trim-first class as the dialog
+    // fixes in iterations 1183-1190): Stripe keys (sk_.../whsec_...)
+    // and ISO currency codes never contain whitespace, so surrounding
+    // whitespace is a copy-paste artefact. Without trim, a
+    // whitespace-only key passed min(1) and was stored verbatim,
+    // failing opaquely at Stripe later, and a padded currency failed
+    // the 3-char check (or the backend min/max) instead of saving.
+    stripe_secret_key: z.string().trim().min(1, "Stripe secret key is required"),
+    stripe_webhook_secret: z.string().trim().min(1, "Webhook secret is required"),
+    default_currency: z.string().trim().min(3, "Currency code is required").max(3, "Currency code must be 3 characters"),
     mode: z.enum(["one_time", "recurring", "both"]),
     // z.string().min/max check string LENGTH, not numeric value, so the
     // old min(0).max(365) let -5 or 9999 through: onSubmit converts with
