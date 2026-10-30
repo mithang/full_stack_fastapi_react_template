@@ -145,8 +145,13 @@ export function NotificationBanner() {
             // banner, and must not send the admin re-entering a message
             // for a connection problem.
             const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            // Same guard as the ai-chat new-session toast (iteration 1267):
+            // on a network failure errMsg is just the raw fetch message
+            // ("Failed to fetch"), which adds nothing under the
+            // connection-error title, so only a server answer gets a
+            // description.
             toast.error(hasStatus ? "Failed to save notification banner" : "Unable to reach the server. Check your connection and try again.", {
-                richColors: true, position: "top-right", description: errMsg
+                richColors: true, position: "top-right", description: hasStatus ? errMsg : undefined
             });
         } finally {
             setSubmitting(false);
