@@ -49,8 +49,16 @@ export function ManageUserRoles({ open, onDismiss, userId }: ManageUserRolesProp
             // surface as "No roles found" for the searched name.
             const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
             setRoles([]);
+            // Unlike the tenant search (iteration 1261), this endpoint
+            // returns a list, so an empty result — not a 404 — is the
+            // not-found state (rendered as "No roles found" below);
+            // any server error here is a real failure (e.g. 403/422),
+            // so surface the server's own message instead of only the
+            // fixed sentence, falling back to it when the helper yields
+            // only its generic fallback. Network branch unchanged.
+            const serverMessage = hasStatus ? extractErrorMessage(error) : undefined;
             setSearchError(hasStatus
-                ? "Failed to search roles. Please try again."
+                ? (serverMessage && serverMessage !== "Something went wrong." ? serverMessage : "Failed to search roles. Please try again.")
                 : "Unable to reach the server. Check your connection and try again.");
         } finally {
             setIsSearching(false);
