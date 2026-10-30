@@ -20,7 +20,7 @@ import {
     FormDescription
 } from "@/components/ui/form";
 import { toast } from "sonner";
-import { getApiClient } from "@/lib/utils";
+import { extractErrorMessage, getApiClient } from "@/lib/utils";
 import { TenantDto, UpdateTenantDto } from "@/api";
 import { Building2, Globe, CheckCircle, Clock, XCircle, Plus, AlertTriangle } from "lucide-react";
 import { NavLink } from "react-router";
@@ -110,8 +110,14 @@ export function TenantSetting() {
             // network error, not a failed DNS check, and must not send the
             // admin to re-check a status for a connection problem.
             const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            // Backend errors come in two shapes: the custom handler returns
+            // {"error": ...} (e.g. the clean InvalidOperationException messages
+            // from update_dns/check_dns) while FastAPI HTTPException returns
+            // {"detail": ...}; reading only .body.detail swallowed the former
+            // into the generic fallback. extractErrorMessage (utils) handles
+            // both shapes plus validation lists — same helper as iteration 9.
             toast.error(hasStatus
-                ? (error?.body?.detail || "Failed to check custom domain status")
+                ? extractErrorMessage(error)
                 : "Unable to reach the server. Check your connection and try again.");
         } finally {
             setIsLoading(false);
@@ -202,8 +208,11 @@ export function TenantSetting() {
             // connectivity problem, not a failed DNS update, and must not send the
             // admin to re-enter a domain for an update that never reached the server.
             const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            // Same two-shape handling as the DNS check above: {"error": ...}
+            // from the custom handler (e.g. "Custom domain is required.")
+            // was previously swallowed into the generic fallback.
             toast.error(hasStatus
-                ? (error?.body?.detail || "Failed to update custom domain")
+                ? extractErrorMessage(error)
                 : "Unable to reach the server. Check your connection and try again.");
         } finally {
             setIsLoading(false);
