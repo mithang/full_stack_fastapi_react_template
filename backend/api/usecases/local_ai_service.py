@@ -38,6 +38,16 @@ class LocalAIService:
         self.chat_history_repository = chat_history_repository
     
     async def is_session_exists(self, session_id: str) -> bool:
+        # Same trim as get_histories_by_session_id / delete_session
+        # (iteration 1341): _is_valid_object_id requires exactly 24
+        # hex chars, so a padded id failed the check and reported the
+        # session as nonexistent — feed_previous_conversations then
+        # silently dropped the conversation context instead of reusing
+        # it. The /ask DTO trims its own session_id, but this method's
+        # contract should not depend on that caller; malformed ids
+        # still fail the check exactly as before.
+        if isinstance(session_id, str):
+            session_id = session_id.strip()
         if not _is_valid_object_id(session_id):
             return False
         return await self.chat_session_repository.is_session_exists(session_id)
@@ -129,6 +139,15 @@ class LocalAIService:
     
 
     async def save_user_query(self, user_id: str, query: str, response: str, session_id: str | None = None, tenant_id: str | None = None) -> None:
+        # Same trim as is_session_exists above: a padded id failed the
+        # exact-24-hex check below, so the exchange was silently never
+        # saved (only a logged task failure) instead of appended to the
+        # existing session. The /ask DTO trims its own session_id, but
+        # this method's contract should not depend on that caller.
+        # Whitespace-only ids still fail the check below (empty after
+        # stripping), and malformed ids are dropped exactly as before.
+        if isinstance(session_id, str):
+            session_id = session_id.strip()
         if session_id is not None and not _is_valid_object_id(session_id):
             # Runs as a post-response background task, so a raise here
             # would surface only as a logged task failure while the
