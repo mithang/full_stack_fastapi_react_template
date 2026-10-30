@@ -73,7 +73,14 @@ export default function SSOConfigurationProvider({ children }: SSOConfigurationP
             const hasStatus = typeof (ssoResult.reason as { status?: unknown } | null)?.status === "number";
             toast.error(hasStatus
                 ? "Failed to fetch SSO providers"
-                : "Unable to reach the server. Check your connection and try again.", { richColors: true, position: "top-right" });
+                : "Unable to reach the server. Check your connection and try again.", {
+                richColors: true, position: "top-right",
+                // Same server-detail surfacing as the create/toggle/delete/
+                // update toasts below: a failed fetch with a status carries
+                // the server's own body.error/detail message; the network
+                // branch keeps no description.
+                description: hasStatus ? extractErrorMessage(ssoResult.reason) : undefined,
+            });
         }
     }
     async function refreshSSOConfigurations() {
