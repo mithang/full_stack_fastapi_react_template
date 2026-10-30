@@ -57,8 +57,10 @@ export function PasswordResetConfirmation() {
         setIsLoading(true);
         setError(null);
 
-        const formData = new FormData();
-        formData.append("password", data.password);
+        // NOTE: no FormData is built here: the reset call below sends
+        // the password as JSON (requestBody.new_password), so a
+        // previously built FormData was dead code that also copied the
+        // plaintext password into a second, unsent object.
         if (!userId || !token) {
             setError("Invalid password reset link");
             setIsLoading(false);
