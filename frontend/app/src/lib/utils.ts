@@ -86,6 +86,12 @@ export function formatPrice(amount: number, currency: string) {
 };
 
 export function formatDate(timestamp: number) {
+  // DateTimeFormat throws RangeError for an Invalid Date, unlike
+  // toLocaleString which renders "Invalid Date": a missing or
+  // non-finite timestamp (e.g. an incomplete Stripe invoice record)
+  // previously crashed the whole invoices page on render. Valid
+  // timestamps take the path below unchanged.
+  if (!Number.isFinite(timestamp)) return "N/A";
   return new Intl.DateTimeFormat("en-US", {
     year: "numeric",
     month: "short",
@@ -94,7 +100,11 @@ export function formatDate(timestamp: number) {
 };
 
 export function formatDateWithHourAndMinute(timestamp: number | null | undefined) {
-  if (timestamp == null) return "N/A";
+  // Same RangeError class as formatDate: the null/undefined guard did
+  // not cover a non-finite value (e.g. a malformed billing record),
+  // which crashed checkout-overview on render. Valid timestamps
+  // take the path below unchanged.
+  if (timestamp == null || !Number.isFinite(timestamp)) return "N/A";
   return new Intl.DateTimeFormat("en-US", {
     year: "numeric",
     month: "short",
