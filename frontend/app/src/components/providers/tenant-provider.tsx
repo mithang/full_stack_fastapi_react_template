@@ -207,6 +207,11 @@ export function TenantsProvider({ children }: TenantsProviderProps) {
                 ? "Failed to delete tenant"
                 : "Unable to reach the server. Check your connection and try again.", {
                 richColors: true,
+                // Surface the server's own detail (e.g. a 409/422
+                // reason a tenant cannot be deleted) instead of only
+                // the fixed title, mirroring the create/update toasts
+                // above; network errors keep no description, as before.
+                description: hasStatus ? extractErrorMessage(error) : undefined,
                 position: "top-right"
             });
         }
