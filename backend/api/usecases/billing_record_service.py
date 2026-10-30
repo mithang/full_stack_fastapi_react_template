@@ -226,6 +226,15 @@ class BillingRecordService:
     async def update_plan(
         self, plan_id: str, update_plan: UpdatePlanDto, scope: ScopeType
     ) -> None:
+        # Same padded-id class as the product-id fix: plan ids arrive
+        # as a {plan_id:path} param and reach Stripe verbatim, so a
+        # padded id (copied/pasted, %20-encoded) failed the Stripe
+        # call and surfaced as a 404 for a plan that exists. Stripe
+        # ids never legitimately carry surrounding whitespace; clean
+        # ids are unchanged and whitespace-only/unknown ids still map
+        # to BillingRecordNotFound exactly as before.
+        if isinstance(plan_id, str):
+            plan_id = plan_id.strip()
         try:
             sc = await self.stripe_resolver.get_stripe_client(scope=scope)
             # Only send fields the caller actually provided: UpdatePlanDto
@@ -255,6 +264,9 @@ class BillingRecordService:
             raise BillingRecordException(f"Failed to update plan {_safe_log_value(plan_id)}.") from e
 
     async def get_plan(self, plan_id: str, scope: ScopeType) -> PlanDto:
+        # Same padded-id class as update_plan above.
+        if isinstance(plan_id, str):
+            plan_id = plan_id.strip()
         try:
             sc = await self.stripe_resolver.get_stripe_client(scope=scope)
             return await sc.v1.plans.retrieve_async(plan=plan_id)
@@ -270,6 +282,9 @@ class BillingRecordService:
             raise BillingRecordException(f"Failed to retrieve plan {_safe_log_value(plan_id)}.") from e
 
     async def delete_plan(self, plan_id: str, scope: ScopeType) -> None:
+        # Same padded-id class as update_plan above.
+        if isinstance(plan_id, str):
+            plan_id = plan_id.strip()
         try:
             sc = await self.stripe_resolver.get_stripe_client(scope=scope)
             result = await sc.v1.plans.delete_async(plan=plan_id)
