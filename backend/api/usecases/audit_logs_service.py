@@ -26,10 +26,20 @@ class AuditLogsService:
         await self.audit_log_repository.add_audit_log(audit_log)
 
     async def send_audit_log_report_via_email(self, to_email: str, first_name: str, attachment_data: BytesIO, attachment_filename: str) -> None:
+        # The email IS the requested action: the /download endpoint
+        # returns 202 promising "You will receive an email once the
+        # report is ready", and the only caller is the Celery download
+        # task, so a swallowed SMTP failure would leave the requester
+        # waiting forever while the task records success. Opt in to
+        # surfacing it (clean InvalidOperationException, so the Celery
+        # task fails visibly instead of falsely succeeding), mirroring
+        # the activation / magic-link / email-change senders. The
+        # post-action notification sends stay best-effort (see SmtpEmail).
         await self.email_service.send_email(
           to=to_email,
           subject="Audit Logs Report",
           body=download_template(user_first_name=first_name),
           type="html",
-          attachments=[UploadFile(file=attachment_data, filename=attachment_filename)]
+          attachments=[UploadFile(file=attachment_data, filename=attachment_filename)],
+          raise_on_failure=True
         )
