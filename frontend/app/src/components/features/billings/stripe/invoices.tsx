@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useAuthContext } from "@/components/providers/auth-provider";
-import { formatDate, formatPrice, getApiClient } from "@/lib/utils";
+import { extractErrorMessage, formatDate, formatPrice, getApiClient } from "@/lib/utils";
 import { InvoiceDto } from "@/api";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -46,8 +46,10 @@ export function Invoices() {
             // Network failures surface as a status-less TypeError, while HTTP
             // failures arrive as ApiError; do not blame the invoice list for an outage.
             const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            // The banner has no description slot, so the server's own
+            // reason is appended on the server branch only.
             setInvoiceError(hasStatus
-                ? "Failed to load invoices. Please try again later."
+                ? `Failed to load invoices. Please try again later. ${extractErrorMessage(error)}`
                 : "Unable to reach the server. Check your connection and try again.");
         } finally {
             setLoading(false);
