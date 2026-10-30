@@ -102,7 +102,15 @@ export default function Register() {
                 first_name: data.firstName,
                 last_name: data.lastName,
                 gender: data.gender,
-                sub_domain: isMultiTenancyEnabled ? `${data.subdomain}.${mainDomainName}` : ""
+                // Trim before building: the live availability check
+                // (useSubdomainCheck) trims, and the create-tenant
+                // dialog's schema trims, but this submit used the raw
+                // input — so a pasted " acme " checked as available
+                // yet registered as " acme .<domain>", whose inner
+                // space survives the backend's outer strip and fails
+                // subdomain validation. The guard above already
+                // ensures a non-empty value here.
+                sub_domain: isMultiTenancyEnabled ? `${(data.subdomain ?? "").trim()}.${mainDomainName}` : ""
             });
             toast.success("Registration successful! Please check your email for verification.", {
                 duration: 5000,
