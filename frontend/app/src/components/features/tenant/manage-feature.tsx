@@ -6,7 +6,7 @@ import { Switch } from "@/components/ui/switch";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { cn, getApiClient } from "@/lib/utils";
+import { cn, extractErrorMessage, getApiClient } from "@/lib/utils";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -49,7 +49,14 @@ export function ManageFeature({ open, onDismiss }: ManageFeatureTenantDialogProp
             // load; a status-less failure is a network error, not
             // a tenant with no loadable features.
             const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
-            toast.error(hasStatus ? "Failed to load features" : "Unable to reach the server. Check your connection and try again.", { richColors: true, position: "top-right" });
+            toast.error(hasStatus ? "Failed to load features" : "Unable to reach the server. Check your connection and try again.", {
+                // Surface the server's own message (body.error/detail or a
+                // 422 validation message) instead of only the fixed title,
+                // mirroring the role/user dialogs; the network branch
+                // keeps no description, as before.
+                description: hasStatus ? extractErrorMessage(error) : undefined,
+                richColors: true, position: "top-right"
+            });
         } finally {
             setIsLoading(false);
         }
@@ -88,6 +95,11 @@ export function ManageFeature({ open, onDismiss }: ManageFeatureTenantDialogProp
             // failures arrive as ApiError.
             const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
             toast.error(hasStatus ? `Failed to update feature '${featureName}'.` : "Unable to reach the server. Check your connection and try again.", {
+                // Surface the server's own message (body.error/detail or a
+                // 422 validation message) instead of only the fixed title,
+                // mirroring the role/user dialogs; the network branch
+                // keeps no description, as before.
+                description: hasStatus ? extractErrorMessage(error) : undefined,
                 richColors: true,
                 position: "top-right"
             });
