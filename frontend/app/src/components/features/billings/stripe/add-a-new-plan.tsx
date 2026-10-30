@@ -19,7 +19,7 @@ import { toast } from "sonner";
 import { Plus, RefreshCw, BadgeEuro, Calendar, Package } from "lucide-react";
 import { useAuthContext } from "@/components/providers/auth-provider";
 import { useAppConfig } from "@/components/providers/app-config-provider";
-import { getApiClient, extractErrorMessage } from "@/lib/utils";
+import { getApiClient, extractErrorMessage, formatPrice } from "@/lib/utils";
 import { ProductDto, CreatePlanDto } from "@/api";
 
 const planSchema = z.object({
@@ -106,10 +106,12 @@ export function AddANewPlan({ onPlanCreated }: AddANewPlanProps) {
     }, [isOpen, accessToken, current_tenant]);
 
     const formatPreviewPrice = (amountInCents: number, currency: string) => {
-        return new Intl.NumberFormat("en-US", {
-            style: "currency",
-            currency: currency.toUpperCase(),
-        }).format(amountInCents / 100);
+        // Delegate to the shared formatter: Stripe amounts are in the
+        // currency's minor unit, and dividing by 100 unconditionally
+        // made zero-decimal (e.g. JPY) previews 100x too small and
+        // three-decimal (e.g. KWD) previews 10x too large — the same
+        // bug fixed in formatPrice in iteration 1314.
+        return formatPrice(amountInCents, currency);
     };
 
     const onSubmit = async (data: PlanForm) => {
