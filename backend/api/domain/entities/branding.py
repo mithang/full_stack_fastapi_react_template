@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Literal, Optional
 
 from beanie import PydanticObjectId
-from pydantic import BaseModel, EmailStr, Field, field_serializer
+from pydantic import BaseModel, EmailStr, Field, field_serializer, model_validator
 from api.domain.entities.api_base_model import ApiBaseModel
 
 class ThemeColors(BaseModel):
@@ -111,6 +111,23 @@ class ContactInfo(BaseModel):
     support_email: Optional[EmailStr] = None
     phone: Optional[str] = None
     address: Optional[str] = None
+
+    @model_validator(mode="after")
+    def normalize_phone_address(self):
+        # Trim only, never blank-to-None: the branding update path
+        # dumps exclude_none=True, so a None here would be dropped
+        # and a cleared field would keep its old value instead of
+        # clearing. A whitespace-only value therefore trims to "",
+        # which the form already sends for a cleared field and which
+        # displays as empty; a padded value is stored trimmed, so a
+        # pasted phone/address no longer persists with surrounding
+        # whitespace. support_email is already validated by EmailStr
+        # and trimmed by the form, so it is not touched.
+        for field_name in ("phone", "address"):
+            value = getattr(self, field_name)
+            if isinstance(value, str):
+                setattr(self, field_name, value.strip())
+        return self
 
 class Branding(ApiBaseModel):
     logo_url: Optional[str] = None
