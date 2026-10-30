@@ -1,6 +1,7 @@
 import { CreateUserDto, Gender, Permission, TokenSetDto, type MeResponseDto } from "@/api";
 import { useProfileImage } from "@/hooks/use-profile-image";
 import {
+    extractErrorMessage,
     getApiBaseUrl,
     getApiClient,
     getTenant,
@@ -229,6 +230,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             toast.error(hasStatus
                 ? "Failed to update profile"
                 : "Unable to reach the server. Check your connection and try again.", {
+                // Surface the server's own message (body.error/detail or
+                // a 422 validation message) instead of only the fixed
+                // title; the network branch keeps no description, as
+                // before.
+                description: hasStatus ? extractErrorMessage(error) : undefined,
                 richColors: true
             });
         }
