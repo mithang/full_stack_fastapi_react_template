@@ -10,7 +10,7 @@ from api.common.dtos.token_dto import TokenRefreshRequestDto, TokenSetDto
 from api.common.dtos.worker_dto import WorkerPayloadDto
 from api.common.exceptions import ApiBaseException, ForbiddenException, InvalidOperationException
 from api.common.utils import get_logger, is_tenancy_enabled, validate_password
-from api.core.container import get_auth_service, get_email_magic_link_service, get_passkey_service, get_role_service, get_sso_auth_provider, get_user_magic_link_repository
+from api.core.container import get_auth_service, get_email_magic_link_service, get_passkey_service, get_role_service, get_sso_auth_provider
 from api.core.exceptions import PassKeyException, UserNotFoundException
 from api.domain.dtos.auth_dto import ChangeEmailConfirmRequestDto, ChangeEmailRequestDto, ChangeEmailResponseDto, MagicLinkResponseDto, MeResponseDto, PasswordResetConfirmRequestDto, PasswordResetRequestDto, PasswordResetResponseDto
 from api.domain.dtos.login_dto import LoginRequestDto
@@ -19,7 +19,6 @@ from api.domain.entities.sso_settings import SSOProvider
 from api.domain.enum.permission import Permission
 from api.infrastructure.externals.sso_auth_provider import SSOAuthProvider
 from api.infrastructure.messaging.celery_worker import handle_post_tenant_creation
-from api.infrastructure.persistence.repositories.user_magic_link_repository_impl import UserMagicLinkRepository
 from api.infrastructure.security.current_user import CurrentUser, CurrentUserOptional
 from api.infrastructure.security.passkey_service import PasskeyService
 from api.interfaces.middlewares.tenant_middleware import FrontendHost, get_tenant_id
