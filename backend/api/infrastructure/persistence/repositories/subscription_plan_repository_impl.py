@@ -16,6 +16,12 @@ class SubscriptionPlanRepository(BaseRepository[SubscriptionPlan], AuditLogRepos
         return await super().get(id=subscription_id)
     
     async def get_subscription_plan_by_user_id(self, user_id: str) -> SubscriptionPlan | None:
+        # Strip before conversion, as BaseRepository.get does (iteration
+        # 1353): PydanticObjectId() requires exactly 24 hex chars, so a
+        # padded id failed conversion and returned None for a plan that
+        # exists. Clean ids unchanged; malformed ids still fail below.
+        if isinstance(user_id, str):
+            user_id = user_id.strip()
         try:
             user_oid = PydanticObjectId(user_id)
         except Exception:
@@ -28,6 +34,10 @@ class SubscriptionPlanRepository(BaseRepository[SubscriptionPlan], AuditLogRepos
         return await super().single_or_none(user_id=user_oid)
 
     async def get_subscription_plans_by_tenant(self, tenant_id: str) -> SubscriptionPlan | None:
+        # Same strip as get_subscription_plan_by_user_id above: a padded
+        # tenant_id otherwise failed conversion and returned None.
+        if isinstance(tenant_id, str):
+            tenant_id = tenant_id.strip()
         try:
             tenant_oid = PydanticObjectId(tenant_id)
         except Exception:
@@ -37,9 +47,21 @@ class SubscriptionPlanRepository(BaseRepository[SubscriptionPlan], AuditLogRepos
         return await super().single_or_none(tenant_id=tenant_oid)
 
     async def create_subscription_plan(self, subscription_plan: CreateSubscriptionPlanDto) -> PydanticObjectId | None:
+        # Strip before conversion, as above: create_trial_plan_for_tenant
+        # passes the activate_trial_plan path tenant_id verbatim, and
+        # BaseRepository.get (iteration 1353) already strips it for the
+        # tenant fetch, so a padded path id reached this conversion and
+        # failed — returning None and surfacing as "Failed to create
+        # trial subscription plan." for a tenant that exists. Clean and
+        # malformed ids behave exactly as before.
+        # A whitespace-only id keeps its original value (truthy, so the
+        # conversion below raises and returns None exactly as before)
+        # instead of collapsing to "" and silently becoming a None id.
+        tenant_id = subscription_plan.tenant_id.strip() if isinstance(subscription_plan.tenant_id, str) and subscription_plan.tenant_id.strip() else subscription_plan.tenant_id
+        user_id = subscription_plan.user_id.strip() if isinstance(subscription_plan.user_id, str) and subscription_plan.user_id.strip() else subscription_plan.user_id
         try:
-            tenant_oid = PydanticObjectId(subscription_plan.tenant_id) if subscription_plan.tenant_id else None
-            user_oid = PydanticObjectId(subscription_plan.user_id) if subscription_plan.user_id else None
+            tenant_oid = PydanticObjectId(tenant_id) if tenant_id else None
+            user_oid = PydanticObjectId(user_id) if user_id else None
         except Exception:
             # DTO ids are plain strs, so a malformed tenant_id (e.g.
             # from the activate_trial_plan path param) would otherwise
