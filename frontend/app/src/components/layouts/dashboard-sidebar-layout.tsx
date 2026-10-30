@@ -81,28 +81,37 @@ export function DashboardSidebar() {
             await getApiClient(accessToken).account.logoutApiV1AccountLogoutGet();
             toast.success("Logged out successfully.",
                 { richColors: true, position: "top-right", description: "Redirecting to login..." });
-        } catch (error) {
-            console.error("Logout failed:", error);
-            // A backend response (ApiError, which carries a numeric status)
-            // means the server answered and rejected the logout; a failure
-            // with no status is a network error, and the finally block below
-            // still signs the user out of this browser and navigates to
-            // /login — so reporting "Logout failed. Please try again." would
-            // wrongly tell them they are still signed in.
-            const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
-            toast.error(hasStatus
-                ? "Logout failed. Please try again."
-                : "Unable to reach the server. You have been signed out of this browser.", { richColors: true, position: "top-right" });
-        } finally {
-            // Clear the in-memory session even if the API call failed:
-            // navigation to /login already happens unconditionally, so
-            // leaving the token/user in context would keep the app
-            // behaving as logged in after logout.
+            // Clear the in-memory session only once the server confirmed
+            // the logout (refresh cookie deleted): on a server rejection
+            // below the cookie survives, and the background worker would
+            // refresh it back into a live session within 10 minutes —
+            // silently undoing a logout the toast just reported as failed
+            // (same class as the backend fix that made logout succeed
+            // with an expired access token).
             clearAuthState();
             setTimeout(() => {
                 navigate("/login");
             }, 1000); // Small delay to ensure toast is shown before navigation
-
+        } catch (error) {
+            console.error("Logout failed:", error);
+            // A backend response (ApiError, which carries a numeric status)
+            // means the server answered and rejected the logout, so the
+            // refresh cookie survives: keep the session so the user can
+            // retry, instead of signing out locally and being resurrected
+            // by the worker. A failure with no status is a network error,
+            // and the browser is still signed out below (pre-existing
+            // behaviour, and the toast says exactly that: signed out of
+            // this browser).
+            const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            if (hasStatus) {
+                toast.error("Logout failed. Please try again.", { richColors: true, position: "top-right" });
+                return;
+            }
+            toast.error("Unable to reach the server. You have been signed out of this browser.", { richColors: true, position: "top-right" });
+            clearAuthState();
+            setTimeout(() => {
+                navigate("/login");
+            }, 1000); // Small delay to ensure toast is shown before navigation
         }
     };
 
