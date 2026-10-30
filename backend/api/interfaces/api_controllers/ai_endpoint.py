@@ -166,8 +166,15 @@ async def set_preferred_model(
     if model_name is None or model_name.strip() == "":
         raise InvalidOperationException("Model name cannot be empty")
 
+    # Strip before storing: the blank check above already uses strip(),
+    # but the value was stored verbatim, so a padded model name passed
+    # with 204 yet never matched any model in ai-chat.tsx's exact
+    # `model.name === preferences.model_name` lookup — the stored
+    # preference silently never took effect. Model names carry no
+    # surrounding whitespace, and the /ask DTO already trims its own
+    # model_name, so this matches that path.
     payload: dict[str, Any] = {}
-    payload["model_name"] = model_name
+    payload["model_name"] = model_name.strip()
     await user_preference.set_preferences(user_id=current_user.id, payload=payload)
     return status.HTTP_204_NO_CONTENT
 
