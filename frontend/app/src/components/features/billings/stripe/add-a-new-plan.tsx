@@ -19,7 +19,7 @@ import { toast } from "sonner";
 import { Plus, RefreshCw, BadgeEuro, Calendar, Package } from "lucide-react";
 import { useAuthContext } from "@/components/providers/auth-provider";
 import { useAppConfig } from "@/components/providers/app-config-provider";
-import { getApiClient } from "@/lib/utils";
+import { getApiClient, extractErrorMessage } from "@/lib/utils";
 import { ProductDto, CreatePlanDto } from "@/api";
 
 const planSchema = z.object({
@@ -132,9 +132,12 @@ export function AddANewPlan({ onPlanCreated }: AddANewPlanProps) {
             // Network failures surface as a status-less TypeError, while HTTP
             // failures arrive as ApiError; do not blame the form for an outage.
             const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            // Surface the server's own reason (e.g. a Stripe/validation
+            // detail) instead of only the fixed title; the network branch
+            // keeps no description, as before.
             toast.error(hasStatus
                 ? "Failed to create plan"
-                : "Unable to reach the server. Check your connection and try again.", { richColors: true, position: "top-right" });
+                : "Unable to reach the server. Check your connection and try again.", { richColors: true, position: "top-right", description: hasStatus ? extractErrorMessage(error) : undefined });
         } finally {
             setSubmitting(false);
         }
