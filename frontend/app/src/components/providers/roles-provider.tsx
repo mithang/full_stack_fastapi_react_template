@@ -173,6 +173,11 @@ export function RolesProvider({ children }: RolesProviderProps) {
                 const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
                 toast.error(hasStatus ? "Failed to clone role" : "Unable to reach the server. Check your connection and try again.", {
                     richColors: true,
+                    // Surface the server's own message (e.g. a 409
+                    // duplicate-name or 422 validation detail) instead
+                    // of only the fixed title; network errors keep no
+                    // description, as before.
+                    description: hasStatus ? extractErrorMessage(error) : undefined,
                     position: "top-right",
                 });
             }
