@@ -102,7 +102,10 @@ export function AuditLogProvider({ children }: AuditLogsProviderProps) {
                 richColors: true,
                 duration: 5000,
                 position: "top-right",
-                description: errMsg
+                // Server detail only: on a network failure errMsg is the
+                // raw fetch message ("Failed to fetch"), which must not
+                // appear as a description under the network title.
+                description: hasStatus ? errMsg : undefined
             });
         }
     }
@@ -142,7 +145,10 @@ export function AuditLogProvider({ children }: AuditLogsProviderProps) {
                 richColors: true,
                 duration: 5000,
                 position: "top-right",
-                description: errMsg
+                // Server detail only, as in the fetch toast above: a
+                // network failure's raw fetch message must not appear
+                // as a description under the network title.
+                description: hasStatus ? errMsg : undefined
             });
         }
     }
