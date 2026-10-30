@@ -1,5 +1,5 @@
 from typing import Any, Dict, List, Literal, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from api.domain.entities.stripe_settings import ActorType, PaymentType, ScopeType, StatusType
 
@@ -28,6 +28,24 @@ class CreatePlanDto(BaseModel):
     interval: Literal["month", "year"] # Add day or week later... if needed.
     product_id: str = Field(..., min_length=1, description="The product whose pricing the created plan will represent. This must be the ID of an existing product; empty strings are rejected, matching the add-a-new-plan form's min(1) validation.")
     amount: int = Field(..., ge=1, description="Amount in cents; must be greater than 0, matching the add-a-new-plan form's min(1) validation.")
+
+    @model_validator(mode="after")
+    def normalize_product_id(self):
+        # min_length=1 rejects "" but not a whitespace-only value, so
+        # " " still passed validation and failed only at Stripe — as a
+        # 404 surfaced as ProductNotFoundException, even though no
+        # product lookup was at fault — and a padded real product ID
+        # failed the same way instead of resolving. Stripe product IDs
+        # never carry surrounding whitespace, so the value is stripped
+        # and a value trimming to empty is rejected outright (422)
+        # before any Stripe call, the same deferred-failure class as
+        # the checkout/product/role/tenant/user DTO validators.
+        if isinstance(self.product_id, str):
+            value = self.product_id.strip()
+            if not value:
+                raise ValueError("product_id must not be blank")
+            self.product_id = value
+        return self
 
 
 class UpdatePlanDto(BaseModel):
