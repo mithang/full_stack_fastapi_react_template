@@ -155,7 +155,16 @@ def _assert_preference_scope(current_user: CurrentUser, request_tenant_id) -> No
         raise ForbiddenException("AI model preference cannot be saved outside your tenant's scope.")
 
 
-@router.put("/set_model_preference/{model_name}", status_code=status.HTTP_204_NO_CONTENT)
+# :path, not a single segment: Ollama /api/tags names are passed
+# through verbatim to the UI, and a namespaced model name carries
+# slashes (e.g. "hf.co/<user>/<model>:<tag>"). The frontend's
+# ENCODE_PATH deliberately keeps "/" intact, so with a single-segment
+# route such a selection matched no PUT route and 404'd instead of
+# saving the preference — while plain "llama3:latest" names worked.
+# :path captures the whole remainder (the established converter in
+# this codebase, e.g. plan_id:path); this is the last segment and
+# the only PUT route on this router, so nothing else can shadow it.
+@router.put("/set_model_preference/{model_name:path}", status_code=status.HTTP_204_NO_CONTENT)
 async def set_preferred_model(
     current_user: CurrentUser,
     model_name: str,
