@@ -2,7 +2,6 @@ import pytest
 from httpx import AsyncClient
 
 from api.domain.dtos.role_dto import CreateRoleDto, CreateRoleResponseDto, RoleListDto, UpdateRoleDto, RoleDto
-from api.domain.dtos.user_dto import CreateUserDto
 from api.domain.enum.permission import Permission
 
 
