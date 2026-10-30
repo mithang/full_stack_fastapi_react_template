@@ -228,13 +228,19 @@ class BillingRecordService:
     ) -> None:
         try:
             sc = await self.stripe_resolver.get_stripe_client(scope=scope)
+            # Only send fields the caller actually provided: UpdatePlanDto
+            # leaves active as None when unset, so a trial-only PATCH
+            # must not flip an inactive plan back to active (the
+            # billing UI's trial toggle sends trial_period_days alone).
+            params = {
+                "trial_period_days": update_plan.trial_period_days,
+                "metadata": update_plan.metadata or {},
+            }
+            if update_plan.active is not None:
+                params["active"] = update_plan.active
             await sc.v1.plans.update_async(
                 plan=plan_id,
-                params={
-                    "active": update_plan.active,
-                    "trial_period_days": update_plan.trial_period_days,
-                    "metadata": update_plan.metadata or {},
-                },
+                params=params,
             )
         except Exception as e:
             logger.error(f"Error updating plan {_safe_log_value(plan_id)}: {e}")

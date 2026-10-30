@@ -32,7 +32,11 @@ class CreatePlanDto(BaseModel):
 
 class UpdatePlanDto(BaseModel):
     trial_period_days: int = Field(..., ge=0, le=365, description="Trial period in days, 0..365, matching the Stripe settings trial policy; the billing UI only ever sends 0 or 14.")
-    active: bool = True
+    # None means "leave unchanged": the billing UI's trial toggle sends
+    # only trial_period_days, so a default of True here silently
+    # reactivated an inactive plan whenever its trial was toggled.
+    # Callers that want to change activation pass active explicitly.
+    active: Optional[bool] = None
     metadata: Optional[Dict[str, Any]] = None
 
 
