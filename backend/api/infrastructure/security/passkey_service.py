@@ -80,6 +80,17 @@ class PasskeyService():
         Generate registration options for a user. If the user does not have a passkey record, create one. Add a challenge to the challenges collection with an expiration time.
         """
         user = await self.user_passkey_repo.single_or_none(user_email=user_dto.email)
+        if user is not None and len(user.credentials) > 0:
+            # The only caller (passkey-login.tsx) routes already-enrolled
+            # emails to loginFlow via has_passkeys, so a registration
+            # request for an enrolled email is never legitimate — and
+            # without this guard anyone knowing the email could append
+            # their own credential to the victim's record and then log
+            # in as them. First-time enrollment (no credentials yet) is
+            # unchanged; closing that residual unauthenticated-enrollment
+            # case needs a product decision (auth/password proof), not
+            # a one-line guard, so it stays a standing design item.
+            raise PassKeyException("Passkey already registered for this user. Use passkey login instead.")
         if not user:
             user_passkey = UserPasskey(user_email=user_dto.email, credentials=[], tenant_id=user_dto.tenant_id)
             await self.user_passkey_repo.create(user_passkey.model_dump())
