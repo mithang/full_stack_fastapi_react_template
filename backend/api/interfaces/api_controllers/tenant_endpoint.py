@@ -285,7 +285,15 @@ async def delete_tenant(
         raise ApiBaseException("Failed to delete tenant.")
 
 
-@router.get("/search_by_name/{name}", response_model=TenantDto, status_code=status.HTTP_200_OK)
+# {name:path}: tenant names carry no "/" ban (CreateTenantDto only
+# requires min_length=1 and trims), and the frontend path encoder
+# deliberately leaves "/" intact (it only escapes "?" and "#"), so a
+# slash-containing name reached this route as two segments and 404'd
+# instead of matching — the same class as the AI model-name route.
+# The literal "/search_by_name/" prefix keeps this from shadowing
+# the search_by_subdomain / check_subdomain routes, and it is the
+# last segment, so nothing after it can be swallowed.
+@router.get("/search_by_name/{name:path}", response_model=TenantDto, status_code=status.HTTP_200_OK)
 async def search_by_name(
     name: str,
     response: Response,
