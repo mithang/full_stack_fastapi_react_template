@@ -38,7 +38,12 @@ export function ManageUserRoles({ open, onDismiss, userId }: ManageUserRolesProp
         setSearchError(null);
         try {
             const roles = await apiClient.roles.searchRoleByNameApiV1RolesSearchByNameGet({
-                name: query
+                // The emptiness gate above already tests query.trim(),
+                // but the raw query was sent: a pasted " Admin " was
+                // regex-searched literally (with spaces), so it matched
+                // no stored (trimmed) role name and showed "No roles
+                // found" for a role that exists. Trim before sending.
+                name: query.trim()
             });
             setRoles(roles);
         } catch (error) {
