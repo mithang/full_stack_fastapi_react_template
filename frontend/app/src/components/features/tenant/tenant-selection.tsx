@@ -68,7 +68,13 @@ export function TenantSelection({
         try {
             const apiClient = getApiClient()
             const response = await apiClient.tenants.searchByNameApiV1TenantsSearchByNameNameGet({
-                name: query
+                // The backend lookup is an exact match (single_or_none
+                // on name), but the raw query was sent: a pasted
+                // " Acme " matched no stored (un-padded) tenant name
+                // and showed "can't find the tenant" for a tenant that
+                // exists — the same class as the role search trimmed
+                // in iteration 1309. Trim before sending.
+                name: query.trim()
             })
 
             // A newer search has started since this one; ignore its result
