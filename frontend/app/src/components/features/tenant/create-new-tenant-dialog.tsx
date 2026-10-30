@@ -41,7 +41,7 @@ const tenantSchema = z.object({
         .min(3, { message: "Subdomain cannot be empty" })
         .max(63, { message: "Subdomain must be at most 63 characters" })
         .regex(/^(?!-)[A-Za-z0-9-]{3,63}(?<!-)$/, { message: "Subdomain must use only letters, numbers and hyphens, and cannot start or end with a hyphen" }),
-    adminEmail: z.email({ message: "Email must be a valid email address" }),
+    adminEmail: z.string().trim().pipe(z.email({ message: "Email must be a valid email address" })),
     adminPassword: z.string()
         .min(8, { message: "Password must be at least 8 characters" })
         .regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/, {
