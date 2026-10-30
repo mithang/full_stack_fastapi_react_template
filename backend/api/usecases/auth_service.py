@@ -282,30 +282,40 @@ class AuthService:
             return
 
         tenant = None
-        
 
-        if new_user.tenant_id is None or validate_subdomain(new_user.sub_domain) is not None:
+        # Normalize once: validate_subdomain() (iteration 1209) strips
+        # before validating, but register() discarded its trimmed
+        # return value and looked the raw sub_domain up instead. With
+        # tenant_id None the validator is short-circuited entirely, so
+        # a padded subdomain missed the existing tenant, and
+        # CreateTenantDto (whose Subdomain validator strips) then
+        # created a duplicate tenant for it. The trimmed value drives
+        # the lookup, the taken-check, the derived name and creation;
+        # None passes through unchanged, as before.
+        subdomain = new_user.sub_domain.strip() if isinstance(new_user.sub_domain, str) else new_user.sub_domain
+
+        if new_user.tenant_id is None or validate_subdomain(subdomain) is not None:
             try:
-                tenant = await self.tenant_service.find_by_subdomain(subdomain=new_user.sub_domain)
+                tenant = await self.tenant_service.find_by_subdomain(subdomain=subdomain)
                 if tenant is not None:
                     await self.audit_log_service.create_audit_log(audit_log=AuditLogDto(
                         entity="Tenant",
                         action="error",
                         user_id="unknown",
-                        changes={"Info": f"Tenant with subdomain: {new_user.sub_domain} is already taken."},
+                        changes={"Info": f"Tenant with subdomain: {subdomain} is already taken."},
                         tenant_id=str(tenant.id)
                     ))
-                    raise InvalidOperationException(f"Subdomain '{new_user.sub_domain}' is already taken.")
+                    raise InvalidOperationException(f"Subdomain '{subdomain}' is already taken.")
             except InvalidOperationException as ioe:
-                logger.warning(f"Subdomain validation failed for '{_safe_log_value(new_user.sub_domain)}': {ioe}")
+                logger.warning(f"Subdomain validation failed for '{_safe_log_value(subdomain)}': {ioe}")
                 # If it is coming here.. that means the request is valid and made by a legit tenant.. because the tenant middleware has already validated it.
                 await self.user_service.create_user(user_data=new_user)
         
             except TenantNotFoundException as tnfe:
-                logger.warning(f"Tenant not found for subdomain '{_safe_log_value(new_user.sub_domain)}': {tnfe} - Proceeding to create new tenant.")
+                logger.warning(f"Tenant not found for subdomain '{_safe_log_value(subdomain)}': {tnfe} - Proceeding to create new tenant.")
                 create_new_tenant = CreateTenantDto(
-                    name=new_user.sub_domain.split('.')[0],
-                    subdomain=new_user.sub_domain,
+                    name=subdomain.split('.')[0],
+                    subdomain=subdomain,
                     admin_email=new_user.email,
                     admin_password=new_user.password,
                     first_name=new_user.first_name,
@@ -313,7 +323,7 @@ class AuthService:
                     gender=new_user.gender,
                 )
                 newly_created_tenant_id = await self.tenant_service.create_tenant(tenant_data=create_new_tenant)
-                logger.info(f"New tenant created with ID: {newly_created_tenant_id} for subdomain '{_safe_log_value(new_user.sub_domain)}' and user creation will be procssed...")
+                logger.info(f"New tenant created with ID: {newly_created_tenant_id} for subdomain '{_safe_log_value(subdomain)}' and user creation will be procssed...")
                 cb(newly_created_tenant_id)
 
 
