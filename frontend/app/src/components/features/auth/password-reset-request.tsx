@@ -22,7 +22,7 @@ import { toast } from "sonner";
 
 
 const passwordResetSchema = z.object({
-    email: z.email({ message: "Invalid email address" }),
+    email: z.string().trim().pipe(z.email({ message: "Invalid email address" })),
 
 });
 
