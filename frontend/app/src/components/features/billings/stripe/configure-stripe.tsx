@@ -34,7 +34,16 @@ const stripeConfigSchema = z.object({
     stripe_webhook_secret: z.string().min(1, "Webhook secret is required"),
     default_currency: z.string().min(3, "Currency code is required").max(3, "Currency code must be 3 characters"),
     mode: z.enum(["one_time", "recurring", "both"]),
-    trial_period_days: z.string().min(0, "Trial period must be 0 or more").max(365, "Trial period cannot exceed 365 days"),
+    // z.string().min/max check string LENGTH, not numeric value, so the
+    // old min(0).max(365) let -5 or 9999 through: onSubmit converts with
+    // Number() and the backend (ge=0, le=365, iter 1075) then rejected
+    // it with a generic failure instead of an inline message. Validate
+    // the numeric value itself; empty stays 0, as onSubmit already maps
+    // it via Number("") || 0.
+    trial_period_days: z.string().refine(
+        (v) => { const n = Number(v); return Number.isInteger(n) && n >= 0 && n <= 365; },
+        { message: "Trial period must be a whole number between 0 and 365 days" },
+    ),
 });
 
 type StripeConfigForm = z.infer<typeof stripeConfigSchema>;
