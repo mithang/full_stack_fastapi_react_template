@@ -34,6 +34,16 @@ class TenantService:
 
     async def find_by_name(self, name: str) -> Tenant | None:
         """Get tenant by name. Raises TenantNotFoundException if not found."""
+        # Trim before lookup: stored tenant names are always trimmed
+        # (CreateTenantDto validator), so a padded name from a direct
+        # API client — the frontend search already trims, but a mobile
+        # or scripted caller bypasses the form — can never match by its
+        # spaces and 404s for a tenant that exists, the same
+        # deferred-failure class as the role search trim. A
+        # whitespace-only name still finds nothing and raises exactly
+        # as before, and clean names are unchanged.
+        if isinstance(name, str):
+            name = name.strip()
         exisiting = await self.tenant_repository.single_or_none(name=name)
         if exisiting is None:
             raise TenantNotFoundException(_safe_log_value(name))
