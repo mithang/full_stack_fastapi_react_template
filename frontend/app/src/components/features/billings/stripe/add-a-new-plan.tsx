@@ -81,9 +81,13 @@ export function AddANewPlan({ onPlanCreated }: AddANewPlanProps) {
             // generated client rejects network failures with a raw
             // TypeError, while HTTP failures arrive as ApiError.
             const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            // Surface the server's own reason (e.g. a Stripe/validation
+            // detail) instead of only the fixed title, mirroring the
+            // create-plan toast below; the network branch keeps no
+            // description, as before.
             toast.error(hasStatus
                 ? "Failed to fetch products"
-                : "Unable to reach the server. Check your connection and try again.", { richColors: true, position: "top-right" });
+                : "Unable to reach the server. Check your connection and try again.", { richColors: true, position: "top-right", description: hasStatus ? extractErrorMessage(error) : undefined });
         } finally {
             setLoadingProducts(false);
         }
