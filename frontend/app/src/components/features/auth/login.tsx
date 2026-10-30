@@ -29,7 +29,12 @@ import { SSOLoginDialog } from "./sso-login-dialog";
 
 
 const loginSchema = z.object({
-    email: z.email({ message: "Invalid email address" }),
+    // Trim before validating: z.email().trim() only checks after the
+    // format check, so a pasted address with surrounding whitespace was
+    // rejected as "Invalid email address" even though the address itself
+    // is valid. trim() then pipe() trims first, so " user@example.com "
+    // logs in, while a whitespace-only or malformed value still fails.
+    email: z.string().trim().pipe(z.email({ message: "Invalid email address" })),
     // Login must NOT enforce the signup password policy: the backend
     // login endpoint only verifies the stored hash and never runs
     // validate_password, so an account whose password predates the
