@@ -72,6 +72,17 @@ class UpdateUserDto(BaseModel):
                 if not trimmed:
                     raise ValueError(f"{field_name} must not be blank")
                 setattr(self, field_name, trimmed)
+        # Same deferred-failure class for role_id: update_user() passes
+        # it verbatim to PydanticObjectId(), so a padded id failed
+        # conversion and surfaced as a 404 for a role that exists
+        # (the assign-role path got the same fix in iteration 1279).
+        # None still means "leave unchanged"; a value trimming to
+        # empty is rejected (422) instead of failing the lookup.
+        if isinstance(self.role_id, str):
+            trimmed_role = self.role_id.strip()
+            if not trimmed_role:
+                raise ValueError("role_id must not be blank")
+            self.role_id = trimmed_role
         return self
     email: Optional[EmailStr] = None
     gender: Optional[Gender] = None
