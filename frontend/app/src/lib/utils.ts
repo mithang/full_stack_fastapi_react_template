@@ -38,7 +38,7 @@ export function getTenant(): TenantDto | null {
       parsed === null ||
       Array.isArray(parsed) ||
       typeof (parsed as { id?: unknown }).id !== "string" ||
-      (parsed as { id: string }).id === ""
+      (parsed as { id: string }).id.trim() === ""
     ) {
       localStorage.removeItem("_tenant");
       return null;
