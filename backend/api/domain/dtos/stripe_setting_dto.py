@@ -1,7 +1,30 @@
 from typing import Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from api.domain.entities.stripe_settings import PaymentType
+
+
+def _normalize_stripe_secrets(dto):
+    # Normalize before persisting: the configure-stripe form trims both
+    # secrets (zod .trim()), but direct API clients bypass the form —
+    # so a pasted secret/webhook secret with surrounding whitespace, or
+    # a whitespace-only value (which passes min_length=1), otherwise
+    # persisted verbatim and only failed later at Stripe API auth or
+    # webhook signature-verification time with a generic error, the
+    # same deferred-failure class as the storage-settings and SSO
+    # validators. Stripe keys and webhook secrets cannot legitimately
+    # carry leading/trailing whitespace. Unlike storage/SSO there is no
+    # masked-secret round-trip here (the form sends blank secrets, not
+    # "****"), so trimming cannot break one. A value that trims to
+    # empty is rejected outright instead of persisting an empty key.
+    for field in ("stripe_secret_key", "stripe_webhook_secret"):
+        value = getattr(dto, field, None)
+        if isinstance(value, str):
+            value = value.strip()
+            if not value:
+                raise ValueError(f"{field} must not be blank")
+            setattr(dto, field, value)
+    return dto
 
 
 class CreateStripeSettingDto(BaseModel):
@@ -25,6 +48,10 @@ class CreateStripeSettingDto(BaseModel):
     stripe_secret_key: str = Field(min_length=1)  #Secret key for Stripe API only tenant scope
     tenant_id: str
 
+    @model_validator(mode="after")
+    def normalize_secrets(self):
+        return _normalize_stripe_secrets(self)
+
 class UpdateStripeSettingDto(BaseModel):
     # Same exact-3-letter ISO requirement as CreateStripeSettingDto
     # (see above); None still means "leave unchanged".
@@ -37,6 +64,14 @@ class UpdateStripeSettingDto(BaseModel):
     # Same 0..365 range as CreateStripeSettingDto (see above);
     # None still means "leave unchanged".
     stripe_secret_key: Optional[str] = Field(default=None, min_length=1)  #Secret key for Stripe API only tenant scope
+
+    @model_validator(mode="after")
+    def normalize_secrets(self):
+        # UpdateStripeSettingDto is not currently wired to an endpoint,
+        # but shares the normalization so it cannot reintroduce the
+        # gap if it is wired up later; None still means "leave
+        # unchanged" (the helper only touches str values).
+        return _normalize_stripe_secrets(self)
 
 
 class StripeSettingDto(BaseModel):
