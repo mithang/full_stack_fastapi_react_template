@@ -59,6 +59,15 @@ class RoleService:
         # list_roles. A malformed tenant id cannot match any role, so
         # fail closed with an empty list rather than falling back to
         # the unscoped search.
+        # Trim before searching: stored role names are always trimmed
+        # (CreateRoleDto/UpdateRoleDto validator), so a padded query
+        # can never match by its spaces — it only turns a real match
+        # into an empty result. The frontend already trims, but a
+        # direct API client bypasses the form; and because this is a
+        # substring match, trimming can only widen results (any string
+        # containing " Admin " also contains "Admin"), never narrow
+        # them, so no stored name stops matching.
+        name = name.strip()
         query: dict = {"name": {"$regex": re.escape(name), "$options": "i"}}
         if tenant_id:
             try:
