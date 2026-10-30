@@ -21,7 +21,7 @@ def magic_link_login_template(user_first_name: str, magic_link: str) -> str:
             <p>Or copy and paste this link in your browser:</p>
             <p style="word-break: break-all; color: #007bff;">{magic_link}</p>
 
-            <p><strong>Note:</strong> This magic link will expire in 5 minutes for security reasons.</p>
+            <p><strong>Note:</strong> This magic link will expire in 15 minutes for security reasons.</p>
         
             <hr style="margin: 30px 0; border: none; border-top: 1px solid #eee;">
             <p style="font-size: 12px; color: #666;">

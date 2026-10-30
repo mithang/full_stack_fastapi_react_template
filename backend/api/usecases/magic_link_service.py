@@ -24,7 +24,7 @@ class EmailMagicLinkService:
 
     async def create_magic_link(self, user_dto: UserDto):
         """
-        Create a magic link for the user and store it in the database. And valid for 5 minutes. Tries to send an email with the magic link.
+        Create a magic link for the user and store it in the database. And valid for 15 minutes. Tries to send an email with the magic link.
         Args:
             user_dto (UserDto): The user data transfer object containing user information.
         """
