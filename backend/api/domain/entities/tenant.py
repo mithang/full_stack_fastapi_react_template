@@ -15,7 +15,16 @@ def validate_subdomain(subdomain: str | None) -> str | None:
     """Validate subdomain format. Raises InvalidSubdomainException if invalid. Returns None if subdomain is None."""
     if subdomain is None:
         return None
-    
+
+    # Trim before validating: a pasted subdomain with surrounding
+    # whitespace is valid once trimmed, but the endswith/regex checks
+    # below would otherwise reject it outright (a trailing space fails
+    # the endswith check, a leading space fails the label regex), so a
+    # direct API client got a spurious rejection for a usable value.
+    # The web create-tenant dialog already trims; this covers direct
+    # API clients too. Whitespace-only input still fails below.
+    subdomain = subdomain.strip()
+
     main_domain = get_host_main_domain_name()
 
     if not subdomain.endswith(f".{main_domain}") and subdomain != main_domain or subdomain == main_domain:
@@ -45,6 +54,16 @@ def validate_custom_domain(domain: str) -> str:
     :return: The normalized, validated domain name
     :raises InvalidCustomDomainException: if validation fails
     """
+    if not domain:
+        raise InvalidCustomDomainException("Custom domain is required.")
+
+    # Trim before parsing: a pasted domain with surrounding whitespace
+    # keeps the spaces in urlparse's hostname and then fails the domain
+    # regex, so a direct API client got a spurious rejection for a usable
+    # value. The web tenant-setting form already trims on submit; this
+    # covers direct API clients too. Whitespace-only input is rejected
+    # by the empty check below, as before.
+    domain = domain.strip()
     if not domain:
         raise InvalidCustomDomainException("Custom domain is required.")
 
