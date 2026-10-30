@@ -21,10 +21,6 @@ async def test_list_roles_from_host(client: AsyncClient):
         List all the roles:
     """
     response = await client.get("/roles/?skip=0&limit=10")
-    print(f"Request URL: {response.url}")
-    print(f"Status: {response.status_code}")
-    print(f"Headers: {dict(response.headers)}")
-    print(f"Body: {response.text}")
     assert response.status_code == 200
 
     data = RoleListDto.model_validate(response.json())
