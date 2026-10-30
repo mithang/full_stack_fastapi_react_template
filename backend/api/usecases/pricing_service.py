@@ -57,6 +57,15 @@ class PricingService:
         return PricingListDto(pricings=[pricing for pricing in result.data],  has_more=result.has_more)
     
     async def update_price(self, price_id: str, update: UpdatePricingDto, scope: ScopeType) -> None:
+        # Same padded-id class as the product/plan-id fixes: price ids
+        # arrive as a {price_id:path} param and reach Stripe verbatim,
+        # so a padded id (copied/pasted, %20-encoded) failed the Stripe
+        # call and surfaced as a 404 for a price that exists. Stripe
+        # ids never legitimately carry surrounding whitespace; clean
+        # ids are unchanged and whitespace-only/unknown ids still map
+        # to PricingNotFound exactly as before.
+        if isinstance(price_id, str):
+            price_id = price_id.strip()
         try:
             sc = await self.stripe_resolver.get_stripe_client(scope=scope)
             await sc.v1.prices.update_async(price=price_id, params={
