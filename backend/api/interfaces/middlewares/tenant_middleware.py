@@ -21,8 +21,9 @@ def _safe_log_value(value) -> str:
     # runs (same class as the endpoint/service fixes in iterations
     # 951-969). The tenant host is logged on the same unauthenticated
     # path, so it goes through the same flattening. Only the logged
-    # copy is flattened; the raw value still drives the
-    # PydanticObjectId conversion and its fallback.
+    # copy is flattened; the header/query value itself is stripped
+    # before conversion (see dispatch), so the log line and the
+    # conversion now see the same trimmed value.
     return str(value).replace("\r", " ").replace("\n", " ")
 
 
@@ -52,8 +53,18 @@ class TenantMiddleware(BaseHTTPMiddleware):
         
         if tenant_id is None:
             tenant_id = request.headers.get("X-Tenant-ID") or request.query_params.get('tenant_id') or None
+            # Strip before conversion: an ObjectId never legitimately
+            # carries surrounding whitespace, but a padded X-Tenant-ID
+            # header (e.g. a corrupted frontend localStorage entry) or
+            # ?tenant_id= query value otherwise failed
+            # PydanticObjectId conversion and silently fell back to
+            # host scope, so tenant-scoped calls ran against the wrong
+            # database instead of resolving. A whitespace-only value
+            # still falls back exactly as before.
+            if tenant_id is not None:
+                tenant_id = tenant_id.strip() or None
 
- 
+
         if tenant_id is not None:
             logger.debug(f"Tenant ID found: {_safe_log_value(tenant_id)}")
             try:
