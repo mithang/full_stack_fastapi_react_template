@@ -1,6 +1,7 @@
 import { Dialog, DialogContent, DialogHeader, DialogTrigger, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { getApiClient } from "@/lib/utils";
+import { extractErrorMessage, getApiClient } from "@/lib/utils";
+import { toast } from "sonner";
 import { useAuthContext } from "../providers/auth-provider";
 import { useEffect, useState } from "react";
 import { RegisteredPasskeyCredentialsDto } from "@/api";
@@ -23,18 +24,36 @@ interface PassKeyManagementProps {
 function PassKeyManagement({ accessToken, shouldRefresh }: PassKeyManagementProps) {
     const [allPasskeys, setAllPasskeys] = useState<Array<RegisteredPasskeyCredentialsDto>>([]);
     async function fetchPasskeys() {
-        const apiClient = getApiClient(accessToken);
-        const passkeys = await apiClient.manageSecurity.getRegisteredPasskeysApiV1SecurityPasskeysGet();
-        setAllPasskeys(passkeys);
+        try {
+            const apiClient = getApiClient(accessToken);
+            const passkeys = await apiClient.manageSecurity.getRegisteredPasskeysApiV1SecurityPasskeysGet();
+            setAllPasskeys(passkeys);
+        } catch (error) {
+            // Previously an unhandled rejection: the dialog silently showed
+            // "No registered passkeys found" even when the list simply
+            // failed to load, and the delete path's refresh could reject
+            // unobserved too. Surface the failure instead.
+            toast.error("Failed to load registered passkeys.", {
+                description: extractErrorMessage(error),
+            });
+        }
     }
 
     async function onDeletePasskey(credentialId: string) {
-        const apiClient = getApiClient(accessToken);
-        await apiClient.manageSecurity.deleteRegisteredPasskeyApiV1SecurityPasskeysCredentialIdDelete({
-            credentialId: credentialId
-        });
-        // Refresh the list
-        fetchPasskeys();
+        // Called floating from onClick, so a rejection here would otherwise
+        // go unobserved and leave the row in place with no explanation.
+        try {
+            const apiClient = getApiClient(accessToken);
+            await apiClient.manageSecurity.deleteRegisteredPasskeyApiV1SecurityPasskeysCredentialIdDelete({
+                credentialId: credentialId
+            });
+            // Refresh the list (its own failures are caught inside).
+            fetchPasskeys();
+        } catch (error) {
+            toast.error("Failed to delete passkey.", {
+                description: extractErrorMessage(error),
+            });
+        }
     }
 
     // accessToken is a dep, not just shouldRefresh: a fetch that runs with
