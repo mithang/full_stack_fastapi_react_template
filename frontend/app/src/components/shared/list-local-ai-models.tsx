@@ -31,7 +31,7 @@ export function ListLocalAIModels({ onModelSelect, selectedModel, avilableModels
 
     const formatModelSize = (size?: string) => {
         if (!size) return null
-        return size.replace(/(\d+)([A-Z])/, '$1$2').toUpperCase()
+        return size.replace(/(\d+)([A-Z])/i, '$1 $2').toUpperCase()
     }
 
     useEffect(() => {
