@@ -105,8 +105,10 @@ export function Products() {
             // Network failures surface as a status-less TypeError, while HTTP
             // failures arrive as ApiError; do not blame the product list for an outage.
             const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            // The banner has no description slot, so the server's own
+            // reason is appended on the server branch only.
             setProductsError(hasStatus
-                ? "Failed to fetch products, please try again."
+                ? `Failed to fetch products, please try again. ${extractErrorMessage(error)}`
                 : "Unable to reach the server. Check your connection and try again.");
         } finally {
             setLoading(false);
