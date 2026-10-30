@@ -285,6 +285,16 @@ async def get_profile_image(
     request_tenant_id = Depends(get_tenant_id)
 ):
     _assert_profile_image_scope(current_user, request_tenant_id)
+    # Trim before both uses below: ownership is an exact-match lookup
+    # on image_url and the presigned URL is minted for the key verbatim,
+    # so a padded key (copied/pasted, %20-encoded in the path) would
+    # otherwise 404 on ownership even though the clean key is owned —
+    # and trimming only in the service would be worse, passing
+    # ownership while still minting a URL for the padded (nonexistent)
+    # key. Stored keys are uuid-prefixed server-generated names, so
+    # none legitimately carries surrounding whitespace; a
+    # whitespace-only key still 404s afterwards, unchanged.
+    image_key = image_key.strip()
     # Mint only keys that are actually a profile picture in the caller's
     # scope: without this, any caller with USER_VIEW_ONLY could mint a
     # presigned URL for any object in the shared bucket by guessing or
