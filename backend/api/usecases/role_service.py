@@ -3,7 +3,7 @@ import re
 from beanie import PydanticObjectId
 from api.common.utils import get_logger
 from api.core.exceptions import RoleAlreadyExistsException, RoleNotFoundException
-from api.domain.dtos.role_dto import CreateRoleDto, RoleListDto, UpdateRoleDto, UpdateRoleDto
+from api.domain.dtos.role_dto import CreateRoleDto, RoleListDto, UpdateRoleDto
 from api.domain.entities.role import Role
 from api.infrastructure.persistence.repositories.role_repository_impl import RoleRepository
 

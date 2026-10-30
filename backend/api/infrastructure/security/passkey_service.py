@@ -19,7 +19,6 @@ from webauthn.helpers.structs import (
     AuthenticatorSelectionCriteria,
     AuthenticatorAttachment,
     ResidentKeyRequirement,
-    UserVerificationRequirement,
 )
 
 
