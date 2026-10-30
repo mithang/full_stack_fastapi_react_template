@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useStripeProvider } from "@/components/providers/stripe-provider";
 import { useAuthContext } from "@/components/providers/auth-provider";
-import { formatPrice, getApiClient } from "@/lib/utils";
+import { extractErrorMessage, formatPrice, getApiClient } from "@/lib/utils";
 import { PlanDto, ProductDto } from "@/api";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -118,7 +118,13 @@ export function BillingOverview() {
             const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
             toast.error(hasStatus
                 ? "Failed to update trial period"
-                : "Unable to reach the server. Check your connection and try again.", { richColors: true, position: "top-right" });
+                : "Unable to reach the server. Check your connection and try again.", {
+                // Surface the server's own message (body.error/detail or a
+                // 422 validation message) instead of only the fixed title,
+                // mirroring the role/user/feature dialogs; the network
+                // branch keeps no description, as before.
+                description: hasStatus ? extractErrorMessage(error) : undefined,
+                richColors: true, position: "top-right" });
         } finally {
             setUpdatingPlanId(null);
         }
