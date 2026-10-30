@@ -689,7 +689,10 @@ export function AIChat() {
             // not a bad model choice, and must not send the user
             // re-selecting a model that never reached the server.
             const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
-            toast.error(hasStatus ? "Failed to set model preference" : "Unable to reach the server. Check your connection and try again.", { richColors: true, position: "top-right" })
+            // Surface the server's own error detail (e.g. a 404 for an
+            // unknown model or a 422 validation message) instead of a
+            // fixed title alone; the network branch keeps no description.
+            toast.error(hasStatus ? "Failed to set model preference" : "Unable to reach the server. Check your connection and try again.", { description: hasStatus ? extractErrorMessage(error) : undefined, richColors: true, position: "top-right" })
         }
     }
 
