@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "@/components/ui/dialog";
 import { useState } from "react";
 import { toast } from "sonner";
+import { extractErrorMessage } from "@/lib/utils";
 
 interface RoleManagePermissionDialogProps {
     open: boolean;
@@ -48,7 +49,13 @@ export function RoleManagePermissionDialog({ open, onDismiss }: RoleManagePermis
             // while HTTP failures arrive as ApiError.
             const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
             toast.error(hasStatus ? "Failed to update role" : "Unable to reach the server. Check your connection and try again.", {
-                description: hasStatus ? "There was an error updating the permissions." : undefined,
+                // ApiError.message is only the mapped status text, and a
+                // fixed sentence here would swallow the server's own
+                // body.error/detail message, so read it via the central
+                // helper (which also handles 422 validation lists and
+                // falls back to Error.message); the network branch is
+                // unchanged.
+                description: hasStatus ? extractErrorMessage(error) : undefined,
                 richColors: true,
                 position: "top-right"
             });
