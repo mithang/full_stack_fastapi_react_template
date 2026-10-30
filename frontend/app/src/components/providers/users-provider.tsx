@@ -210,11 +210,15 @@ export function UsersProvider({ children }: UsersProviderProps) {
             // the generated client rejects network failures with a raw
             // TypeError, while HTTP failures arrive as ApiError.
             const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            // Surface the server's own reason (e.g. a 409/422 detail
+            // for a delete the server rejects) instead of only the fixed
+            // title; network errors keep no description, as before.
             toast.error(hasStatus
                 ? "Failed to delete user"
                 : "Unable to reach the server. Check your connection and try again.", {
                 richColors: true,
                 position: "top-right",
+                description: hasStatus ? extractErrorMessage(error) : undefined,
             });
         }
     }
