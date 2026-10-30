@@ -1,6 +1,7 @@
 from typing import List, Literal
 
 from fastapi import UploadFile
+from api.common.exceptions import InvalidOperationException
 from api.common.utils import get_logger
 from api.domain.interfaces.email_service import IEmailService
 from fastapi_mail import FastMail, MessageSchema, ConnectionConfig, MessageType, errors
@@ -24,7 +25,14 @@ class SmtpEmail(IEmailService):
             )
         )
 
-    async def send_email(self, to: str, subject: str, body: str, type: Literal[MessageType.html, MessageType.plain], attachments: List[UploadFile | dict | str] = []) -> None:
+    async def send_email(self, to: str, subject: str, body: str, type: Literal[MessageType.html, MessageType.plain], attachments: List[UploadFile | dict | str] = [], raise_on_failure: bool = False) -> None:
+        # Default stays best-effort (log and swallow): several callers send
+        # notifications AFTER the action already succeeded (password/email
+        # changed, DNS/audit reports), where surfacing a mail failure as an
+        # API error would falsely report the completed action as failed.
+        # Callers where the email IS the action opt in to raise_on_failure,
+        # so a failed send surfaces as a clean 406 InvalidOperationException
+        # instead of a false success.
         try:
             logger.info(f"Sending email to {to} with subject '{subject}'")
             if len(attachments) > 0:
@@ -48,7 +56,13 @@ class SmtpEmail(IEmailService):
             logger.info(f"Email sent to {to}")
         except errors.ApiError as e:
             logger.error(f"Failed to send email to {to}: {str(e)}")
+            if raise_on_failure:
+                raise InvalidOperationException("Failed to send email. Please try again later.")
         except errors.ConnectionErrors as e:
             logger.error(f"Connection error while sending email to {to}: {str(e)}")
+            if raise_on_failure:
+                raise InvalidOperationException("Failed to send email. Please try again later.")
         except Exception as e:
             logger.error(f"An unexpected error occurred while sending email to {to}: {str(e)}")
+            if raise_on_failure:
+                raise InvalidOperationException("Failed to send email. Please try again later.")

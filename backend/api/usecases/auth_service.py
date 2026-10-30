@@ -427,11 +427,16 @@ class AuthService:
         ))
         link = get_email_sharing_link(token=activation_token, user_id=payload.id, domain=domain, type="activation", tenant_id=payload.tenant_id)
         html = activation_template_html(user_first_name=payload.first_name, activation_link=link)
+        # The resend endpoint returns 202 with no other success signal, so
+        # a swallowed SMTP failure would falsely report success; opt in to
+        # surfacing it (clean 406 via the InvalidOperationException handler).
+        # Notification-after-action sends stay best-effort (see SmtpEmail).
         await self.email_service.send_email(
             to=payload.email,
             subject="Account Activation",
             body=html,
-            type=MessageType.html
+            type=MessageType.html,
+            raise_on_failure=True
         )
         logger.info(f"Activation email sent to {payload.email}")
 
