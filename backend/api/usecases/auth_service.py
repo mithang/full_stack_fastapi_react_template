@@ -291,8 +291,12 @@ class AuthService:
         # CreateTenantDto (whose Subdomain validator strips) then
         # created a duplicate tenant for it. The trimmed value drives
         # the lookup, the taken-check, the derived name and creation;
-        # None passes through unchanged, as before.
-        subdomain = new_user.sub_domain.strip() if isinstance(new_user.sub_domain, str) else new_user.sub_domain
+        # None passes through unchanged, as before. Lowercased here
+        # too: validate_subdomain now lowercases on storage, so an
+        # uppercase register attempt must look up the lowercased form
+        # or the taken-check misses the existing tenant, exactly like
+        # the padded-subdomain miss above.
+        subdomain = new_user.sub_domain.strip().lower() if isinstance(new_user.sub_domain, str) else new_user.sub_domain
 
         if new_user.tenant_id is None or validate_subdomain(subdomain) is not None:
             try:

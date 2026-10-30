@@ -24,16 +24,28 @@ def validate_subdomain(subdomain: str | None) -> str | None:
     if subdomain is None:
         return None
 
-    # Trim before validating: a pasted subdomain with surrounding
-    # whitespace is valid once trimmed, but the endswith/regex checks
-    # below would otherwise reject it outright (a trailing space fails
-    # the endswith check, a leading space fails the label regex), so a
-    # direct API client got a spurious rejection for a usable value.
-    # The web create-tenant dialog already trims; this covers direct
-    # API clients too. Whitespace-only input still fails below.
-    subdomain = subdomain.strip()
+    # Trim and lowercase before validating: a pasted subdomain with
+    # surrounding whitespace is valid once trimmed, but the
+    # endswith/regex checks below would otherwise reject it outright
+    # (a trailing space fails the endswith check, a leading space
+    # fails the label regex), so a direct API client got a spurious
+    # rejection for a usable value. The web create-tenant dialog
+    # already trims; this covers direct API clients too.
+    # Whitespace-only input still fails below. Lowercasing is the
+    # same normalization the host side already applies: DNS names
+    # are case-insensitive, get_tenant_host() lowercases the request
+    # host before lookup, and custom domains are lowercased by
+    # urlparse's hostname — but this validator stored the subdomain
+    # verbatim, so an uppercase subdomain created via a direct API
+    # call (the regex allows A-Z, and no form lowercases) could never
+    # resolve through the middleware's lowercased host lookup and its
+    # requests silently fell back to the host database. Normalizing
+    # here fixes storage and every Subdomain-typed lookup (endpoint
+    # params, CreateTenantDto) at once; already-lowercase values are
+    # unchanged.
+    subdomain = subdomain.strip().lower()
 
-    main_domain = get_host_main_domain_name()
+    main_domain = get_host_main_domain_name().lower()
 
     if not subdomain.endswith(f".{main_domain}") and subdomain != main_domain or subdomain == main_domain:
         raise InvalidSubdomainException(subdomain)
