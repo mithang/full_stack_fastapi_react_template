@@ -24,6 +24,21 @@ class BaseRepository(Generic[T]):
         return result
     
     async def get(self, id: str) -> Optional[T]:
+        # Strip before conversion: PydanticObjectId() requires exactly
+        # 24 hex chars, so a padded id (copied/pasted, %20-encoded in
+        # a path param) failed conversion and returned None — a 404
+        # for a record that exists, the same deferred-failure class
+        # as the per-endpoint trims in recent iterations (passkey
+        # credential_id, profile image_key, AI session_id). Stripping
+        # centrally here covers every get/update/delete caller at
+        # once (roles, users, tenants, SSO, notification banner,
+        # storage, subscription plans). Clean ids are unchanged and
+        # whitespace-only/malformed ids still fail conversion exactly
+        # as before. Non-string ids are passed through untouched: at
+        # least one caller passes an ObjectId already (storage
+        # settings passes result.id), which has no strip() method.
+        if isinstance(id, str):
+            id = id.strip()
         try:
             object_id = PydanticObjectId(id)
         except Exception:
