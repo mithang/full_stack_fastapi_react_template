@@ -44,9 +44,17 @@ export function Dashboard() {
             // answered; a failure with no status is a network failure.
             const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
             // The banner has no description slot, so the server's own
-            // reason is appended on the server branch only.
+            // reason is appended on the server branch only — but the
+            // generic fallback adds nothing to the hint, so it is not
+            // appended (same fallback-aware idiom as the password-reset
+            // confirmation banner and the AI-models toast); otherwise a
+            // body-less server failure would read "...try again later.
+            // Something went wrong."
+            const serverMessage = hasStatus ? extractErrorMessage(error) : undefined;
             setFetchError(hasStatus
-                ? `Failed to load dashboard metrics. Please try again later. ${extractErrorMessage(error)}`
+                ? (serverMessage && serverMessage !== "Something went wrong."
+                    ? `Failed to load dashboard metrics. Please try again later. ${serverMessage}`
+                    : "Failed to load dashboard metrics. Please try again later.")
                 : "Unable to reach the server. Check your connection and try again.");
         }
     }
