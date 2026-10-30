@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useAuthContext } from "@/components/providers/auth-provider";
 import { useAppConfig } from "@/components/providers/app-config-provider";
-import { formatDateWithHourAndMinute, formatPrice, getApiClient } from "@/lib/utils";
+import { extractErrorMessage, formatDateWithHourAndMinute, formatPrice, getApiClient } from "@/lib/utils";
 import { BillingRecordDto } from "@/api";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -100,8 +100,13 @@ export function CheckoutOverview() {
             // "No Checkout Records Found" empty state, so an outage looked
             // exactly like having no checkout sessions at all.
             const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            // The banner has no description slot, so the server's own
+            // reason is appended to the fixed sentence instead of being
+            // swallowed, mirroring the plans-load banner in
+            // billing-overview.tsx; the network branch keeps no server
+            // detail, as before.
             setFetchError(hasStatus
-                ? "Failed to load checkout records. Please try again later."
+                ? `Failed to load checkout records. Please try again later. ${extractErrorMessage(error)}`
                 : "Unable to reach the server. Check your connection and try again.");
         } finally {
             // Only the latest request may clear loading: a stale request
