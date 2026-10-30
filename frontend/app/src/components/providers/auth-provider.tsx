@@ -154,7 +154,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             // rule the worker itself follows for network failures.
             const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
             if (hasStatus) {
-                await refreshToken();
+                // Do not let the refresh fallback resurrect an explicit
+                // logout: after logout() arms loggedOutRef, navigating
+                // to a protected route re-runs the effect below, /me
+                // fails with 401 (no token in state), and refreshing
+                // here would silently restore a surviving refresh
+                // cookie (network logout, or a cookie rotated by an
+                // in-flight refresh) — the same resurrection the
+                // worker-token guard blocks, via the effect path
+                // instead. Send the user to /login with state already
+                // empty instead. A server-rejected logout never arms
+                // the flag, so a kept session still refreshes as
+                // before, and the next login clears the flag.
+                if (loggedOutRef.current) {
+                    setUser(null);
+                    setAccessToken("");
+                    navigate("/login");
+                } else {
+                    await refreshToken();
+                }
             } else {
                 console.error("Failed to fetch user (network error, keeping session):", error);
             }
