@@ -86,6 +86,16 @@ async def delete_registered_passkey(
     Endpoint to delete a registered passkey for the current user.
     """
     _assert_passkey_scope(current_user, request_tenant_id)
+    # Strip before the lookup: delete_registered_passkey filters the
+    # stored credentials by exact credential_id match, so a padded id
+    # (copied/pasted, %20-encoded in the path) passed the scope check
+    # yet raised "Credential ID not found" for a credential that
+    # exists, leaving the user unable to delete it. Credential ids
+    # are base64url values that never legitimately carry surrounding
+    # whitespace, so stripping here covers both the lookup and the
+    # audit-log text below; clean ids are unchanged and a
+    # whitespace-only id still fails with the same error.
+    credential_id = credential_id.strip()
     try:
         await passkey_service.delete_registered_passkey(
             email=current_user.email,
