@@ -98,11 +98,18 @@ export function formatDate(timestamp: number) {
   // previously crashed the whole invoices page on render. Valid
   // timestamps take the path below unchanged.
   if (!Number.isFinite(timestamp)) return "N/A";
+  // Same RangeError class, one step further: a finite but out-of-range
+  // value (e.g. a malformed billing record) makes new Date() invalid,
+  // and DateTimeFormat throws on it instead of rendering "Invalid
+  // Date" — crashing the whole invoices page on render. Valid
+  // timestamps take the path below unchanged.
+  const date = new Date(timestamp * 1000);
+  if (Number.isNaN(date.getTime())) return "N/A";
   return new Intl.DateTimeFormat("en-US", {
     year: "numeric",
     month: "short",
     day: "numeric",
-  }).format(new Date(timestamp * 1000));
+  }).format(date);
 };
 
 export function formatDateWithHourAndMinute(timestamp: number | null | undefined) {
@@ -111,13 +118,19 @@ export function formatDateWithHourAndMinute(timestamp: number | null | undefined
   // which crashed checkout-overview on render. Valid timestamps
   // take the path below unchanged.
   if (timestamp == null || !Number.isFinite(timestamp)) return "N/A";
+  // Same out-of-range RangeError class as formatDate: a finite but
+  // unrepresentable value makes new Date() invalid and DateTimeFormat
+  // throws, crashing checkout-overview on render. Valid timestamps
+  // take the path below unchanged.
+  const date = new Date(timestamp * 1000);
+  if (Number.isNaN(date.getTime())) return "N/A";
   return new Intl.DateTimeFormat("en-US", {
     year: "numeric",
     month: "short",
     day: "numeric",
     hour: "2-digit",
     minute: "2-digit",
-  }).format(new Date(timestamp * 1000));
+  }).format(date);
 };
 
 export function getApiBaseUrl(): string {
