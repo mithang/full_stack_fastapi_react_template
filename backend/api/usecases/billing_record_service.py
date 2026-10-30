@@ -449,6 +449,18 @@ class BillingRecordService:
         """
         Handle successful checkout for host scope
         """
+        # Same padded-id class as the product/plan/price-id fixes:
+        # session_id arrives as a query param (from the Stripe redirect
+        # via the frontend) and reached Stripe and the record lookup
+        # verbatim, so a padded id failed the Stripe retrieve and
+        # surfaced as a 404 for a session that exists. Stripe ids
+        # never legitimately carry surrounding whitespace; clean ids
+        # are unchanged, and whitespace-only/unknown ids still map to
+        # NotFound exactly as before (the stripped id is also what
+        # the stored stripe_session_id lookup uses, so a padded id
+        # for a real record now finalises instead of 404ing).
+        if isinstance(session_id, str):
+            session_id = session_id.strip()
         # Wrap only the Stripe calls: any failure here (unknown session id,
         # bad key, Stripe outage) previously propagated as a raw Stripe
         # exception past the ApiBaseException-only handler and surfaced as
@@ -534,6 +546,9 @@ class BillingRecordService:
         """
         Handle successful checkout for tenant scope
         """
+        # Same padded-id class as the host success handler above.
+        if isinstance(session_id, str):
+            session_id = session_id.strip()
         # Wrap only the Stripe calls, mirroring the host success handler
         # (iteration 357): any failure here (unknown session id, bad key,
         # Stripe outage) previously propagated as a raw Stripe exception
