@@ -33,8 +33,12 @@ function PassKeyManagement({ accessToken, shouldRefresh }: PassKeyManagementProp
             // "No registered passkeys found" even when the list simply
             // failed to load, and the delete path's refresh could reject
             // unobserved too. Surface the failure instead.
-            toast.error("Failed to load registered passkeys.", {
-                description: extractErrorMessage(error),
+            // A numeric status means the server answered and rejected
+            // the load; a status-less failure is a network error, so
+            // it gets the connection message and no raw fetch text.
+            const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            toast.error(hasStatus ? "Failed to load registered passkeys." : "Unable to reach the server. Check your connection and try again.", {
+                description: hasStatus ? extractErrorMessage(error) : undefined,
             });
         }
     }
@@ -50,8 +54,12 @@ function PassKeyManagement({ accessToken, shouldRefresh }: PassKeyManagementProp
             // Refresh the list (its own failures are caught inside).
             fetchPasskeys();
         } catch (error) {
-            toast.error("Failed to delete passkey.", {
-                description: extractErrorMessage(error),
+            // Same network-vs-server distinction as the load toast
+            // above: a status-less failure is a connection problem,
+            // not a server rejection of the delete.
+            const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            toast.error(hasStatus ? "Failed to delete passkey." : "Unable to reach the server. Check your connection and try again.", {
+                description: hasStatus ? extractErrorMessage(error) : undefined,
             });
         }
     }
