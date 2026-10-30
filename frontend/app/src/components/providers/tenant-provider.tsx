@@ -102,7 +102,14 @@ export function TenantsProvider({ children }: TenantsProviderProps) {
                 richColors: true,
                 duration: 5000,
                 position: "top-right",
-                description: !isHost && hasStatus ? "You do not have permission to view this resource." : undefined
+                // Surface the server's own detail for the normal
+                // (host) caller, mirroring the create/update/delete
+                // toasts in this file: a host admin previously got
+                // only the fixed title, so a 500/422 reason for a
+                // failed tenant list was swallowed. The non-host
+                // permission hint is preserved, and network errors
+                // keep no description, as before.
+                description: hasStatus ? (!isHost ? "You do not have permission to view this resource." : extractErrorMessage(error)) : undefined
             });
         } finally {
             setPending(false);
