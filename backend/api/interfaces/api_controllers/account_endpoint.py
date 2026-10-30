@@ -20,7 +20,7 @@ from api.domain.enum.permission import Permission
 from api.infrastructure.externals.sso_auth_provider import SSOAuthProvider
 from api.infrastructure.messaging.celery_worker import handle_post_tenant_creation
 from api.infrastructure.persistence.repositories.user_magic_link_repository_impl import UserMagicLinkRepository
-from api.infrastructure.security.current_user import CurrentUser
+from api.infrastructure.security.current_user import CurrentUser, CurrentUserOptional
 from api.infrastructure.security.passkey_service import PasskeyService
 from api.interfaces.middlewares.tenant_middleware import FrontendHost, get_tenant_id
 from api.interfaces.security.role_checker import check_permissions_for_current_role
@@ -107,7 +107,7 @@ async def refresh_token(
 @router.get("/logout", status_code=status.HTTP_200_OK)
 async def logout(
     response: Response,
-    current_user: CurrentUser,
+    current_user: CurrentUserOptional,
     auth_service: AuthService = Depends(get_auth_service)
 ):
     # This GET deletes the refresh cookie and records a logout, so it
@@ -129,7 +129,17 @@ async def logout(
         httponly=True,
         samesite="lax",
     )
-    await auth_service.logout(user_id=str(current_user.id), tenant_id=str(current_user.tenant_id) if current_user.tenant_id else None)
+    # Logout must succeed even when the access token has already expired
+    # (or is absent): with the required CurrentUser dependency the
+    # endpoint 401'd before reaching the cookie deletion above, so the
+    # refresh cookie survived logout — and the background worker then
+    # refreshed it back into a live session within 10 minutes, silently
+    # undoing the logout. The cookie deletion is the session-ending act
+    # here (auth_service.logout only writes an audit log; there is no
+    # server-side token denylist), so it runs unconditionally and the
+    # audit entry is written only when a user actually resolved.
+    if current_user is not None:
+        await auth_service.logout(user_id=str(current_user.id), tenant_id=str(current_user.tenant_id) if current_user.tenant_id else None)
     return status.HTTP_200_OK
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
