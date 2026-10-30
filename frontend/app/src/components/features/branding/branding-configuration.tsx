@@ -34,7 +34,11 @@ import type { UpdateBrandingDto } from "@/api";
 import ColorField from "@/components/features/branding/color-fields";
 
 const contactInfoSchema = z.object({
-    support_email: z.string().email('Invalid email').optional().or(z.literal('')),
+    // Trim before validating, as in login.tsx: z.string().email() rejects a
+    // pasted address with surrounding whitespace even though it is valid.
+    // The '' branch (a cleared field) is kept as-is; the validated value
+    // sent by onSubmit is the trimmed address.
+    support_email: z.union([z.literal(''), z.string().trim().pipe(z.email('Invalid email'))]).optional(),
     phone: z.string().optional(),
     address: z.string().optional(),
 });
