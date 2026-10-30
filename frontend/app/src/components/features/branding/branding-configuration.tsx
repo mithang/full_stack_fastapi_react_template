@@ -161,7 +161,21 @@ export default function BrandingConfiguration() {
         try {
             const updateData: UpdateBrandingDto = {
                 identity: data.identity || null,
-                contact_info: data.contact_info || null,
+                // A blank support email must not reach the backend as "":
+                // the form schema deliberately allows "" (a cleared
+                // field), but ContactInfo.support_email is
+                // Optional[EmailStr], so "" fails server-side
+                // validation with a 422 and the whole save surfaces
+                // only as a generic "Failed to update branding" toast
+                // — even when the admin only changed a theme colour.
+                // Omitting the field lets the update path store None
+                // (cleared) instead. Phone/address blanks are plain
+                // Optional[str] server-side, so they pass through
+                // unchanged.
+                contact_info: data.contact_info ? {
+                    ...data.contact_info,
+                    support_email: data.contact_info.support_email || undefined,
+                } : null,
                 theme_config: data.theme_config || null,
             };
             await onUpdateBranding(updateData);
