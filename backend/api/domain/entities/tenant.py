@@ -9,7 +9,15 @@ from api.core.exceptions import InvalidCustomDomainException, InvalidSubdomainEx
 from api.domain.enum.feature import Feature as FeatureEnum
 
 SUBDOMAIN_REGEX = re.compile(r"^(?!-)[A-Za-z0-9-]{3,63}(?<!-)$")
-CUSTOM_DOMAIN_REGEX = re.compile(r"^(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}$")
+# Mirrors the tenant-setting form's domainRegex exactly: each label
+# 1-63 chars, never starting or ending with a hyphen. The previous
+# pattern ([a-zA-Z0-9-]+ per label) accepted hyphen-leading/trailing
+# labels and labels of any length, so a direct API call bypassing the
+# form could persist a domain that is not a valid DNS name (and can
+# never pass the DNS activation check) while the UI would have
+# rejected it inline — the same frontend/backend validation mismatch
+# class as the DTO length-cap sweep.
+CUSTOM_DOMAIN_REGEX = re.compile(r"^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$")
 
 def validate_subdomain(subdomain: str | None) -> str | None:
     """Validate subdomain format. Raises InvalidSubdomainException if invalid. Returns None if subdomain is None."""
@@ -77,6 +85,13 @@ def validate_custom_domain(domain: str) -> str:
 
     if parsed.path not in ("", "/") or parsed.query:
         raise InvalidCustomDomainException("Custom domain must not include paths or query parameters.")
+
+    # DNS names are at most 253 chars in total; the label regex above
+    # caps each label, but a many-label name could still exceed it.
+    # The form has no total-length cap, so this only rejects names no
+    # legitimate flow can produce.
+    if len(hostname) > 253:
+        raise InvalidCustomDomainException("Invalid domain format.")
 
     if not CUSTOM_DOMAIN_REGEX.match(hostname):
         raise InvalidCustomDomainException("Invalid domain format.")
