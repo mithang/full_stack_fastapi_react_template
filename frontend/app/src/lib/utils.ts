@@ -55,10 +55,21 @@ export function getTenant(): TenantDto | null {
 
 
 export function formatPrice(amount: number, currency: string) {
+  // Stripe amounts are in the currency's minor unit, but not every
+  // currency has 100 minor units per major unit: dividing by 100
+  // unconditionally made a zero-decimal amount (e.g. JPY 1000) render
+  // 100x too small (¥10 instead of ¥1,000) in checkout-overview,
+  // invoices, and billing-overview, and a three-decimal amount
+  // (e.g. KWD) 10x too large. Use Stripe's minor-unit exponent per
+  // currency; every other currency keeps the existing /100 behaviour.
+  const code = currency.toUpperCase();
+  const zeroDecimal = new Set(["BIF", "CLP", "DJF", "GNF", "ISK", "JPY", "KMF", "KRW", "PYG", "RWF", "UGX", "VND", "VUV", "XAF", "XOF", "XPF"]);
+  const threeDecimal = new Set(["BHD", "JOD", "KWD", "LYD", "OMR", "TND"]);
+  const divisor = zeroDecimal.has(code) ? 1 : threeDecimal.has(code) ? 1000 : 100;
   return new Intl.NumberFormat("en-US", {
     style: "currency",
-    currency: currency.toUpperCase(),
-  }).format(amount / 100);
+    currency: code,
+  }).format(amount / divisor);
 };
 
 export function formatDate(timestamp: number) {
