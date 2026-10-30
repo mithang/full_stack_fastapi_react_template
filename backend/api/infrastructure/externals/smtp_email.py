@@ -25,7 +25,11 @@ class SmtpEmail(IEmailService):
             )
         )
 
-    async def send_email(self, to: str, subject: str, body: str, type: Literal[MessageType.html, MessageType.plain], attachments: List[UploadFile | dict | str] = [], raise_on_failure: bool = False) -> None:
+    async def send_email(self, to: str, subject: str, body: str, type: Literal[MessageType.html, MessageType.plain], attachments: List[UploadFile | dict | str] | None = None, raise_on_failure: bool = False) -> None:
+        # No mutable default: a shared [] default would be one list object
+        # across all calls, so any future mutation (e.g. by a mail library)
+        # would leak attachments into later, unrelated emails. None
+        # normalizes to a fresh empty list per call instead.
         # Default stays best-effort (log and swallow): several callers send
         # notifications AFTER the action already succeeded (password/email
         # changed, DNS/audit reports), where surfacing a mail failure as an
@@ -33,6 +37,7 @@ class SmtpEmail(IEmailService):
         # Callers where the email IS the action opt in to raise_on_failure,
         # so a failed send surfaces as a clean 406 InvalidOperationException
         # instead of a false success.
+        attachments = attachments if attachments is not None else []
         try:
             logger.info(f"Sending email to {to} with subject '{subject}'")
             if len(attachments) > 0:
