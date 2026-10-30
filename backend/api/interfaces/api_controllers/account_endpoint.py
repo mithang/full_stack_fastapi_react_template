@@ -487,6 +487,17 @@ async def email_magic_link_validate(
 ):
     from urllib.parse import unquote
     token = unquote(token)
+    # Query params arrive verbatim: a token or user id copied from an
+    # email link with surrounding whitespace (raw or %20-encoded, the
+    # latter surfacing only after unquote) would otherwise fail the
+    # stored-record lookup with the generic "Invalid or expired magic
+    # link" error, even though the link itself is valid — the same
+    # deferred-failure class as the password-reset confirmation trim.
+    # Tokens and user ids never legitimately carry surrounding
+    # whitespace, and a whitespace-only value still fails afterwards,
+    # so the error path is unchanged.
+    token = token.strip()
+    user_id = user_id.strip()
     logger.info(f"Magic link validation attempt for user_id: {_safe_log_value(user_id)} with tenant_id: {_safe_log_value(tenant_id)}")
     is_valid = await magic_link_service.validate_magic_link(user_id=user_id, token=token)
     if is_valid is False:
