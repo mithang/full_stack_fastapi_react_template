@@ -10,7 +10,7 @@ import {
     AlertDialogHeader,
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { getApiClient } from "@/lib/utils";
+import { extractErrorMessage, getApiClient } from "@/lib/utils";
 import { toast } from "sonner";
 
 interface ManageTenantSubscriptionProps {
@@ -42,9 +42,13 @@ export function ManageTenantSubscription({ open, onDismiss }: ManageTenantSubscr
             // Network failures surface as a status-less TypeError, while HTTP
             // failures arrive as ApiError; do not blame the trial activation for an outage.
             const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            // Surface the server's own reason on HTTP failures (e.g. "No
+            // trial plan is configured...") instead of only the fixed title;
+            // network failures keep no description, as before.
             toast.error(hasStatus
                 ? "Failed to activate trial plan for tenant."
                 : "Unable to reach the server. Check your connection and try again.", {
+                description: hasStatus ? extractErrorMessage(error) : undefined,
                 richColors: true,
                 position: "top-right"
             });
