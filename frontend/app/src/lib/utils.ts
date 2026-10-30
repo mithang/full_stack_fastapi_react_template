@@ -159,6 +159,21 @@ export function getApiBaseUrl(): string {
   return withoutSlashes.replace(/\/api\/v1$/i, '');
 }
 
+// Path-segment encoder for the generated client. Its default encoder is
+// encodeURI, which leaves "?" and "#" unescaped, so a tenant name (or a
+// storage key) containing either breaks the request before it reaches
+// the backend: "?" starts a query string and "#" is dropped as a
+// fragment, so the backend looks up the truncated name and answers 404
+// ("can't find the tenant") for a tenant that exists — the tenant
+// search sends the user's raw typed query as a path param. A blanket
+// encodeURIComponent is not the fix: it also escapes "/", which the
+// profile-image route needs (its :path key is "bucket/uuid_name.png",
+// passed verbatim by the avatar flow). Encoding just "?" and "#" on top
+// of encodeURI keeps "/" intact, as well as "&", "=" and "+" — all legal
+// inside a path segment, so "Smith & Co." already worked and still does.
+const encodePathSegment = (path: string): string =>
+  encodeURI(path).replace(/\?/g, "%3F").replace(/#/g, "%23");
+
 export function getApiClient(accessToken?: string) {
   // console.log("Getting API client with access token:", accessToken);
   const tenant = getTenant();
@@ -166,6 +181,7 @@ export function getApiClient(accessToken?: string) {
   if (!accessToken) {
     if (tenant) {
       return new ApiClient({
+        ENCODE_PATH: encodePathSegment,
         BASE: apiBase,
         HEADERS: {
           "X-Tenant-ID": tenant.id!
@@ -174,11 +190,13 @@ export function getApiClient(accessToken?: string) {
       })
     }
     return new ApiClient({
+      ENCODE_PATH: encodePathSegment,
       BASE: apiBase,
       WITH_CREDENTIALS: true,
     });
   }
   return new ApiClient({
+    ENCODE_PATH: encodePathSegment,
     BASE: apiBase,
     HEADERS: {
       Authorization: `Bearer ${accessToken}`,
