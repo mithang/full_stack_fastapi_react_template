@@ -75,7 +75,7 @@ export function Dashboard() {
             </div>
             <Card>
                 <CardHeader>
-                    <CardTitle>User Growth ({filter.replace("_", " ")})</CardTitle>
+                    <CardTitle>User Growth ({filter.replaceAll("_", " ")})</CardTitle>
                 </CardHeader>
                 <CardContent>
                     <div className="flex gap-2 mb-4">
