@@ -457,6 +457,13 @@ async def check_dns_status(
     # the two — mirroring the users/roles/SSO single-record scoping.
     if current_user.tenant_id is not None and str(tenant_doc.id) != current_user.tenant_id:
         raise TenantNotFoundException(tenant_id)
+    # Guard before the payload build (same ordering bug as update_dns,
+    # iteration 1211): TenantDto.custom_domain is Optional, so building
+    # WorkerPayloadDto[dict[str, str]] with a None domain raised an
+    # unhandled pydantic ValidationError — a bare 500 — before this
+    # guard was ever reached. Tenants with a domain behave as before.
+    if not tenant_doc.custom_domain:
+        raise InvalidOperationException("No custom domain is set for this tenant.")
     payload=WorkerPayloadDto[dict[str, str]](
         label="update-tenant-dns",
             data={
@@ -465,8 +472,6 @@ async def check_dns_status(
             },
             tenant_id=str(tenant_doc.id)
         )
-    if not tenant_doc.custom_domain:
-        raise InvalidOperationException("No custom domain is set for this tenant.")
     
     if tenant_doc.custom_domain_status == "activation-progress":
         handle_tenant_dns_update.delay(
