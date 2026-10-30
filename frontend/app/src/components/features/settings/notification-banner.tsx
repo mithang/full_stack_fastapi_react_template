@@ -26,7 +26,10 @@ import { useAppConfig } from "@/components/providers/app-config-provider";
 
 const notificationSchema = z.object({
     is_enabled: z.boolean(),
-    message: z.string().min(1, "Message is required").max(500, "Message must be less than 500 characters"),
+    // Trim before min: a whitespace-only message otherwise passes .min(1)
+    // and is saved (a non-empty string is truthy, so `message || null`
+    // keeps the spaces), producing an enabled banner that renders blank.
+    message: z.string().trim().min(1, "Message is required").max(500, "Message must be less than 500 characters"),
 });
 
 type NotificationForm = z.infer<typeof notificationSchema>;
