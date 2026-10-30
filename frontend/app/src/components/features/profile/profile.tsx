@@ -40,7 +40,7 @@ import {
 } from 'lucide-react'
 import { useAuthContext } from '@/components/providers/auth-provider'
 import { toast } from 'sonner'
-import { getApiClient, getTenant } from '@/lib/utils'
+import { extractErrorMessage, getApiClient, getTenant } from '@/lib/utils'
 import { useAppConfig } from '@/components/providers/app-config-provider'
 import { ManageSecurity } from '@/components/shared/manage-security'
 
@@ -156,9 +156,14 @@ export function Profile() {
             // Network failures surface as a status-less TypeError, while HTTP
             // failures arrive as ApiError; do not blame the upload for an outage.
             const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            // Surface the server's own message (e.g. "Profile picture
+            // must be an image file.", the 5 MB cap, or the out-of-scope
+            // rejection) instead of only the fixed title; network
+            // errors keep no description, as before.
             toast.error(hasStatus
                 ? 'Failed to upload image'
-                : 'Unable to reach the server. Check your connection and try again.')
+                : 'Unable to reach the server. Check your connection and try again.',
+                { description: hasStatus ? extractErrorMessage(error) : undefined })
             setImagePreview(null)
         } finally {
             setUploadingImage(false)
