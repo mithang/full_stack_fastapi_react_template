@@ -57,7 +57,7 @@ const providerTypeEnum = [
 ] as const
 export const ssoFormSchema = z.object({
     provider: z.enum(providerTypeEnum),
-    client_id: z.string().min(1, 'Client ID is required'),
+    client_id: z.string().trim().min(1, 'Client ID is required'),
     client_secret: z.string().default(''),
     scopes: z.string().default(''),
     enabled: z.boolean().default(true),
