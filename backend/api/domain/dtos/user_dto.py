@@ -113,6 +113,21 @@ class CreateUserResponseDto(BaseModel):
 class UserActivationRequestDto(BaseModel):
     token: str
 
+    @model_validator(mode="after")
+    def normalize_token(self):
+        # Trim before verification: the /activate endpoint passes
+        # this token verbatim to JWT verification, so a token pasted
+        # from an email with surrounding whitespace fails with the
+        # generic "Account activation failed" error instead of
+        # activating — the same deferred-failure class as the
+        # change-email confirmation token trim (iteration 1282).
+        # A JWT cannot legitimately carry surrounding whitespace,
+        # and a whitespace-only token still fails verification
+        # afterwards, so the error path is unchanged.
+        if isinstance(self.token, str):
+            self.token = self.token.strip()
+        return self
+
 class UserResendActivationEmailRequestDto(BaseModel):
     email: EmailStr
     id: str
