@@ -6,7 +6,7 @@ import {
     getApiClient,
     getTenant,
 } from "@/lib/utils";
-import { createContext, useContext, useEffect, useState, useCallback } from "react"
+import { createContext, useContext, useEffect, useRef, useState, useCallback } from "react"
 import { useLocation, useNavigate } from "react-router";
 import { toast } from "sonner";
 
@@ -64,6 +64,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [isLoggedInState, setIsLoggedInState] = useState<boolean>(false);
     const [user, setUser] = useState<MeResponseDto | null>(null);
     const [accessToken, setAccessToken] = useState<string>("");
+    // Set by logout() and cleared by login()/loginWithToken(): the worker
+    // keeps polling after logout (the provider stays mounted), so a token
+    // it posts afterwards must not resurrect the session — see the worker
+    // message handler below. A ref (not state) because that handler's
+    // closure captures only the mount-time values.
+    const loggedOutRef = useRef(false);
 
     const navigate = useNavigate();
     const { pathname } = useLocation();
@@ -253,12 +259,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // only navigated to /login while the provider still held the
         // access token and user, so the app still behaved as logged in
         // (and the /login effect re-fetched the user with the old token).
+        // Also arm the post-logout guard below: the worker is not torn
+        // down by logout, so without it a token it posts afterwards
+        // would setAccessToken straight back into a live session.
+        loggedOutRef.current = true;
         setIsLoggedInState(false);
         setUser(null);
         setAccessToken("");
     }
 
     function loginWithToken(token: string) {
+        // A fresh login ends the post-logout guard: worker tokens are
+        // wanted again from here on (e.g. the self-heal after a network
+        // refresh failure), so clear the flag before adopting the token.
+        loggedOutRef.current = false;
         // Same pattern as login() below: do not fetch the user here
         // with a stale closure token. Setting the token re-runs the
         // [accessToken] effect, which fetches the user with it, and
@@ -279,6 +293,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             toast.success("Login successful!", {
                 richColors: true
             });
+            // As in loginWithToken: a fresh login ends the post-logout
+            // guard, so the worker's later tokens are accepted again.
+            loggedOutRef.current = false;
             setAccessToken(result.access_token)
             // Do not call fetchUser() here: this closure captures the
             // pre-login (empty) access token, so /me would go out without
@@ -340,7 +357,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             // (readable by extensions and anyone with console access).
             console.log("AuthProvider received message from worker:", event.data && 'access_token' in event.data ? "token refresh" : event.data && 'code' in event.data ? `status ${event.data.code}` : "unknown");
             if (event.data && 'access_token' in event.data) {
-                setAccessToken(event.data.access_token);
+                // Ignore tokens posted after an explicit logout: the
+                // worker is not torn down by logout(), so a refresh that
+                // was in flight when logout ran (its response lands after
+                // the logout request deleted the old cookie and sets a
+                // rotated one) — or, after a network logout where the
+                // cookie survives, the next 10-minute tick — would
+                // otherwise setAccessToken straight back into a live
+                // session, silently undoing a logout the UI reported as
+                // done (same class as the sidebar-logout fix in the
+                // previous iteration). The flag is cleared by the next
+                // login, so normal worker refreshes are unaffected; and
+                // a server-rejected logout never calls logout(), so a
+                // kept session keeps receiving worker tokens as before.
+                if (loggedOutRef.current) {
+                    console.log("Ignoring worker token received after logout");
+                } else {
+                    setAccessToken(event.data.access_token);
+                }
             } else if (event.data && 'code' in event.data) {
                 // 403 joins 401/400 here because the refresh endpoint's
                 // missing-cookie error is a ForbiddenException, which the
