@@ -199,7 +199,13 @@ export default function SSOConfigurationProvider({ children }: SSOConfigurationP
             const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
             toast.error(hasStatus
                 ? "Failed to update SSO configuration"
-                : "Unable to reach the server. Check your connection and try again.", { richColors: true, position: "top-right" });
+                : "Unable to reach the server. Check your connection and try again.", {
+                richColors: true, position: "top-right",
+                // Surface the server's own detail (e.g. a 422 validation
+                // message) instead of only the fixed title, mirroring the
+                // create, toggle and delete toasts above.
+                description: hasStatus ? extractErrorMessage(error) : undefined,
+            });
         }
     }
 
