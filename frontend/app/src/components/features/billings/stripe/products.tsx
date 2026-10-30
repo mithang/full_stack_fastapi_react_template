@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useAuthContext } from "@/components/providers/auth-provider";
-import { getApiClient } from "@/lib/utils";
+import { getApiClient, extractErrorMessage } from "@/lib/utils";
 import { ProductDto, CreateProductDto } from "@/api";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -177,7 +177,13 @@ export function Products() {
             const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
             toast.error(hasStatus
                 ? "Failed to save product"
-                : "Unable to reach the server. Check your connection and try again.", { richColors: true, position: "top-right" });
+                : "Unable to reach the server. Check your connection and try again.", {
+                richColors: true, position: "top-right",
+                // Surface the server's own message (body.error/detail or a
+                // 422 validation message) instead of only the fixed title;
+                // the network branch keeps no description, as before.
+                description: hasStatus ? extractErrorMessage(error) : undefined,
+            });
         } finally {
             setSubmitting(false);
         }
