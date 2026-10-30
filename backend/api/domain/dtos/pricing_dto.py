@@ -1,5 +1,5 @@
 from typing import Any, Dict, Literal, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 class RecurringDto(BaseModel):
    interval: Literal["day", "week", "month", "year"] = Field(default="month", description="Billing interval, e.g., 'month'")
@@ -28,6 +28,26 @@ class CreatePricingDto(BaseModel):
    product: str = Field(..., min_length=1, description="The ID of the product this price is associated with")
    active: bool = Field(default=True, description="Whether the price is active or not")
    recurring: RecurringDto
+
+   @model_validator(mode="after")
+   def normalize_product(self):
+       # min_length=1 rejects "" but not a whitespace-only value, so
+       # " " still passed validation and failed only at Stripe — as a
+       # 404 surfaced as ProductNotFoundException, even though no
+       # product lookup was at fault — and a padded real product ID
+       # failed the same way instead of resolving, because
+       # create_price passes the DTO verbatim to Stripe
+       # prices.create_async. Stripe product IDs never carry
+       # surrounding whitespace, so the value is stripped and a value
+       # trimming to empty is rejected outright (422) before any
+       # Stripe call, the same deferred-failure class as the
+       # plan/checkout/product/role/tenant/user DTO validators.
+       if isinstance(self.product, str):
+           value = self.product.strip()
+           if not value:
+               raise ValueError("product must not be blank")
+           self.product = value
+       return self
 
 
 class PricingDto(BaseModel):
