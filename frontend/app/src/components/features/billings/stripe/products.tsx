@@ -61,6 +61,7 @@ type ProductForm = z.infer<typeof productSchema>;
 export function Products() {
     const { accessToken } = useAuthContext();
     const [products, setProducts] = useState<ProductDto[]>([]);
+    const [hasMore, setHasMore] = useState(false);
     const [loading, setLoading] = useState(true);
     const [showActiveOnly, setShowActiveOnly] = useState(true);
     const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
@@ -100,6 +101,11 @@ export function Products() {
                 active: showActiveOnly,
             });
             setProducts(response.products);
+            // The backend caps the Stripe list at 100, like the invoice
+            // and plan lists, which both surface has_more as "(showing
+            // partial results)". Without this, a catalogue over 100
+            // products silently looked complete at the capped count.
+            setHasMore(response.has_more);
         } catch (error) {
             console.error("Error fetching products:", error);
             // Network failures surface as a status-less TypeError, while HTTP
@@ -382,6 +388,7 @@ export function Products() {
                         </div>
                         <p className="text-sm text-muted-foreground">
                             {products.length} {products.length === 1 ? "product" : "products"}
+                            {hasMore && " (showing partial results)"}
                         </p>
                     </div>
                 </CardContent>
