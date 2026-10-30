@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { X, Loader2 } from 'lucide-react'
 import { TenantDto } from '@/api'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { cn, getApiClient, getTenant, setTenant } from '@/lib/utils'
+import { cn, extractErrorMessage, getApiClient, getTenant, setTenant } from '@/lib/utils'
 import { useAppConfig } from '@/components/providers/app-config-provider'
 
 interface TenantSearchProps {
@@ -88,15 +88,24 @@ export function TenantSelection({
             // A newer search has started; its own result will set the state.
             if (requestId !== searchRequestIdRef.current) return
             // A backend response (ApiError, which carries a numeric status)
-            // means the server answered and found no such tenant; a failure
-            // with no status is a network error, not a wrong tenant name, and
-            // must not send the user retyping a correct name. The generated
-            // client rejects network failures with a raw TypeError, while
-            // HTTP failures arrive as ApiError.
-            const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
-            setError(hasStatus
-                ? "We can't find the tenant you're looking for. Please check the name and try again."
-                : "Unable to reach the server. Check your connection and try again.")
+            // is not always a missing tenant: only a 404 means the server
+            // answered and found no such tenant. Any other server status
+            // (e.g. a 500) previously showed the same "can't find" hint,
+            // sending the user retyping a correct name for a server-side
+            // failure. A failure with no status is a network error, not a
+            // wrong tenant name. The generated client rejects network
+            // failures with a raw TypeError, while HTTP failures arrive
+            // as ApiError.
+            const status = (error as { status?: unknown } | null)?.status;
+            const hasStatus = typeof status === "number";
+            const serverMessage = hasStatus ? extractErrorMessage(error) : null;
+            setError(!hasStatus
+                ? "Unable to reach the server. Check your connection and try again."
+                : status === 404
+                    ? "We can't find the tenant you're looking for. Please check the name and try again."
+                    : serverMessage !== "Something went wrong."
+                        ? serverMessage!
+                        : "Something went wrong. Please try again.")
             onTenantSelect?.(null)
             setTenant(null)
         } finally {
