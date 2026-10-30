@@ -1,5 +1,5 @@
 import { Loading } from "@/components/shared/loading";
-import { getApiClient } from "@/lib/utils";
+import { extractErrorMessage, getApiClient } from "@/lib/utils";
 import { useEffect, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { toast } from "sonner";
@@ -55,9 +55,13 @@ export function Activation() {
                 // network failures with a raw TypeError, while HTTP
                 // failures arrive as ApiError with a numeric status.
                 const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+                // Surface the server's own reason (e.g. "User is already
+                // active." or an invalid/expired token) instead of only
+                // the fixed title, which swallowed it; network failures
+                // keep no description, as before.
                 toast.error(hasStatus
                     ? "Account activation failed. Please try again."
-                    : "Unable to reach the server. Check your connection and try again.", { duration: 5000, position: "top-right", richColors: true });
+                    : "Unable to reach the server. Check your connection and try again.", { description: hasStatus ? extractErrorMessage(error) : undefined, duration: 5000, position: "top-right", richColors: true });
             }
             finally {
                 navigate('/login');
