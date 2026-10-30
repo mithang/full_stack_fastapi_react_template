@@ -20,7 +20,12 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { extractErrorMessage, getApiClient } from "@/lib/utils";
 
 const magicLinkSchema = z.object({
-    email: z.string().email({ message: "Please enter a valid email address" })
+    // Trim before validating, as in login.tsx: z.string().email().trim()
+    // only checks after the format check, so a pasted address with
+    // surrounding whitespace was rejected even though the address itself
+    // is valid. .pipe() trims first, so the validated value sent to the
+    // backend is the trimmed address.
+    email: z.string().trim().pipe(z.email({ message: "Please enter a valid email address" }))
 });
 
 type MagicLinkFormData = z.infer<typeof magicLinkSchema>;
