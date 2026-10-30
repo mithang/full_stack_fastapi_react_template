@@ -183,8 +183,9 @@ export function AddANewPlan({ onPlanCreated }: AddANewPlanProps) {
                             Create New Plan
                         </DialogTitle>
                         <DialogDescription>
-                            Create a new pricing plan for your product. Enter the amount in cents (e.g., 2999 for
-                            €29.99).
+                            Create a new pricing plan for your product. Enter the amount in the currency's minor
+                            unit (e.g., 2999 for €29.99; for zero-decimal currencies such as JPY, enter the whole
+                            amount, e.g. 2999 for ¥2,999).
                         </DialogDescription>
                     </DialogHeader>
 
@@ -240,7 +241,7 @@ export function AddANewPlan({ onPlanCreated }: AddANewPlanProps) {
                         <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-2">
                                 <Label htmlFor="amount">
-                                    Amount (in cents) <span className="text-destructive">*</span>
+                                    Amount (in minor units) <span className="text-destructive">*</span>
                                 </Label>
                                 <div className="relative">
                                     <BadgeEuro className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -255,7 +256,7 @@ export function AddANewPlan({ onPlanCreated }: AddANewPlanProps) {
                                 {errors.amount && (
                                     <p className="text-sm text-destructive">{errors.amount.message}</p>
                                 )}
-                                <p className="text-xs text-muted-foreground">Enter amount in cents (e.g., 2999)</p>
+                                <p className="text-xs text-muted-foreground">Enter amount in minor units (e.g., 2999 for €29.99; for JPY, enter the whole amount)</p>
                             </div>
 
                             <div className="space-y-2">
