@@ -44,8 +44,8 @@ export function PasswordResetRequest() {
         setIsLoading(true);
         setError(null);
 
-        const formData = new FormData();
-        formData.append("email", data.email);
+        // The request body is sent as JSON via the generated client below;
+        // no FormData is needed (a previously built one was never sent).
         try {
             await apiClient.account.passwordResetRequestApiV1AccountPasswordResetRequestPost({
                 requestBody: {
