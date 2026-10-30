@@ -6,7 +6,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Badge } from '@/components/ui/badge'
 import { Loading } from '@/components/shared/loading'
-import { cn, getApiBaseUrl, getApiClient, getTenant } from '@/lib/utils'
+import { cn, extractErrorMessage, getApiBaseUrl, getApiClient, getTenant } from '@/lib/utils'
 import { Send, Bot, User, Sparkles, Copy, RefreshCw, Trash2, InfoIcon } from 'lucide-react'
 import { useAuthContext } from '@/components/providers/auth-provider'
 import { ListLocalAIModels } from '@/components/shared/list-local-ai-models'
@@ -98,7 +98,16 @@ export function AIChat() {
             });
             return response
         } catch (error) {
-            const wrapped = new Error("Failed to fetch chat history for the session." + (error instanceof Error ? ` ${error.message}` : ''))
+            // ApiError.message is only the mapped status text (e.g.
+            // "Not Found") or a verbose "Generic Error: status... body:
+            // {...}" dump, so appending it swallowed the server's own
+            // detail — the same error-shape class fixed in tenant-setting
+            // (iteration 1213) and use-subdomain-check (iteration 1214).
+            // extractErrorMessage() reads body.error/detail/message (and
+            // 422 validation lists) and falls back to Error.message, so
+            // the caller displays the real server message; the status
+            // preservation below is unchanged.
+            const wrapped = new Error("Failed to fetch chat history for the session. " + extractErrorMessage(error))
             // Preserve the ApiError status on the wrapper: without it the
             // caller cannot tell a server rejection from a network failure,
             // since the wrapped Error itself carries no status.
