@@ -206,9 +206,20 @@ export function RolesProvider({ children }: RolesProviderProps) {
             // not a bad role, and must not send the user re-checking
             // assignments for a delete that never reached the server.
             const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            // Keep the assignment hint, but append the server's own
+            // message when it is specific (e.g. a 409/422 detail), so
+            // the hint no longer swallows the reason for the failure;
+            // the generic fallback adds nothing to the hint, so it is
+            // not appended.
+            const serverMessage = hasStatus ? extractErrorMessage(error) : undefined;
+            const deleteDescription = hasStatus
+                ? (serverMessage && serverMessage !== "Something went wrong."
+                    ? `Check if the role is assigned to any users. Server: ${serverMessage}`
+                    : "Check if the role is assigned to any users")
+                : undefined;
             toast.error(hasStatus ? "Failed to delete role" : "Unable to reach the server. Check your connection and try again.", {
                 richColors: true,
-                description: hasStatus ? "Check if the role is assigned to any users" : undefined,
+                description: deleteDescription,
                 position: "top-right",
                 duration: 3000,
             });
