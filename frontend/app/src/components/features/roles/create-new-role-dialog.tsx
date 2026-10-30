@@ -10,6 +10,7 @@ import { useForm } from "react-hook-form";
 import { useState } from "react";
 import { toast } from "sonner";
 import { useRoles } from "@/components/providers/roles-provider";
+import { extractErrorMessage } from "@/lib/utils";
 import { Textarea } from "@/components/ui/textarea";
 
 
@@ -81,6 +82,11 @@ export function CreateNewRoleDialog({ open, onDismiss }: CreateNewRoleDialogProp
             toast.error(hasStatus
                 ? "Role creation failed. Please try again."
                 : "Unable to reach the server. Check your connection and try again.", {
+                // Surface the server's own message (body.error/detail or a
+                // 422 validation message) instead of only the fixed title,
+                // mirroring the role permission dialog; the network branch
+                // keeps no description, as before.
+                description: hasStatus ? extractErrorMessage(error) : undefined,
                 duration: 5000,
                 position: "top-right",
                 richColors: true,
