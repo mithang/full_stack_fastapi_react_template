@@ -26,9 +26,19 @@ export function ThemeProvider({
     storageKey = "vite-ui-theme",
     ...props
 }: ThemeProviderProps) {
-    const [theme, setTheme] = useState<Theme>(
-        () => (localStorage.getItem(storageKey) as Theme) || defaultTheme
-    )
+    const [theme, setTheme] = useState<Theme>(() => {
+        // A stored value outside the Theme union (stale schema, another
+        // app sharing the stock "vite-ui-theme" key, manual tampering)
+        // was cast blindly: the effect then removed "light"/"dark" and
+        // added the bogus class, so neither theme applied and the page
+        // rendered unthemed until the user re-picked a theme. Only the
+        // three valid values are trusted; anything else falls back to
+        // the default, exactly like the getTenant shape guard in utils.
+        const stored = localStorage.getItem(storageKey)
+        return stored === "dark" || stored === "light" || stored === "system"
+            ? stored
+            : defaultTheme
+    })
 
     useEffect(() => {
         const root = window.document.documentElement
