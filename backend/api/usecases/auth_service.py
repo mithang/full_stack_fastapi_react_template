@@ -488,11 +488,18 @@ class AuthService:
         ))
         link = get_email_sharing_link(token=activation_token, user_id=str(user.id), domain=domain, type="change_email_confirmation", tenant_id=str(user.tenant_id))
         html = email_changes_confirmation_template_html(user_first_name=user.first_name, email_change_link=link)
+        # The request endpoint returns bare 202 with no other success signal,
+        # and this confirmation link IS the requested action (not a
+        # post-action notification), so a swallowed SMTP failure would falsely
+        # report success; opt in to surfacing it. The endpoint comment
+        # already assumes email-send failures surface as
+        # InvalidOperationException (clean 406 via its handler).
         await self.email_service.send_email(
             to=user.email,
             subject="Confirm Your Email Change",
             body=html,
-            type=MessageType.html
+            type=MessageType.html,
+            raise_on_failure=True
         )
 
     async def change_email_confirmation(self, token: str, current_user_id: str) -> None:
