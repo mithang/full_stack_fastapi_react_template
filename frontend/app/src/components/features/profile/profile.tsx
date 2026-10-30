@@ -51,8 +51,12 @@ const profileSchema = z.object({
     // UpdateUserDto min_length=1, and was stored as spaces (unlike the
     // dialog schemas, which at least trimmed before sending). This was
     // missed by the dialog-only trim audit (register/users/roles/tenant).
-    first_name: z.string().trim().min(1, 'First name is required').min(2, 'First name must be at least 2 characters'),
-    last_name: z.string().trim().min(1, 'Last name is required').min(2, 'Last name must be at least 2 characters'),
+    // min(1) matches backend UpdateUserDto (min_length=1) and the other
+    // name forms (register, user-edit, create-tenant): a min(2) here blocked
+    // users with a single-character name from saving any profile change,
+    // even though the backend accepts their name as-is.
+    first_name: z.string().trim().min(1, 'First name is required'),
+    last_name: z.string().trim().min(1, 'Last name is required'),
     gender: z.enum(['male', 'female', 'other', 'prefer_not_to_say']),
 })
 
