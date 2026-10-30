@@ -67,9 +67,9 @@ export function Login() {
         setIsLoading(true);
         setError(null);
 
-        const formData = new FormData();
-        formData.append("email", data.email);
-        formData.append("password", data.password);
+        // NOTE: no FormData is built here: login() takes the plain object
+        // below, so a previously built FormData was dead code that also
+        // needlessly copied the plaintext password into a second object.
         await login({
             email: data.email,
             password: data.password
