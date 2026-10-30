@@ -17,9 +17,16 @@ import { useUsers } from "@/components/providers/users-provider";
 
 const createUserSchema = z.object({
     email: z.string().email({ message: "Invalid email address" }),
-    password: z.string().min(6).max(100).refine((val) => /[a-zA-Z]/.test(val), {
-        message: "Password must contain at least one letter",
-    }),
+    // Same policy as backend validate_password() (backend/api/common/utils.py)
+    // and the register / password-reset forms: a weaker password passed
+    // this form but was rejected server-side, surfacing only as a generic
+    // create failure. The max(100) cap is unchanged.
+    password: z.string()
+        .min(8, { message: "Password must be at least 8 characters" })
+        .max(100)
+        .regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/, {
+            message: "Password must contain at least 1 lowercase letter, 1 uppercase letter, 1 number, and 1 symbol",
+        }),
     firstName: z.string()
         .min(1, { message: "First name cannot be empty" })
         .trim(),
