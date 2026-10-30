@@ -5,8 +5,6 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
-from fastapi import logger
-
 from api.common.exceptions import InvalidOperationException
 from api.core.config import settings
 from api.domain.dtos.audit_logs_dto import AuditLogDto
