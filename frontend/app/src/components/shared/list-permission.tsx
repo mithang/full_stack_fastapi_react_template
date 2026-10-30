@@ -1,5 +1,5 @@
 import { PermissionDto } from "@/api";
-import { getApiClient } from "@/lib/utils";
+import { extractErrorMessage, getApiClient } from "@/lib/utils";
 import { useEffect, useState, useTransition } from "react";
 import { CheckIcon, ChevronsUpDownIcon, InfoIcon } from "lucide-react"
 
@@ -59,8 +59,12 @@ export function ListPermission({
             // must not surface the fetch-failed message that sends the
             // admin re-checking permissions that never reached the server.
             const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            // Surface the server's own body.error/detail message (via the
+            // central helper, which also handles 422 validation lists)
+            // instead of only the fixed sentence, mirroring the
+            // roles/users fetch banners; the network branch is unchanged.
             setError(hasStatus
-                ? "Failed to fetch permissions"
+                ? extractErrorMessage(error)
                 : "Unable to reach the server. Check your connection and try again.");
         }
     }
