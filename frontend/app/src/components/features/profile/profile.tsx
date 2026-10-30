@@ -46,8 +46,13 @@ import { ManageSecurity } from '@/components/shared/manage-security'
 
 // Form validation schema
 const profileSchema = z.object({
-    first_name: z.string().min(1, 'First name is required').min(2, 'First name must be at least 2 characters'),
-    last_name: z.string().min(1, 'Last name is required').min(2, 'Last name must be at least 2 characters'),
+    // trim() must come before min(): without any trim, a whitespace-only
+    // name of 2+ chars passed both frontend mins AND the backend
+    // UpdateUserDto min_length=1, and was stored as spaces (unlike the
+    // dialog schemas, which at least trimmed before sending). This was
+    // missed by the dialog-only trim audit (register/users/roles/tenant).
+    first_name: z.string().trim().min(1, 'First name is required').min(2, 'First name must be at least 2 characters'),
+    last_name: z.string().trim().min(1, 'Last name is required').min(2, 'Last name must be at least 2 characters'),
     gender: z.enum(['male', 'female', 'other', 'prefer_not_to_say']),
 })
 
