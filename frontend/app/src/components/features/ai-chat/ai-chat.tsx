@@ -131,7 +131,18 @@ export function AIChat() {
             // request; a failure with no status is a network error,
             // not a bad model list, and must not be reported as one.
             const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
-            toast.error(hasStatus ? "Failed to fetch available AI models" : "Unable to reach the server. Check your connection and try again.", { description: "AI chat won't work.", richColors: true, position: "top-right" })
+            // Keep the "won't work" hint, but append the server's own
+            // message when it is specific (e.g. a 401/403 detail), so
+            // the hint no longer swallows the reason for the failure;
+            // the generic fallback adds nothing to the hint, so it is
+            // not appended — the same class fixed for the role delete
+            // toast (iteration 1225) and the model preference toast
+            // below, which already surfaces extractErrorMessage().
+            const serverMessage = hasStatus ? extractErrorMessage(error) : undefined;
+            const modelsDescription = serverMessage && serverMessage !== "Something went wrong."
+                ? `AI chat won't work. Server: ${serverMessage}`
+                : "AI chat won't work.";
+            toast.error(hasStatus ? "Failed to fetch available AI models" : "Unable to reach the server. Check your connection and try again.", { description: modelsDescription, richColors: true, position: "top-right" })
         }
     }
 
