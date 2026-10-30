@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useDebounce } from "./use-debounce";
-import { getApiClient } from "@/lib/utils";
+import { getApiClient, extractErrorMessage } from "@/lib/utils";
 import { useAppConfig } from "@/components/providers/app-config-provider";
 import { ApiError, SubdomainAvailabilityDto } from "@/api";
 
@@ -24,7 +24,15 @@ export function useSubdomainCheck() {
         } catch (error) {
             console.error("Error checking subdomain availability:", error);
             if (error instanceof ApiError) {
-                setError(error.body?.detail || "Failed to check subdomain availability. Please try again.");
+                // Backend error bodies come in two shapes ({"error": ...} from
+                // the custom handler, {"detail": ...} from FastAPI, where a 422
+                // detail is a validation-error list, not a string). Reading
+                // only .body.detail swallowed the former and passed the latter
+                // through as an array into react-hook-form's string message.
+                // extractErrorMessage() handles all three shapes; only its
+                // generic fallback is replaced with this field's own message.
+                const message = extractErrorMessage(error);
+                setError(message === "Something went wrong." ? "Failed to check subdomain availability. Please try again." : message);
             } else {
                 setError("Failed to check subdomain availability. Please try again.");
             }
