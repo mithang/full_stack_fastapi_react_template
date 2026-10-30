@@ -1,5 +1,5 @@
 import { AvailableStorageProviderDto, StorageSettingsDto } from "@/api";
-import { getApiClient } from "@/lib/utils";
+import { extractErrorMessage, getApiClient } from "@/lib/utils";
 import { useContext, createContext, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { useAuthContext } from "./auth-provider";
@@ -67,7 +67,9 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
             toast.error(hasStatus
                 ? "Failed to load storage settings"
                 : "Unable to reach the server. Check your connection and try again.", {
-                description: hasStatus ? (error as Error).message : undefined,
+                // ApiError.message is only the mapped status text, so read the
+                // server's own body.error/detail message via the central helper.
+                description: hasStatus ? extractErrorMessage(error) : undefined,
                 richColors: true,
                 position: "top-right",
             });
@@ -95,7 +97,9 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
             toast.error(hasStatus
                 ? "Failed to reset storage"
                 : "Unable to reach the server. Check your connection and try again.", {
-                description: (error as Error).message,
+                // Same as fetchSettings: surface the server's body message, not
+                // just the generated client's mapped status text.
+                description: extractErrorMessage(error),
                 richColors: true,
                 position: "top-right",
             });
@@ -133,7 +137,7 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
             const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
             toast.error(`Storage: ${settings.provider}`, {
                 description: hasStatus
-                    ? (error as Error).message
+                    ? extractErrorMessage(error)
                     : "Unable to reach the server. Check your connection and try again.",
                 richColors: true,
                 position: "top-right",
