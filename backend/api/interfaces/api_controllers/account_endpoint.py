@@ -242,6 +242,17 @@ async def password_reset_confirm(
 
 ):
     logger.info(f"Password reset confirmation attempt for user_id: {_safe_log_value(user_id)} with tenant_id: {_safe_log_value(tenant_id)}")
+    # Query params arrive verbatim: a token or user id copied from an
+    # email link with surrounding whitespace would otherwise fail JWT
+    # verification / the reset-data lookup with the generic "Invalid or
+    # expired password reset token" error, even though the link itself
+    # is valid — the same deferred-failure class as the change-email
+    # confirmation token trim. JWTs and user ids never legitimately
+    # carry surrounding whitespace, and a whitespace-only value still
+    # fails afterwards, so the error path is unchanged. The new
+    # password itself is never trimmed.
+    token = token.strip()
+    user_id = user_id.strip()
     await auth_service.change_password(
         new_password=request.new_password,
         token=token,
