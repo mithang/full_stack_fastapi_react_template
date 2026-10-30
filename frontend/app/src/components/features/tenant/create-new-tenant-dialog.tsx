@@ -29,7 +29,13 @@ const tenantSchema = z.object({
     lastName: z.string()
         .min(1, { message: "Last name cannot be empty" })
         .trim(),
-    subdomain: z.string().min(3, { message: "Subdomain cannot be empty" }).trim(),
+    // Must match the backend SUBDOMAIN_REGEX (tenant.py): 3-63 chars,
+    // letters/digits/hyphens only, no leading/trailing hyphen. Length-only
+    // validation let invalid labels pass the form and fail server-side.
+    subdomain: z.string().trim()
+        .min(3, { message: "Subdomain cannot be empty" })
+        .max(63, { message: "Subdomain must be at most 63 characters" })
+        .regex(/^(?!-)[A-Za-z0-9-]{3,63}(?<!-)$/, { message: "Subdomain must use only letters, numbers and hyphens, and cannot start or end with a hyphen" }),
     adminEmail: z.email({ message: "Email must be a valid email address" }),
     adminPassword: z.string()
         .min(8, { message: "Password must be at least 8 characters" })
