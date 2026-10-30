@@ -1,7 +1,7 @@
 import { CreateTenantDto, TenantListDto, UpdateTenantDto } from '@/api';
 import { createContext, useContext, useEffect, useState } from 'react';
 import { IResponseData } from '@/components/shared/iresponse-data.inteface';
-import { getApiClient } from '@/lib/utils';
+import { extractErrorMessage, getApiClient } from '@/lib/utils';
 import { useSearchParams } from 'react-router';
 import { toast } from 'sonner';
 import { useAuthContext } from '@/components/providers/auth-provider';
@@ -142,6 +142,11 @@ export function TenantsProvider({ children }: TenantsProviderProps) {
                 ? "Failed to update tenant"
                 : "Unable to reach the server. Check your connection and try again.", {
                 richColors: true,
+                // Surface the server's own message (e.g. a 422
+                // validation detail for an invalid tenant update)
+                // instead of only the fixed title; network errors
+                // keep no description, as before.
+                description: hasStatus ? extractErrorMessage(error) : undefined,
                 position: "top-right"
             });
         }
