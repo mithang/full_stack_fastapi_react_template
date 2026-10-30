@@ -98,8 +98,11 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
                 ? "Failed to reset storage"
                 : "Unable to reach the server. Check your connection and try again.", {
                 // Same as fetchSettings: surface the server's body message, not
-                // just the generated client's mapped status text.
-                description: extractErrorMessage(error),
+                // just the generated client's mapped status text. Network
+                // errors (no status) get no description, so the raw fetch
+                // message ("Failed to fetch") is not shown under the
+                // "Unable to reach the server" title.
+                description: hasStatus ? extractErrorMessage(error) : undefined,
                 richColors: true,
                 position: "top-right",
             });
