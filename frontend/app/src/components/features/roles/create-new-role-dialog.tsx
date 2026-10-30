@@ -15,14 +15,19 @@ import { Textarea } from "@/components/ui/textarea";
 
 
 const createNewRoleSchema = z.object({
+    // trim() must come before min()/max(): Zod checks run in chain order, so
+    // .min(2).trim() validated the untrimmed value — a whitespace-only
+    // name/description passed the form, trimmed to "", and was rejected
+    // server-side (CreateRoleDto: name 2-20, description 10-200) with only
+    // a generic failure toast.
     name: z.string()
+        .trim()
         .min(2, { message: "Name must be at least 2 characters long" })
-        .max(20, { message: "Name must be at most 20 characters long" })
-        .trim(),
+        .max(20, { message: "Name must be at most 20 characters long" }),
     description: z.string()
+        .trim()
         .min(10, { message: "Description must be at least 10 characters long" })
-        .max(200, { message: "Description must be at most 200 characters long" })
-        .trim(),
+        .max(200, { message: "Description must be at most 200 characters long" }),
 
 });
 
