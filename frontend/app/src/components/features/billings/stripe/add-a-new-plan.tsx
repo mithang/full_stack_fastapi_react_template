@@ -40,6 +40,7 @@ export function AddANewPlan({ onPlanCreated }: AddANewPlanProps) {
     const { current_tenant } = useAppConfig();
     const [isOpen, setIsOpen] = useState(false);
     const [products, setProducts] = useState<ProductDto[]>([]);
+    const [hasMoreProducts, setHasMoreProducts] = useState(false);
     const [loadingProducts, setLoadingProducts] = useState(false);
     const [submitting, setSubmitting] = useState(false);
 
@@ -72,6 +73,11 @@ export function AddANewPlan({ onPlanCreated }: AddANewPlanProps) {
                 active: true,
             });
             setProducts(response.products);
+            // The server caps the Stripe list at 100, so without this the
+            // dropdown silently omitted products past the cap (same class
+            // as the products page fixed in iteration 1323); surface it
+            // instead of letting an admin conclude a product is missing.
+            setHasMoreProducts(response.has_more);
         } catch (error) {
             console.error("Error fetching products:", error);
             // A backend response (ApiError, which carries a numeric status)
@@ -219,6 +225,11 @@ export function AddANewPlan({ onPlanCreated }: AddANewPlanProps) {
                             )}
                             {errors.product_id && (
                                 <p className="text-sm text-destructive">{errors.product_id.message}</p>
+                            )}
+                            {hasMoreProducts && products.length > 0 && (
+                                <p className="text-xs text-muted-foreground">
+                                    Showing partial results — some active products may not be listed.
+                                </p>
                             )}
                             <p className="text-xs text-muted-foreground">
                                 Select the product this plan will be associated with
