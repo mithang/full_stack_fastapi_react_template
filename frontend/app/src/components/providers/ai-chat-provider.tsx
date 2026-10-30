@@ -69,7 +69,12 @@ export function AIChatProvider({ children }: AIChatProviderProps) {
             const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
             toast.error(hasStatus
                 ? "Failed to create new AI session"
-                : "Unable to reach the server. Check your connection and try again.", { richColors: true, position: "top-right", description: errMsg });
+                : "Unable to reach the server. Check your connection and try again.", { richColors: true, position: "top-right",
+                // Server detail only: on a network failure errMsg is the
+                // raw fetch message ("Failed to fetch"), which must not
+                // appear as a description under the network title —
+                // the same guard the audit-log fetch already uses.
+                description: hasStatus ? errMsg : undefined });
             throw new Error("Failed to create new AI session");
         }
     }
