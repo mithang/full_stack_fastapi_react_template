@@ -17,7 +17,7 @@ import { extractErrorMessage } from "@/lib/utils";
 
 
 const createUserSchema = z.object({
-    email: z.string().email({ message: "Invalid email address" }),
+    email: z.string().trim().pipe(z.email({ message: "Invalid email address" })),
     // Same policy as backend validate_password() (backend/api/common/utils.py)
     // and the register / password-reset forms: a weaker password passed
     // this form but was rejected server-side, surfacing only as a generic
