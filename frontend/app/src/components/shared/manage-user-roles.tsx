@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { getApiClient } from "@/lib/utils";
+import { extractErrorMessage, getApiClient } from "@/lib/utils";
 import { useState, useEffect } from "react";
 import { Search, Users, CheckCircle } from "lucide-react";
 import { toast } from "sonner";
@@ -87,7 +87,14 @@ export function ManageUserRoles({ open, onDismiss, userId }: ManageUserRolesProp
             // error, not a bad role choice, and must not send the
             // admin re-picking a role for a connection problem.
             const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
-            toast.error(hasStatus ? "Failed to assign role" : "Unable to reach the server. Check your connection and try again.", { richColors: true, position: "top-right" });
+            toast.error(hasStatus ? "Failed to assign role" : "Unable to reach the server. Check your connection and try again.", {
+                // Surface the server's own message (e.g. a 409/422
+                // detail) instead of only the fixed title, mirroring
+                // the role/user dialogs; the network branch keeps no
+                // description, as before.
+                description: hasStatus ? extractErrorMessage(error) : undefined,
+                richColors: true, position: "top-right"
+            });
         } finally {
             setIsLoading(false);
         }
