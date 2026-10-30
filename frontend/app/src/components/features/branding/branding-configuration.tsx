@@ -200,9 +200,13 @@ export default function BrandingConfiguration() {
             // still fires onChange — a file input with an unchanged value
             // fires no event (same fix as profile picture, iteration 117).
             event.target.value = '';
-            // Validate file type
-            if (!file.type.startsWith('image/')) {
-                alert('Please select an image file');
+            // Validate file type against the backend allowlist (PNG/JPEG
+            // only, matching the logo endpoint and the picker's accept
+            // list): the old image/* check also admitted GIF/SVG/WebP,
+            // which passed client validation and then failed server-side
+            // with "Unsupported file type" after the upload round-trip.
+            if (file.type !== 'image/png' && file.type !== 'image/jpeg') {
+                alert('Please select a PNG or JPEG image file');
                 return;
             }
             // Validate file size (max 5MB)
