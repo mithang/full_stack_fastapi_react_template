@@ -15,6 +15,16 @@ interface RoleManagePermissionDialogProps {
 export function RoleManagePermissionDialog({ open, onDismiss }: RoleManagePermissionDialogProps) {
     const { onUpdateRole, selectedRole, refreshRoles } = useRoles()
     const [selectedPermissions, setSelectedPermissions] = useState<string[]>([]);
+    // Save was disabled whenever the selection was empty, so an admin
+    // could never deliberately clear all of a role's permissions:
+    // deselecting the last one disabled the only way to persist it.
+    // Track whether the admin actually changed anything instead: the
+    // dialog remounts on every open, so this starts false each time and
+    // an untouched Save (which would send [] regardless of the role's
+    // displayed permissions) stays disabled, while a real change to an
+    // empty selection is now saveable. The backend accepts an empty
+    // permissions list (UpdateRoleDto defaults to []), so this is valid.
+    const [hasChanged, setHasChanged] = useState(false);
     function onDismissHandler(flag: boolean) {
         if (!flag) {
             onDismiss();
@@ -73,11 +83,11 @@ export function RoleManagePermissionDialog({ open, onDismiss }: RoleManagePermis
                     <ListPermission
                         multiSelect
                         value={existingPermission}
-                        onChange={(permissions) => setSelectedPermissions(permissions)} />
+                        onChange={(permissions) => { setSelectedPermissions(permissions); setHasChanged(true); }} />
                 </section>
                 <DialogFooter>
                     <Button variant="outline" onClick={onDismiss}>Cancel</Button>
-                    <Button onClick={onSaveChanges} disabled={selectedPermissions.length === 0}>Save changes</Button>
+                    <Button onClick={onSaveChanges} disabled={!hasChanged}>Save changes</Button>
                 </DialogFooter>
             </DialogContent>
         </Dialog>
