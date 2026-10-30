@@ -520,7 +520,6 @@ uv run pytest tests/interfaces/  # Run API tests
 
 ```bash
 cd frontend/app
-pnpm test                    # Run component tests
 pnpm build                   # Test production build
 ```
 
