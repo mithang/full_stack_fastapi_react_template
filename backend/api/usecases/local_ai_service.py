@@ -77,6 +77,15 @@ class LocalAIService:
     
 
     async def get_histories_by_session_id(self, user_id: str, session_id: str) -> List[AIHistoriesDto]:
+        # Trim before validating: _is_valid_object_id requires exactly
+        # 24 hex chars, so a padded id failed the check and returned []
+        # instead of the transcript — the same deferred-failure class
+        # as the /ask DTO's session_id trim, but the GET/DELETE
+        # session routes take the id from the path, not that DTO, so
+        # they were uncovered. Session ids carry no surrounding
+        # whitespace, and malformed ids still fail the check below.
+        if isinstance(session_id, str):
+            session_id = session_id.strip()
         if not _is_valid_object_id(session_id):
             return []
         session = await self.chat_session_repository.single_or_none(session_id=PydanticObjectId(session_id), user_id=PydanticObjectId(user_id))
@@ -95,6 +104,11 @@ class LocalAIService:
     
     
     async def delete_session(self, user_id: str, session_id: str) -> None:
+        # Same trim as get_histories_by_session_id above: a padded id
+        # failed the exact-24-hex check and silently no-op'd instead
+        # of deleting the session.
+        if isinstance(session_id, str):
+            session_id = session_id.strip()
         if not _is_valid_object_id(session_id):
             return
         session = await self.chat_session_repository.single_or_none(session_id=PydanticObjectId(session_id), user_id=PydanticObjectId(user_id))
