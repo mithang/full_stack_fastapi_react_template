@@ -21,7 +21,7 @@ import { useAuthContext } from "@/components/providers/auth-provider";
 
 
 const passkeyEmailSchema = z.object({
-    email: z.email({ message: "Please enter a valid email address" })
+    email: z.string().trim().pipe(z.email({ message: "Please enter a valid email address" }))
 });
 
 type PasskeyEmailForm = z.infer<typeof passkeyEmailSchema>;
