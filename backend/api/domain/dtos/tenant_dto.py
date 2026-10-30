@@ -89,6 +89,28 @@ class UpdateTenantDto(BaseModel):
     custom_domain: Optional[CustomDomain] | None = None
     subscription_id: Optional[str] | None = None
 
+    @model_validator(mode="after")
+    def normalize_subscription_id(self):
+        # Normalize before use: the PUT /tenants/{tenant_id} endpoint
+        # stores subscription_id verbatim on the tenant record, and a
+        # Stripe subscription id never legitimately carries surrounding
+        # whitespace, so a padded value pasted by a host admin would
+        # persist padded and then mismatch every later Stripe lookup
+        # for that tenant — the same deferred-failure class as the
+        # other identifier trims in this sweep. A padded value is
+        # stored trimmed; None still means "leave unchanged" (the
+        # service dumps exclude_none=True); a whitespace-only value is
+        # rejected (422) instead of persisting a blank id. The internal
+        # trial-plan caller passes a clean Stripe id, so it is
+        # unaffected, and custom_domain already validates via its own
+        # entity validator, so it is not touched here.
+        if isinstance(self.subscription_id, str):
+            trimmed = self.subscription_id.strip()
+            if not trimmed:
+                raise ValueError("subscription_id must not be blank")
+            self.subscription_id = trimmed
+        return self
+
 
 class UpdateTenantResponseDto(BaseModel):
    message: str
