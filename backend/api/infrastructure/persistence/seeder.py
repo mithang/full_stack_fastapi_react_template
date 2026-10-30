@@ -5,7 +5,7 @@ from faker import Faker
 from api.common.enums.gender import Gender
 from api.common.security import hash_it
 from api.common.seeder_utils import get_seed_roles
-from api.common.utils import create_temp_file, get_logger, get_utc_now
+from api.common.utils import create_temp_file, get_logger
 from api.core.config import settings
 from api.core.container import get_role_service, get_user_service
 from api.domain.dtos.role_dto import CreateRoleDto, UpdateRoleDto
