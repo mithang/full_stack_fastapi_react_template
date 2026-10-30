@@ -45,6 +45,19 @@ class CreatePlanDto(BaseModel):
             if not value:
                 raise ValueError("product_id must not be blank")
             self.product_id = value
+        # Currency has the same hole in the opposite direction: the
+        # exactly-3-char cap rejects "" and padded values, but a
+        # 3-space string passes it and is then passed verbatim to
+        # Stripe plans.create_async (billing_record_service.py), failing
+        # only there. Strip it and reject a value trimming to empty
+        # (422) before any Stripe call; a padded value never reaches
+        # this validator (the length cap already rejects it), and
+        # legitimate 3-letter codes are unchanged.
+        if isinstance(self.currency, str):
+            value = self.currency.strip()
+            if not value:
+                raise ValueError("currency must not be blank")
+            self.currency = value
         return self
 
 
