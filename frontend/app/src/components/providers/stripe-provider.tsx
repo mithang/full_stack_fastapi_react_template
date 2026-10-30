@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { CreateStripeSettingDto, StripeSettingDto } from "@/api"
 import { useAuthContext } from "./auth-provider";
-import { getApiClient } from "@/lib/utils";
+import { extractErrorMessage, getApiClient } from "@/lib/utils";
 import { toast } from "sonner";
 import { FeatureDisabledNotice } from "@/components/shared/feature-disabled";
 import { useFeatureCheck } from "@/hooks/use-feature-check";
@@ -106,7 +106,15 @@ export function StripeProvider({ children }: StripeProviderProps) {
             // error, not a bad Stripe setting, and must not send the
             // admin re-entering credentials for a connection problem.
             const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
-            toast.error(hasStatus ? "Failed to configure Stripe setting." : "Unable to reach the server. Check your connection and try again.", { richColors: true, position: "top-right" });
+            toast.error(hasStatus ? "Failed to configure Stripe setting." : "Unable to reach the server. Check your connection and try again.", {
+                richColors: true,
+                // Surface the server's own message (e.g. a 422
+                // validation detail for invalid Stripe keys) instead
+                // of only the fixed title; network errors keep no
+                // description, as before.
+                description: hasStatus ? extractErrorMessage(error) : undefined,
+                position: "top-right",
+            });
         } finally {
             setLoading(false);
         }
