@@ -6,7 +6,7 @@ from api.common.utils import get_logger, get_utc_now, validate_password
 from api.core.exceptions import EmailAlreadyExistsException, RoleNotFoundException, UserNotFoundException
 from api.domain.dtos.dashboard_dto import TimeSeriesDto
 from api.domain.entities.user import User
-from api.domain.dtos.user_dto import CreateUserDto, UpdateUserDto, UserListDto, UserResendActivationEmailRequestDto
+from api.domain.dtos.user_dto import CreateUserDto, UpdateUserDto, UserListDto
 from api.domain.entities.user_password_reset import UserPasswordReset
 from api.infrastructure.persistence.repositories.user_password_reset_repository_impl import UserPasswordResetRepository
 from api.infrastructure.persistence.repositories.user_repository_impl import UserRepository
