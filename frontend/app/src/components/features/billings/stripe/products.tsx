@@ -50,8 +50,8 @@ import { useAppConfig } from "@/components/providers/app-config-provider";
 import { ConfigureStripeNow } from "./configure-stripe-now";
 
 const productSchema = z.object({
-    name: z.string().min(1, "Product name is required"),
-    description: z.string().min(1, "Description is required"),
+    name: z.string().trim().min(1, "Product name is required"),
+    description: z.string().trim().min(1, "Description is required"),
     tax_code: z.string().optional(),
     active: z.boolean(),
 });
