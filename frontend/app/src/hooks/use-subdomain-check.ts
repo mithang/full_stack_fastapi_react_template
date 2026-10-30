@@ -16,8 +16,14 @@ export function useSubdomainCheck() {
         const apiClient = getApiClient();
         try {
             setIsChecking(true);
+            // Trim before querying: both callers (register, create-tenant)
+            // feed the raw input here, so a pasted " mysub " queried
+            // "mysub .<domain>", whose label fails the backend regex and
+            // reads as unavailable (InvalidSubdomain -> is_available false)
+            // for a subdomain that is actually free. The submit paths
+            // already trim/strip, so only this live check was wrong.
             const response = await apiClient.tenants.checkSubdomainAvailabilityApiV1TenantsCheckSubdomainSubdomainGet({
-                subdomain: `${debouncedText}.${host_main_domain}`
+                subdomain: `${debouncedText.trim()}.${host_main_domain}`
             });
             setSubdomainAvailability(response);
             setError(null);
@@ -42,7 +48,10 @@ export function useSubdomainCheck() {
         }
     }
     useEffect(() => {
-        if (debouncedText) {
+        // Trimmed emptiness, not raw truthiness: a whitespace-only input
+        // is truthy, so it previously triggered a check for "   .<domain>"
+        // and showed the subdomain as taken; now it clears like empty input.
+        if (debouncedText.trim()) {
             checkSubdomainAvailability();
         } else {
             setSubdomainAvailability(null);
