@@ -385,7 +385,17 @@ async def update_tenant_dns_record(
         return UpdateTenantResponseDto(
             message="Your custom domain is already active. If you want to change it, please contact support."
         )
-    
+
+    # The tenant-setting form allows an empty custom domain and submits
+    # it as null, so without this guard the WorkerPayloadDto[dict[str,
+    # str]] construction below raised an unhandled pydantic
+    # ValidationError (None is not a str) and the admin got a bare 500
+    # instead of a usable error; clearing a domain is not a supported
+    # operation here (active domains already direct admins to support
+    # above), so reject it cleanly before any write or job enqueue.
+    if not data.custom_domain:
+        raise InvalidOperationException("Custom domain is required.")
+
     payload=WorkerPayloadDto[dict[str, str]](
         label="update-tenant-dns",
         data={
