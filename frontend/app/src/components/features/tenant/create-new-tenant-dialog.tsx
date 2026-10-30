@@ -23,12 +23,17 @@ import { useSubdomainCheck } from "@/hooks/use-subdomain-check";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
 const tenantSchema = z.object({
+    // trim() must come before min(): Zod checks run in chain order, so
+    // .min(1).trim() validated the untrimmed value — a whitespace-only
+    // name passed the form, trimmed to "", and was rejected server-side
+    // (CreateTenantDto first_name/last_name min_length=1) with only a
+    // generic failure toast.
     firstName: z.string()
-        .min(1, { message: "First name cannot be empty" })
-        .trim(),
+        .trim()
+        .min(1, { message: "First name cannot be empty" }),
     lastName: z.string()
-        .min(1, { message: "Last name cannot be empty" })
-        .trim(),
+        .trim()
+        .min(1, { message: "Last name cannot be empty" }),
     // Must match the backend SUBDOMAIN_REGEX (tenant.py): 3-63 chars,
     // letters/digits/hyphens only, no leading/trailing hyphen. Length-only
     // validation let invalid labels pass the form and fail server-side.
