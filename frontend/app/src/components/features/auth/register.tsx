@@ -45,7 +45,12 @@ const signupSchema = z.object({
         .trim()
         .min(1, { message: "Last name cannot be empty" }),
     subdomain: z.string().optional(),
-    email: z.email({ message: "Email must be a valid email address" }),
+    // Trim before validating, as in login.tsx: z.email().trim() only
+    // checks after the format check, so a pasted address with surrounding
+    // whitespace was rejected as invalid even though the address itself
+    // is valid. trim() then pipe() trims first, so it registers, while a
+    // whitespace-only or malformed value still fails.
+    email: z.string().trim().pipe(z.email({ message: "Email must be a valid email address" })),
     password: z.string()
         .min(8, { message: "Password must be at least 8 characters" })
         .regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/, {
