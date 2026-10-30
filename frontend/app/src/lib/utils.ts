@@ -55,6 +55,12 @@ export function getTenant(): TenantDto | null {
 
 
 export function formatPrice(amount: number, currency: string) {
+  // Same non-finite class as formatDate: a malformed API value
+  // (undefined/NaN/Infinity, e.g. an incomplete Stripe record) is not
+  // caught by the generated client's types at runtime and previously
+  // rendered as "€NaN" in invoices/billing totals. Valid amounts take
+  // the path below unchanged.
+  if (typeof amount !== "number" || !Number.isFinite(amount)) return "N/A";
   // Stripe amounts are in the currency's minor unit, but not every
   // currency has 100 minor units per major unit: dividing by 100
   // unconditionally made a zero-decimal amount (e.g. JPY 1000) render
