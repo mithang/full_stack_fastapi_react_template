@@ -14,7 +14,7 @@ import { DashboardMetricsDto } from "@/api";
 import { Loading } from "@/components/shared/loading";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AlertTriangle } from "lucide-react";
-import { getApiClient } from "@/lib/utils";
+import { extractErrorMessage, getApiClient } from "@/lib/utils";
 import { AllCards } from "./all-cards";
 import { useAuthContext } from "@/components/providers/auth-provider";
 import { useAppConfig } from "@/components/providers/app-config-provider";
@@ -43,8 +43,10 @@ export function Dashboard() {
             // (ApiError, which carries a numeric status) means the server
             // answered; a failure with no status is a network failure.
             const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            // The banner has no description slot, so the server's own
+            // reason is appended on the server branch only.
             setFetchError(hasStatus
-                ? "Failed to load dashboard metrics. Please try again later."
+                ? `Failed to load dashboard metrics. Please try again later. ${extractErrorMessage(error)}`
                 : "Unable to reach the server. Check your connection and try again.");
         }
     }
