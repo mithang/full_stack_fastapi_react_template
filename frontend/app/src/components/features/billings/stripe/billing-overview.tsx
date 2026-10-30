@@ -74,8 +74,12 @@ export function BillingOverview() {
             // Network failures surface as a status-less TypeError, while HTTP
             // failures arrive as ApiError; do not blame the plan list for an outage.
             const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            // The banner has no description slot, so the server's own
+            // reason is appended to the fixed sentence instead of being
+            // swallowed, mirroring the trial-period toast below; the
+            // network branch keeps no server detail, as before.
             setPlanError(hasStatus
-                ? "Failed to load plans. Please try again later."
+                ? `Failed to load plans. Please try again later. ${extractErrorMessage(error)}`
                 : "Unable to reach the server. Check your connection and try again.");
         } finally {
             setLoading(false);
