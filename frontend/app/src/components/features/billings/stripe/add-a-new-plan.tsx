@@ -25,7 +25,7 @@ import { ProductDto, CreatePlanDto } from "@/api";
 const planSchema = z.object({
     product_id: z.string().min(1, "Product is required"),
     amount: z.number().min(1, "Amount must be greater than 0"),
-    currency: z.string().min(3, "Currency must be 3 characters").max(3, "Currency must be 3 characters"),
+    currency: z.string().trim().min(3, "Currency must be 3 characters").max(3, "Currency must be 3 characters"),
     interval: z.enum(["month", "year"]),
 });
 
