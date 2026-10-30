@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardTitle } from "@/components/ui/card"
-import { cn } from "@/lib/utils"
+import { cn, extractErrorMessage } from "@/lib/utils"
 import {
     Select,
     SelectContent,
@@ -64,7 +64,13 @@ export function AIChatHistory({ mobile }: AIChatHistoryProps) {
             toast.error(hasStatus ? "Failed to delete session." : "Unable to reach the server. Check your connection and try again.", {
                 richColors: true,
                 position: "top-right",
-                description: "An error occurred while trying to delete the chat session. Please try again."
+                // Surface the server's own error detail (body.error /
+                // body.detail, incl. 422 validation lists) instead of a
+                // fixed generic sentence that swallowed it; the
+                // provider rethrows the raw ApiError, so it is
+                // available here. Network branch keeps no description,
+                // as in the role/user/feature dialogs.
+                description: hasStatus ? extractErrorMessage(error) : undefined
             })
         }
 
