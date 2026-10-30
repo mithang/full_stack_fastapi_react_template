@@ -29,9 +29,13 @@ import BrandingConfiguration from "../branding/branding-configuration";
 const tenantFormSchema = z.object({
     custom_domain: z.string().optional().refine((val) => {
         if (!val || val.trim() === "") return true;
-        // Basic domain validation regex
+        // Basic domain validation regex, tested against the trimmed
+        // value: onSubmit already trims before sending, so a pasted
+        // domain with surrounding whitespace is valid once trimmed —
+        // testing the untrimmed value rejected it inline with a
+        // spurious "valid domain name" error.
         const domainRegex = /^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/;
-        return domainRegex.test(val);
+        return domainRegex.test(val.trim());
     }, {
         message: "Please enter a valid domain name (e.g., yourdomain.com)"
     })
