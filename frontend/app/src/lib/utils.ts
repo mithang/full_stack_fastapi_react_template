@@ -62,14 +62,27 @@ export function formatPrice(amount: number, currency: string) {
   // invoices, and billing-overview, and a three-decimal amount
   // (e.g. KWD) 10x too large. Use Stripe's minor-unit exponent per
   // currency; every other currency keeps the existing /100 behaviour.
-  const code = currency.toUpperCase();
+  const code = typeof currency === "string" ? currency.toUpperCase() : "";
   const zeroDecimal = new Set(["BIF", "CLP", "DJF", "GNF", "ISK", "JPY", "KMF", "KRW", "PYG", "RWF", "UGX", "VND", "VUV", "XAF", "XOF", "XPF"]);
   const threeDecimal = new Set(["BHD", "JOD", "KWD", "LYD", "OMR", "TND"]);
   const divisor = zeroDecimal.has(code) ? 1 : threeDecimal.has(code) ? 1000 : 100;
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: code,
-  }).format(amount / divisor);
+  const value = amount / divisor;
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: code,
+    }).format(value);
+  } catch {
+    // Intl throws RangeError for a non-ISO currency code, and both the
+    // plan form (3 characters, letters not enforced) and the backend
+    // (min/max length 3 only) accept codes like "123": a stored plan
+    // with such a code crashed billing-overview on render, and typing
+    // a partial code in add-a-new-plan crashed the price preview
+    // mid-edit. Valid codes take the path above unchanged; anything
+    // else falls back to a plain number with the code as typed, so
+    // the page keeps rendering instead of crashing.
+    return `${code} ${new Intl.NumberFormat("en-US").format(value)}`.trim();
+  }
 };
 
 export function formatDate(timestamp: number) {
