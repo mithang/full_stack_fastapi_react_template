@@ -44,6 +44,16 @@ class ProductService:
         return ProductListDto(products=[product for product in result.data],  has_more=result.has_more)
     
     async def get_product_by_id(self, product_id: str,  scope: ScopeType) -> ProductDto:
+        # Strip before the Stripe lookup: unlike ObjectId path ids,
+        # which BaseRepository.get() now strips centrally, Stripe
+        # product ids reach Stripe verbatim, so a padded id
+        # (copied/pasted, %20-encoded in the path param) failed the
+        # Stripe retrieve and surfaced as a 404 for a product that
+        # exists. Stripe ids never legitimately carry surrounding
+        # whitespace; clean ids are unchanged and whitespace-only /
+        # unknown ids still map to ProductNotFound exactly as before.
+        if isinstance(product_id, str):
+            product_id = product_id.strip()
         try:
             sc = await self.stripe_resolver.get_stripe_client(scope=scope)
             product = await sc.v1.products.retrieve_async(id=product_id)
@@ -75,6 +85,10 @@ class ProductService:
             raise ProductException("Failed to create product.") from e
 
     async def update_product(self, product_id: str, product_dto: CreateProductDto, scope: ScopeType):
+        # Same padded-id class as get_product_by_id above: strip
+        # before both the pre-update retrieve and the update call.
+        if isinstance(product_id, str):
+            product_id = product_id.strip()
         try:
             sc = await self.stripe_resolver.get_stripe_client(scope=scope)
             existing_product = await sc.v1.products.retrieve_async(id=product_id)
@@ -102,6 +116,9 @@ class ProductService:
             raise ProductException(f"Failed to update product {_safe_log_value(product_id)}.") from e
 
     async def delete_product(self, product_id: str, scope: ScopeType):
+        # Same padded-id class as get_product_by_id above.
+        if isinstance(product_id, str):
+            product_id = product_id.strip()
         try:
             sc = await self.stripe_resolver.get_stripe_client(scope=scope)
             await sc.v1.products.delete_async(id=product_id)
