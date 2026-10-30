@@ -1,7 +1,5 @@
-from datetime import datetime
 from typing import Optional
-from beanie import PydanticObjectId
-from pydantic import BaseModel, Field, field_serializer, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 from api.domain.entities.branding import ContactInfo, LogoType, ThemeConfig
 
