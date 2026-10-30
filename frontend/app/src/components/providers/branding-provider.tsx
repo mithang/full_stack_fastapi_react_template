@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useEffect } from "react";
 import { toast } from "sonner";
 import { BrandingDto, UpdateBrandingDto } from "@/api";
 import { useAuthContext } from "@/components/providers/auth-provider";
-import { getApiClient } from "@/lib/utils";
+import { extractErrorMessage, getApiClient } from "@/lib/utils";
 import { useAppConfig } from "@/components/providers/app-config-provider";
 
 interface BrandingProviderState {
@@ -48,7 +48,15 @@ export function BrandingProvider({ children }: BrandingProviderProps) {
             const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
             toast.error(hasStatus
                 ? "Failed to update branding"
-                : "Unable to reach the server. Check your connection and try again.", { richColors: true, position: "top-right" });
+                : "Unable to reach the server. Check your connection and try again.", {
+                richColors: true,
+                // Surface the server's own message (e.g. a 422
+                // validation detail for an invalid branding value) instead
+                // of only the fixed title; network errors keep no
+                // description, as before.
+                description: hasStatus ? extractErrorMessage(error) : undefined,
+                position: "top-right",
+            });
             // Re-throw so callers can tell failure from success: the branding
             // form shows a "Saved" checkmark after this resolves, and without
             // the throw it would show it for a failed update too. The form's
@@ -90,7 +98,15 @@ export function BrandingProvider({ children }: BrandingProviderProps) {
             const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
             toast.error(hasStatus
                 ? "Failed to upload logo"
-                : "Unable to reach the server. Check your connection and try again.", { richColors: true, position: "top-right" });
+                : "Unable to reach the server. Check your connection and try again.", {
+                richColors: true,
+                // Surface the server's own message (e.g. a 413/422
+                // detail for an oversized or invalid logo file) instead
+                // of only the fixed title; network errors keep no
+                // description, as before.
+                description: hasStatus ? extractErrorMessage(error) : undefined,
+                position: "top-right",
+            });
             // Keep the caller's pending file so the admin can retry without
             // re-selecting a logo that never reached the server.
             return false;
