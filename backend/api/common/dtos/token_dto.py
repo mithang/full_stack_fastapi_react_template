@@ -15,7 +15,6 @@ class TokenPayloadDto(BaseModel):
     activated_at: datetime | None = None
     tenant_id: PydanticObjectId | None = None
     role: RoleDto | None = None
-    tenant_id: PydanticObjectId | None = None
 
     @field_serializer('sub', 'tenant_id', "activated_at")
     def serialize_object_id(self, v: PydanticObjectId | datetime | None) -> str | None:
