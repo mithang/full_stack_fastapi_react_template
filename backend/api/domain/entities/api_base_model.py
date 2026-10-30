@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 from beanie import Document, PydanticObjectId
-from pydantic import Field, field_serializer
+from pydantic import Field
 
 from api.common.utils import get_utc_now
 
