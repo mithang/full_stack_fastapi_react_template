@@ -17,7 +17,7 @@ import {
 import { toast } from "sonner";
 import { Mail, Send, CheckCircle, ArrowLeft } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { getApiClient } from "@/lib/utils";
+import { extractErrorMessage, getApiClient } from "@/lib/utils";
 
 const magicLinkSchema = z.object({
     email: z.string().email({ message: "Please enter a valid email address" })
@@ -64,9 +64,15 @@ export function MagicLinkLogin() {
             // network failures with a raw TypeError, while HTTP failures
             // arrive as ApiError.
             const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
+            // Surface the server's own reason (e.g. a mail-send failure
+            // for an existing account) instead of only the fixed title:
+            // unknown emails never reach this catch — the backend
+            // returns a generic success for them — so this cannot
+            // enumerate accounts.
             toast.error(hasStatus
                 ? "Failed to send magic link. Please try again."
                 : "Unable to reach the server. Check your connection and try again.", {
+                description: hasStatus ? extractErrorMessage(error) : undefined,
                 richColors: true,
                 position: "top-right"
             });
