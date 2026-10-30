@@ -57,7 +57,13 @@ class SSOSettingsService:
         # succeeded. Surface the mapped 404 instead, matching
         # get_sso_settings_by_id() in this file. (No live caller today;
         # this restores the method's contract for any future caller.)
-        updated = await self.sso_settings_provider_repository.update_sso_settings(id, SSOSettings(redirect_uris=[redirect_uri]))
+        # Strip before persisting, mirroring the SSO DTO normalizer for
+        # client_id/client_secret/scopes: OAuth providers match a
+        # redirect URI exactly, so a pasted URI with surrounding
+        # whitespace would otherwise persist verbatim and only fail
+        # later at provider login time with a generic OAuth error.
+        # A URI cannot legitimately carry surrounding whitespace.
+        updated = await self.sso_settings_provider_repository.update_sso_settings(id, SSOSettings(redirect_uris=[redirect_uri.strip()]))
         if updated is None:
             raise NotFoundException("SSOSettings", id)
 
