@@ -174,7 +174,11 @@ export function TenantsProvider({ children }: TenantsProviderProps) {
                 ? "Failed to create tenant"
                 : "Unable to reach the server. Check your connection and try again.", {
                 richColors: true,
-                position: "top-right"
+                position: "top-right",
+                // Surface the server's own detail (e.g. a 422 validation
+                // message for an invalid tenant name) instead of only the
+                // fixed title, mirroring the update toast above.
+                description: hasStatus ? extractErrorMessage(error) : undefined,
             });
         }
     }
