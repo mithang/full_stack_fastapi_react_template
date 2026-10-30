@@ -138,7 +138,16 @@ export default function SSOConfigurationProvider({ children }: SSOConfigurationP
             const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
             toast.error(hasStatus
                 ? "Failed to toggle SSO configuration"
-                : "Unable to reach the server. Check your connection and try again.", { richColors: true, position: "top-right" });
+                : "Unable to reach the server. Check your connection and try again.", {
+                richColors: true,
+                // Surface the server's own message (e.g. a 422
+                // validation detail for an invalid SSO setting) instead
+                // of only the fixed title; network errors keep no
+                // description, as before. Same pattern as the create
+                // toast above.
+                description: hasStatus ? extractErrorMessage(error) : undefined,
+                position: "top-right",
+            });
         }
     }
 
