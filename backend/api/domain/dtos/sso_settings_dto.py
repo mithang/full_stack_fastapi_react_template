@@ -1,5 +1,4 @@
 from typing import Optional
-from beanie import PydanticObjectId
 from pydantic import BaseModel, Field, field_serializer, model_validator
 
 from api.domain.entities.sso_settings import SSOProvider
