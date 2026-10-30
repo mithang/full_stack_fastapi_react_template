@@ -136,6 +136,12 @@ export default function Register() {
             form.setError("subdomain", { type: "manual", message: "This subdomain is already taken" });
         } else if (subdomainAvailability?.is_available) {
             form.clearErrors("subdomain");
+        } else if (!error) {
+            // No verdict at all (the hook reports null/null once the
+            // field is cleared): drop a stale verdict error instead of
+            // leaving e.g. "already taken" on an empty subdomain field.
+            // The error branch below still runs when a check failed.
+            form.clearErrors("subdomain");
         }
         if (error) {
             form.setError("subdomain", { type: "manual", message: error });
