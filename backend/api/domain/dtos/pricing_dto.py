@@ -24,7 +24,7 @@ class CreatePricingDto(BaseModel):
    # The description already promises a positive integer or 0; an uncapped
    # negative value was passed verbatim to Stripe prices.create_async and
    # failed only there. ge=0 now fails FastAPI validation (422) first.
-   unit_amount: int = Field(..., ge=0, description="A positive integer in cents (or 0 for a free price) representing how much to charge. One of unit_amount, unit_amount_decimal, or custom_unit_amount is required, unless billing_scheme=tiered.")
+   unit_amount: int = Field(..., ge=0, description="A positive integer in the currency's minor unit (cents for most currencies, but the whole amount for zero-decimal currencies such as JPY; or 0 for a free price) representing how much to charge. One of unit_amount, unit_amount_decimal, or custom_unit_amount is required, unless billing_scheme=tiered.")
    product: str = Field(..., min_length=1, description="The ID of the product this price is associated with")
    active: bool = Field(default=True, description="Whether the price is active or not")
    recurring: RecurringDto
