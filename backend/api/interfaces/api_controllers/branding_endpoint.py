@@ -1,9 +1,8 @@
 from fastapi import APIRouter, Depends, UploadFile, status
-from pydantic import Json
 from api.common.utils import get_logger
 from api.core.container import get_deps
 from api.core.exceptions import BrandingException
-from api.domain.dtos.branding_dto import IdentityDto, UpdateBrandingDto
+from api.domain.dtos.branding_dto import UpdateBrandingDto
 from api.domain.enum.permission import Permission
 from api.infrastructure.security.current_user import CurrentUser
 from api.interfaces.middlewares.tenant_middleware import get_tenant_id
