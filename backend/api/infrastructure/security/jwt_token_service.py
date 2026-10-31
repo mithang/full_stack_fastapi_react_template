@@ -52,7 +52,7 @@ class JwtTokenService:
         except Exception as e:
             logger.error(f"Error generating refresh token: {str(e)}")
             raise InvalidOperationException("Failed to generate refresh token.") from e
-    
+
     async def generate_tokens(self, payload: TokenPayloadDto) -> TokenSetDto:
         """
             Generate access and refresh tokens.
@@ -67,7 +67,7 @@ class JwtTokenService:
             refresh_token=refresh_token.refresh_token,
             refresh_token_expires_in=int((refresh_token.refresh_token_expires_in - get_utc_now()).total_seconds())
         )
-    
+
     async def decode_token(
             self,
             token: str, type: Literal["access_token", "refresh_token"] = "access_token") -> TokenPayloadDto | RefreshTokenPayloadDto | None :
@@ -127,7 +127,7 @@ class JwtTokenService:
             payload = jwt.decode(token, JWT_SECRET, algorithms=[ALGORITHM])
             if payload.get("type") != "activation":
                 raise jwt.InvalidTokenError("Invalid token type")
-            
+
             return VerifyEmailTokenPayloadDto(
                 user_id=payload.get("user_id"),
                 email=payload.get("email")
@@ -174,7 +174,7 @@ class JwtTokenService:
             # is invalid, not a 500.
             logger.error("Password reset token payload has an invalid shape")
             raise InvalidOperationException("Invalid password reset token")
-    
+
     async def verify_change_email_token(self, token: str) -> VerifyEmailTokenPayloadDto:
         """
             Verify and decode the change email token.
