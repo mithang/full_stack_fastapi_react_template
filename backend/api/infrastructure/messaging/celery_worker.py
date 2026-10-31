@@ -142,7 +142,7 @@ async def _handle_tenant_dns_update_async(payload: str):
         except Exception as e:
             logger.error(f"Error occurred while checking DNS for {_safe_log_value(hostname)}: {e}")
             await _update_tenant_custom_domain_status(tenant_id=worker_payload.tenant_id, status="failed")
-        
+
 
 
 async def _notify_dns_status(tenant_id: str, user_id: str, is_success: bool, message: str, hostname: str):
@@ -166,14 +166,14 @@ async def _update_tenant_custom_domain_status(tenant_id: str, status: str):
     db = Database(uri=mongo_uri, models=models)
     await db.init_db(db_name=mongo_db_default, is_tenant=False)
     tenant_service: TenantService = get_tenant_service()
-    
+
     tenant = await tenant_service.get_tenant_by_id(tenant_id=tenant_id)
     tenant.custom_domain_status = status
     # Direct .save() bypasses BaseRepository.update()'s central updated_at stamp (iteration 411).
     tenant.updated_at = get_utc_now()
     await tenant.save()
     await db.close()
-    
+
     if status == "active":
         await _update_coolify_domain(data=UpdateDomainDto(domain=tenant.custom_domain, mode="add"))
 
