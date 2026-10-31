@@ -25,7 +25,7 @@ class FileUpload:
         from api.core.container import get_storage_settings_repository # To avoid circular imports
         self.storage_repository = get_storage_settings_repository()
 
-    
+
     async def upload_file(self, file: UploadFile) -> str:
         # The filename comes from the multipart header, so it is
         # client-controlled: a name like "../../other/avatar.png" would
@@ -59,7 +59,7 @@ class FileUpload:
                 return await azure.upload_file(file, active_provider.azure_container_name + "/" + safe_name)
             else:
                 raise StorageNotEnabledException()
-                
+
         except StorageNotEnabledException as se:
             logger.warning(f"Unsupported storage provider: {str(se)}, Hence using default S3 storage")
             s3 = S3Storage(
