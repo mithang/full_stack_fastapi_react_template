@@ -326,7 +326,7 @@ async def get_profile_image(
         # clean error and lets those fallbacks engage.
         logger.error(f"Error fetching profile image: {e}")
         raise
-    
+
 def _assert_delete_scope(current_user: CurrentUser, request_tenant_id) -> None:
     # Delete-in-wrong-DB guard, mirroring the update guard above and
     # the role delete guard: the service already scopes the target to
@@ -486,11 +486,11 @@ async def patch_user(
     # answers with the same 404 as an unknown role, and host callers
     # (tenant_id None) keep the global view, matching get_role_by_id.
     await role_service.get_role_by_id(role_id=role_update.role_id, tenant_id=current_user.tenant_id)
-    
+
     user = await user_service.update_user(user_id=user_id, user_data=UpdateUserDto(role_id=role_update.role_id), tenant_id=current_user.tenant_id)
     user_doc = await user.to_serializable_dict()
     return UserDto(**user_doc)
-  
+
 
 
 def _assert_remove_scope(current_user: CurrentUser, request_tenant_id) -> None:
@@ -526,7 +526,7 @@ async def remove_user_role(
     exsisting_user = await user_service.get_user_by_id(user_id, tenant_id=current_user.tenant_id)
     if str(exsisting_user.role_id) != role_update.role_id:
         raise InvalidOperationException("User does not have this role assigned")
-    
+
     user = await user_service.update_user(user_id=user_id, user_data=UpdateUserDto(role_id=None), tenant_id=current_user.tenant_id)
     user_doc = await user.to_serializable_dict()
     return UserDto(**user_doc)
