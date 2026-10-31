@@ -106,7 +106,7 @@ class TenantService:
     async def total_count(self) -> int:
         """Get total count of tenants. Returns an integer."""
         return await self.tenant_repository.count()
-    
+
     async def update_feature(self, tenant_id: str, feature: FeatureDto):
         """
             Update a feature for a tenant. If the feature does not exist, it will be added to the tenant's features.
@@ -121,7 +121,7 @@ class TenantService:
                 break
         if not feature_found:
             tenant.features.append(Feature(name=feature.name, enabled=feature.enabled))
-        
+
         # Direct .save() bypasses BaseRepository.update()'s central
         # updated_at stamp, so stamp it here to move it off creation time.
         tenant.updated_at = get_utc_now()
@@ -142,7 +142,7 @@ class TenantService:
     async def get_features_by_tenant_id(self, tenant_id: str) -> List[FeatureDto]:
         """
             Get features for a tenant by ID.
-            Raises 
+            Raises
                 TenantNotFoundException if tenant not found.
         """
         tenant = await self.get_tenant_by_id(tenant_id)
@@ -152,7 +152,7 @@ class TenantService:
 
         tenant_features = [FeatureDto(name=feature.name, enabled=feature.enabled) for feature in tenant.features]
         logger.debug(f"Tenant features for tenant {tenant_id}: {tenant_features}")
-        
+
         # Check if any features are added in the enum that are not present in tenant features
         if len(all_features) > len(tenant_features):
             logger.debug(f"Some features are not set for tenant {tenant_id}, adding missing features as disabled.")
@@ -167,6 +167,6 @@ class TenantService:
                     # Feature not found in tenant, add it as enabled=False by default
                     available_features.append(FeatureDto(name=all_feature.name, enabled=False))
             return available_features
-        
+
         # Return tenant features if all features are already set
         return tenant_features
