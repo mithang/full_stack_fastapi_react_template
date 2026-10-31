@@ -143,20 +143,15 @@ export function AppConfigProvider({ children }: AppConfigProviderProps) {
         // environment "production".
         const protocol = appConfig.environment === "development" ? "http" : "https";
         const port = appConfig.environment === "development" ? ":3000" : "";
-        console.debug("Redirecting to tenant domain if needed:", tenant.custom_domain);
         const url = `${protocol}://${tenant.custom_domain || tenant.subdomain}${port}`;
         const currentHostname = window.location.hostname;
-        console.debug("Current hostname:", currentHostname);
-        console.debug("Target URL:", url);
         if (tenant.custom_domain) {
             if (currentHostname !== tenant.custom_domain) {
-                console.debug("Redirecting to custom domain:", url);
                 window.location.href = url;
                 return
             }
         } else {
             if (currentHostname !== tenant.subdomain) {
-                console.debug("Redirecting to subdomain:", url);
 
                 window.location.href = url;
             }
