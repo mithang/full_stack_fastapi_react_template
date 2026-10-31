@@ -29,4 +29,3 @@ class BillingRecordRepository(BaseRepository[BillingRecord]):
             has_next=skip + limit < total
         )
         return result
-    
