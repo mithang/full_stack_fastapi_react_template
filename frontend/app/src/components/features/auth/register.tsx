@@ -171,7 +171,6 @@ export default function Register() {
         }
     }, [subdomainExists]);
 
-    console.log("Rendering Register component", appConfig.shouldShowTenantSelection);
     return (
         <div className="flex flex-col items-center justify-center h-[calc(100vh-1rem)]">
             <Card className="w-full max-w-xl shadow-lg">
