@@ -26,7 +26,7 @@ async def test_list_users_from_host(client: AsyncClient):
     assert response.status_code == 200
 
     data = UserListDto.model_validate(response.json())
- 
+
     assert data.users == []
     assert data.total == 0
     assert data.hasNext == False
