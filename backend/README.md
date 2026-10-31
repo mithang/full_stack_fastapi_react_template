@@ -89,7 +89,7 @@ Use the following credentials to log in as the **host administrator**:
 
 To log in as a **tenant admin**:
 
-1. On the login page, search a **dentally** tenant from the search field.  
+1. On the login page, search a **dentally** tenant from the search field.
 2. Then enter the credentials below:
 
 | Username            | Password       |
@@ -98,8 +98,8 @@ To log in as a **tenant admin**:
 
 ### Login as a Tenant User
 
-1. First, create a new user while logged in as the **Tenant Admin**.  
-2. After creating the user, **log out** from the admin account.  
+1. First, create a new user while logged in as the **Tenant Admin**.
+2. After creating the user, **log out** from the admin account.
 3. Finally, **log in** again using the newly created user's credentials.
 
 
