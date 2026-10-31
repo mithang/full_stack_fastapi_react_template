@@ -305,5 +305,3 @@ class PasskeyService():
         user_passkey.updated_at = get_utc_now()
         await user_passkey.save()
         logger.info(f"Deleted passkey with credential ID {credential_id} for user {email}.")
-
- 
