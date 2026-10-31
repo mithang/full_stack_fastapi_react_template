@@ -158,7 +158,6 @@ export default function ColorField({
                 const handleColorChange = (e: React.ChangeEvent<HTMLInputElement>) => {
                     const hex = e.target.value;
                     const oklch = `oklch(${hexToOklch(hex)})`;
-                    console.log("Selected color in OKLCH:", oklch);
                     field.onChange(oklch);
                 };
 
