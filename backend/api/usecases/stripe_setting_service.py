@@ -30,7 +30,7 @@ class StripeSettingService:
         # which equals the caller's tenant, so this is a no-op there.
         settings.tenant_id = tenant_id
         await self.payment_repository.store_stripe_settings(stripe_config=settings)
-        
+
     async def get_stripe_settings(self, tenant_id: str) -> StripeSettingDto:
         """
         Get the Stripe settings for the application.
@@ -62,7 +62,7 @@ class StripeSettingService:
             mode=result.mode,
             trial_period_days=result.trial_period_days
         )
-    
+
     async def get_stripe_secret(self) -> StripeSettingSecretDto:
         """
         Get the Stripe Webhook Secret.
