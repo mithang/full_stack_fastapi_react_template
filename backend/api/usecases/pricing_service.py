@@ -19,7 +19,7 @@ class PricingService:
     def __init__(self, payment_repository: PaymentRepository, stripe_resolver: StripeResolver):
         self.payment_repository: PaymentRepository = payment_repository
         self.stripe_resolver: StripeResolver = stripe_resolver
-    
+
     async def create_price(self, price: CreatePricingDto, scope: ScopeType) -> None:
         try:
             sc = await self.stripe_resolver.get_stripe_client(scope=scope)
@@ -55,7 +55,7 @@ class PricingService:
             # verbatim via the ApiBaseException handler.
             raise PricingException("Failed to list prices.")
         return PricingListDto(pricings=[pricing for pricing in result.data],  has_more=result.has_more)
-    
+
     async def update_price(self, price_id: str, update: UpdatePricingDto, scope: ScopeType) -> None:
         # Same padded-id class as the product/plan-id fixes: price ids
         # arrive as a {price_id:path} param and reach Stripe verbatim,
@@ -88,4 +88,4 @@ class PricingService:
             # Stripe/resolver detail stays in the logger.error line
             # above instead of reaching the client verbatim.
             raise PricingException(f"Failed to update price {_safe_log_value(price_id)}.")
-    
+
