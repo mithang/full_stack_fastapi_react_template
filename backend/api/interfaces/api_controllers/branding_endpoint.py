@@ -129,7 +129,7 @@ async def upload_logo(
     # could never have stored one.
     if file.content_type not in ["image/png", "image/jpeg"]:
         raise BrandingException("Unsupported file type. Please upload a PNG or JPEG image.")
-    
+
     # Resolve the branding record before uploading: the create-scope
     # guard below used to run only after the upload, so a tenant
     # caller on the wrong DB (no X-Tenant-ID/subdomain, request scope
@@ -180,6 +180,6 @@ async def upload_logo(
         # was a no-op self-assignment, not a stamp).
         branding = await branding_service.create_branding(data=UpdateBrandingDto(logo_url=key, logo_type=file.content_type, tenant_id=current_user.tenant_id))
         return
-    
+
 
     await branding_service.update_branding(id=str(branding.id), data=UpdateBrandingDto(logo_url=key, logo_type=file.content_type), tenant_id=current_user.tenant_id, request_tenant_id=request_tenant_id)
