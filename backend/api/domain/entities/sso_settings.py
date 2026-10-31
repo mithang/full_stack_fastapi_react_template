@@ -14,11 +14,11 @@ class SSOSettings(ApiBaseModel):
     client_secret: str | None = None
     scopes: Optional[list[str]] = []
     redirect_uris: Optional[list[str]] = []
-    
+
     @field_serializer("id")
     def serialize_id(self, v: PydanticObjectId) -> Optional[str]:
         return str(v) if v else None
-    
+
 
     class Settings:
         name = "sso_settings"
