@@ -14,7 +14,7 @@ class SubscriptionPlanRepository(BaseRepository[SubscriptionPlan], AuditLogRepos
 
     async def get_subscription_plan_by_id(self, subscription_id: str) -> SubscriptionPlan | None:
         return await super().get(id=subscription_id)
-    
+
     async def get_subscription_plan_by_user_id(self, user_id: str) -> SubscriptionPlan | None:
         # Strip before conversion, as BaseRepository.get does (iteration
         # 1353): PydanticObjectId() requires exactly 24 hex chars, so a
