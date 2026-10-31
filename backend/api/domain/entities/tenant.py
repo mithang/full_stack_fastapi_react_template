@@ -49,7 +49,7 @@ def validate_subdomain(subdomain: str | None) -> str | None:
 
     if not subdomain.endswith(f".{main_domain}") and subdomain != main_domain or subdomain == main_domain:
         raise InvalidSubdomainException(subdomain)
-    
+
 
     # At this point, it's something like <prefix>.demo.fsrapp.xyz
     label = subdomain.removesuffix(f".{main_domain}")
@@ -60,16 +60,16 @@ def validate_subdomain(subdomain: str | None) -> str | None:
 
     if not SUBDOMAIN_REGEX.match(label):
         raise InvalidSubdomainException(subdomain)
-    
+
     return subdomain
 
 def validate_custom_domain(domain: str) -> str:
     """
     Validate a custom domain provided by a tenant.
-    
+
     - Must be a valid domain (e.g., tenant1.com, app.tenant1.com)
     - Cannot be your main domain or a subdomain of it
-    
+
     :param domain: Domain name provided by the tenant
     :return: The normalized, validated domain name
     :raises InvalidCustomDomainException: if validation fails
@@ -150,7 +150,7 @@ class Tenant(Document):
         if value is None:
             return None
         return str(value)
-    
+
 
     class Settings:
         name = "tenants"
@@ -161,5 +161,5 @@ class Tenant(Document):
             "is_active",
             "subscription_id",
         ]
-    
+
 
