@@ -54,13 +54,13 @@ def get_email_sharing_link(user_id: str, type: str, token: str, domain: str, ten
     """
     Generate a complete email sharing link with token.
     """
-    
+
     sharing_link = f"https://{domain}/{type}?user_id={user_id}&token={token}"
 
     if tenant_id not in (None, "None", ""):
         get_logger(__name__).info(f"tenant id in utils: {tenant_id}")
         sharing_link += f"&tenant_id={tenant_id}"
-    
+
     return sharing_link
 
 
@@ -127,7 +127,7 @@ async def capture_audit_log(
 ) -> None:
     """Capture an audit log entry."""
     file_name = f"audit_logs_for{log_data.tenant_id if log_data.tenant_id else 'host'}_{get_utc_now().strftime('%Y%m%d')}.jsonl"
-    
+
     file_path = create_temp_file(file_name)
 
     # Explicit utf-8, mirroring the read side (iteration 392): the
@@ -138,12 +138,12 @@ async def capture_audit_log(
     # the failure and continues without it.
     with open(file_path, "a", encoding="utf-8") as f:
         f.write(log_data.model_dump_json() + "\n")
-    
+
 
 def get_sso_redirect_uri(provider_name: str, domain: Optional[str] = None) -> str:
     local_domain = domain if domain else get_host_main_domain_name()
     if settings.fastapi_env == "production":
         return f"https://{local_domain}/api/v1/account/sso/{provider_name}/callback"
-        
+
     return f"http://{local_domain}:3000/api/v1/account/sso/{provider_name}/callback"
-    
+
