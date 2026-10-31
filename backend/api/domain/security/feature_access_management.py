@@ -15,11 +15,11 @@ def check_feature_access(feature_name: FeatureEnum) -> callable:
         if not currentUser.tenant_id:
             if Permission.HOST_MANAGE_TENANTS in role.permissions:
                 return True  # Host users with tenant management permissions have access to all features.
-        
+
         if not currentUser.tenant_id:
             logger.info(f"User {currentUser.id} does not belong to any tenant and lacks host permissions.")
             raise FeatureNotEnabledException(feature_name.value)
-        
+
         tenant_service = get_tenant_service()
         tenant = await tenant_service.get_tenant_by_id(tenant_id=request.state.tenant_id)
 
@@ -34,8 +34,8 @@ def check_feature_access(feature_name: FeatureEnum) -> callable:
                     logger.info(f"Feature {feature_name.value} is disabled for tenant {safe_tenant_name}")
                     raise FeatureNotEnabledException(feature_name.value)
                 break
-                    
-                
+
+
         logger.info(f"Feature {feature_name.value} is enabled for tenant {safe_tenant_name}")
         return True
     return dependency
