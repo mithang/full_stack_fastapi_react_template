@@ -17,7 +17,7 @@ class StripeResolver(StripeSettingsRepository):
             tenant_stripe_api_key = await super().single_or_none()
             if tenant_stripe_api_key is None:
                 raise StripeSettingsNotFoundException(f"No Stripe settings found")
-            
+
             return stripe.StripeClient(api_key=tenant_stripe_api_key.stripe_secret_key)
-        
+
         return self.client
