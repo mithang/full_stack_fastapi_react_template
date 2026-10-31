@@ -44,7 +44,6 @@ const initialState: UsersProviderState = {
     selectedUser: undefined,
     onDeleteUser: () => Promise.resolve(),
     onUpdateUser: (userId: string, params: UpdateUserDto) => {
-        console.debug("Updating user:", userId, params);
         return Promise.resolve();
     },
     onSelectUser: () => { }
