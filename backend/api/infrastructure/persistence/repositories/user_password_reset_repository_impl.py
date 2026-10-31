@@ -43,7 +43,7 @@ class UserPasswordResetRepository(BaseRepository[UserPasswordReset], AuditLogRep
             tenant_id=tenant_id
         ))
         return res
-    
+
 
     async def delete_by_user_id(self, user_id: str) -> bool:
         # Same malformed-id guard as retrieve_password_reset_data_by_user_id
