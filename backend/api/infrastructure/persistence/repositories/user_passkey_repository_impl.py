@@ -54,13 +54,13 @@ class UserPasskeyChallengesRepository(BaseRepository[Challenges], AuditLogReposi
             tenant_id=str(tenant_id) if tenant_id else None
         ))
         return res
-    
+
     async def get_challenge(self, email: str, type: Literal["registration", "authentication"]) -> Optional[Challenges]:
         """
             Returns current challenge for the given email if found otherwise, None
         """
         return await self.single_or_none(email=email, type=type)
-    
+
 
     async def delete_challenge(self, email: str, type: Literal["registration", "authentication"]) -> bool:
         """
