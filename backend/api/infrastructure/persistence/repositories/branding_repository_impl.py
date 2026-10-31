@@ -7,13 +7,13 @@ logger = get_logger(__name__)
 class BrandingRepository(BaseRepository[Branding]):
     def __init__(self):
         super().__init__(Branding)
-    
+
     async def default_theme_config(self) -> ThemeConfig:
         return ThemeConfig()
 
     async def get_branding(self) -> Branding | None:
         return await super().single_or_none()
-    
+
     async def update_branding(self, id: str, data: Branding) -> Branding | None:
         data.updated_at = get_utc_now()
         # BaseRepository.update() returns None when no document matches,
