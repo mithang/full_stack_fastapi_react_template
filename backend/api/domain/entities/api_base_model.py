@@ -20,8 +20,8 @@ class ApiBaseModel(Document):
     #     if isinstance(value, PydanticObjectId):
     #         return str(value)
     #     return str(value)
-        
-    
+
+
     async def to_serializable_dict(self):
         data = self.model_dump()
         data["id"] = str(self.id)
