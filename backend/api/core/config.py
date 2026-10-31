@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     app_title: str = "Full-Stack FastAPI React Template"
 
     multi_tenancy_strategy: str = "header"
-    
+
     host_main_domain: str = "fsrapp.com"
 
     redis_uri: str = "redis://localhost:6372"
@@ -56,7 +56,7 @@ class Settings(BaseSettings):
 
     ollama_host: str = "http://localhost:11434"
 
-    
+
     # Coolify settings for deployment integration only used for domain setup
     coolify_enabled: bool = False
     coolify_api_url: str
