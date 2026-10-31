@@ -53,4 +53,3 @@ class ChatHistoryAI(ApiBaseModel):
 
 class AISessions(ChatSessionAI):
     sessions: list[ChatHistoryAI]
-    
