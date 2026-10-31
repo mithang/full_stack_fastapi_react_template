@@ -9,7 +9,7 @@ from api.domain.entities.notification_settings import NotificationBannerSetting
 class NotificationBannerRepository(BaseRepository[NotificationBannerSetting], AuditLogRepository):
     def __init__(self):
         super().__init__(NotificationBannerSetting)
-    
+
     async def get_banner_setting(self) -> NotificationBannerSetting | None:
         result = await self.list()
         if len(result) == 0:
@@ -28,7 +28,7 @@ class NotificationBannerRepository(BaseRepository[NotificationBannerSetting], Au
             user_id=None  # Todo: Need to add a new property in role.. to determine who added it.
         ))
         return created_setting
-    
+
     async def update_banner_setting(self, id: str, is_enabled: bool, message: str | None) -> NotificationBannerSetting | None:
         exisiting_setting = await self.get(id)
         if not exisiting_setting:
@@ -42,7 +42,7 @@ class NotificationBannerRepository(BaseRepository[NotificationBannerSetting], Au
             raise NotFoundException("NotificationBannerSetting", id)
         exisiting_setting.is_enabled = is_enabled
         exisiting_setting.message = message
-        
+
         updated_setting = await self.update(id, exisiting_setting.model_dump(exclude_none=True))
         await self.add_audit_log(AuditLogDto(
             action="update",
