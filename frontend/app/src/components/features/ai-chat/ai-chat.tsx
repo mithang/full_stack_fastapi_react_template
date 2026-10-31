@@ -851,9 +851,9 @@ export function AIChat() {
                                                             "Explain quantum computing",
                                                             "Write a Python function",
                                                             "Help me brainstorm ideas"
-                                                        ].map((suggestion, index) => (
+                                                        ].map((suggestion) => (
                                                             <Button
-                                                                key={index}
+                                                                key={suggestion}
                                                                 variant="outline"
                                                                 size="sm"
                                                                 onClick={() => {
