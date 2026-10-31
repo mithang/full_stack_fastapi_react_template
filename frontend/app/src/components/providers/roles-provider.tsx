@@ -44,7 +44,6 @@ const initialState: RolesProviderState = {
     selectedRole: undefined,
     onDeleteRole: () => Promise.resolve(),
     onUpdateRole: (roleId: string, params: UpdateRoleDto) => {
-        console.debug("Updating role:", roleId, params);
         return Promise.resolve();
     },
     onSelectRole: () => { },
