@@ -3,7 +3,7 @@ from enum import Enum
 
 
 class Permission(str, Enum):
-    
+
     FULL_ACCESS = "full:access"
 
     USER_READ_AND_WRITE_ONLY = "user:read_and_write_only"
@@ -18,10 +18,10 @@ class Permission(str, Enum):
     ROLE_DELETE_ONLY = "role:delete_only"
     ROLE_PERMISSION_READ_AND_WRITE_ONLY = "role:permission_read_and_write_only"
 
-    
+
     HOST_MANAGE_TENANTS = "host:manage_tenants"
     MANAGE_STORAGE_SETTINGS = "manage:storage_settings"
-    
+
     MANAGE_TENANT_SETTINGS = "manage:tenant_settings"
 
     MANAGE_BILLING = "manage:billing"
