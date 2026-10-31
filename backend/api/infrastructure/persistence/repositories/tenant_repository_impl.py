@@ -65,4 +65,3 @@ class TenantRepository(BaseRepository[Tenant], AuditLogRepository):
                 tenant_id=None
             ))
             raise ConflictException("Tenant", data.name)
-    
