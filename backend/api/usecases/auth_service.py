@@ -52,7 +52,7 @@ def _safe_log_value(value) -> str:
 _DUMMY_PASSWORD_HASH = hash_it(secrets.token_hex(32))
 
 class AuthService:
-    def __init__(self, 
+    def __init__(self,
             user_service: UserService,
             tenant_service: TenantService,
             role_service: RoleService,
@@ -79,7 +79,7 @@ class AuthService:
             Helper method to generate a TokenSetDto for the given user. Dont use this method outside this class.
         """
         role = await self.role_service.get_role_by_id(role_id=user.role_id)
-        role_doc = await role.to_serializable_dict()    
+        role_doc = await role.to_serializable_dict()
         payload = TokenPayloadDto(
                 sub=user.id,
                 email=user.email,
@@ -97,7 +97,7 @@ class AuthService:
             tenant_id=str(user.tenant_id) if user.tenant_id else None,
             changes={"Info": f"User received tokens and logged in."}
         ))
-        
+
         # Host audit log for tenant admin login
         if user.tenant_id and Permission.FULL_ACCESS in (role.permissions if role.permissions else []):
             logger.info(f"Tenant ID: {user.tenant_id} logged in. Updating an audit log in the host.")
@@ -113,7 +113,7 @@ class AuthService:
 
     async def login_with_magic_link(self, user_id: str) -> TokenSetDto:
         try:
-  
+
             user = await self.user_service.get_user_by_id(user_id=user_id)
             await self.audit_log_service.create_audit_log(audit_log=AuditLogDto(
                 entity="User",
@@ -197,7 +197,7 @@ class AuthService:
         display_name = user_info.display_name
         first_name = user_info.first_name
         last_name = user_info.last_name
-        
+
         if email is None:
             raise InvalidOperationException("SSO provider did not return an email address.")
         try:
@@ -236,7 +236,7 @@ class AuthService:
                 # Skip policy validation for this random SSO password (see
                 # UserService.create_user): it need not match the policy.
                 skip_password_validation=True)
-        
+
         user = await self.user_service.find_by_email(email=email)
         if user.is_active is False:
             user.is_active = True
@@ -259,12 +259,12 @@ class AuthService:
                     if user.sso_provider_id:
                         logger.debug(f"This email already has logged using sso {user.sso_provider_id} hence, skip the new user creation.")
                         not_found = False
-            except UserNotFoundException as u:                
+            except UserNotFoundException as u:
                 logger.debug("No user found! Hence creating a new user..")
                 not_found = True
 
             if not_found:
-                await self.user_service.create_user(user_data=new_user)    
+                await self.user_service.create_user(user_data=new_user)
 
 
     async def register(self, new_user: CreateUserDto, cb: Callable) -> None:
@@ -314,7 +314,7 @@ class AuthService:
                 logger.warning(f"Subdomain validation failed for '{_safe_log_value(subdomain)}': {ioe}")
                 # If it is coming here.. that means the request is valid and made by a legit tenant.. because the tenant middleware has already validated it.
                 await self.user_service.create_user(user_data=new_user)
-        
+
             except TenantNotFoundException as tnfe:
                 logger.warning(f"Tenant not found for subdomain '{_safe_log_value(subdomain)}': {tnfe} - Proceeding to create new tenant.")
                 create_new_tenant = CreateTenantDto(
@@ -347,7 +347,7 @@ class AuthService:
             changes={"Info": f"User logged out."}
         ))
         logger.info(f"User {user_id} logged out successfully.")
-    
+
     async def refresh_token(self, token: TokenRefreshRequestDto) -> TokenSetDto:
         """
             Refresh the access token using the provided refresh token.
@@ -358,10 +358,10 @@ class AuthService:
 
         if refresh_token_payload is None:
             raise UnauthorizedException("Invalid refresh token")
-        
+
         user = await self.user_service.get_user_by_id(user_id=str(refresh_token_payload.sub))
         role = await self.role_service.get_role_by_id(role_id=user.role_id)
-        role_doc = await role.to_serializable_dict()    
+        role_doc = await role.to_serializable_dict()
         payload = TokenPayloadDto(
             sub=user.id,
             email=user.email,
@@ -398,7 +398,7 @@ class AuthService:
             type=MessageType.html
         )
         logger.info(f"Password reset initiated for user {reset_data.user_id} ({email})")
-            
+
 
     async def change_password(self, new_password: str, token: str, user_id: str) -> None:
         """
@@ -422,7 +422,7 @@ class AuthService:
             body=html,
             type=MessageType.html
         )
-    
+
 
     async def send_activation_email(self, payload: UserResendActivationEmailRequestDto, domain: str) -> None:
         """
@@ -462,14 +462,14 @@ class AuthService:
         """
         payload = await self.jwt_token_service.verify_activation_token(token=req.token)
         user = await self.user_service.get_user_by_id(user_id=payload.user_id)
-      
-    
+
+
         if user.is_active:
             raise InvalidOperationException("User is already active.")
-        
+
         if user.email != payload.email:
             raise ForbiddenException("Oh no, You are not allowed to perform this operation.")
-        
+
         user.is_active = True
         user.activated_at = get_utc_now()
         # Direct .save() bypasses BaseRepository.update()'s central
@@ -477,7 +477,7 @@ class AuthService:
         user.updated_at = get_utc_now()
         await user.save()
         logger.info(f"User {user.id} ({user.email}) has been activated.")
-        
+
 
     async def change_email_request(self, current_email: EmailStr, new_email: EmailStr, domain: str) -> None:
         """
@@ -488,11 +488,11 @@ class AuthService:
         """
         if current_email == new_email:
             raise InvalidOperationException("The new email address must be different from the current email address.")
-        
+
         does_exist = await self.user_service.check_email_exists(email=new_email)
         if does_exist is True:
             raise InvalidOperationException(f"The email '{new_email}' is already in use by another account.")
-        
+
         user = await self.user_service.find_by_email(email=current_email)
         activation_token = await self.jwt_token_service.encode_activation_token(payload=ActivationTokenPayloadDto(
             user_id=str(user.id),
@@ -534,7 +534,7 @@ class AuthService:
         does_exist = await self.user_service.check_email_exists(email=payload.email)
         if does_exist is True:
             raise InvalidOperationException(f"The email '{payload.email}' is already in use by another account. Cannot change email.")
-        
+
         user.email = payload.email
         # Direct .save() bypasses BaseRepository.update()'s central
         # updated_at stamp (iteration 411), so stamp it here.
