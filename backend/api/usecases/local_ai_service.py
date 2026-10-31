@@ -30,13 +30,13 @@ def _is_valid_object_id(value: str | None) -> bool:
 
 
 class LocalAIService:
-    def __init__(self, 
+    def __init__(self,
         chat_session_repository: ChatSessionAIRepository,
         chat_history_repository: ChatHistoryAIRepository
     ) -> None:
         self.chat_session_repository = chat_session_repository
         self.chat_history_repository = chat_history_repository
-    
+
     async def is_session_exists(self, session_id: str) -> bool:
         # Same trim as get_histories_by_session_id / delete_session
         # (iteration 1341): _is_valid_object_id requires exactly 24
@@ -51,7 +51,7 @@ class LocalAIService:
         if not _is_valid_object_id(session_id):
             return False
         return await self.chat_session_repository.is_session_exists(session_id)
-    
+
 
     async def get_user_sessions(self, user_id: str, limit: int = 100) -> List[AISessionByUserIdDto]:
         """
@@ -84,7 +84,7 @@ class LocalAIService:
             results.append(AISessionByUserIdDto(**serializable_dict))
         logger.debug(f"Found {len(results)} sessions for user_id: {user_id}")
         return results
-    
+
 
     async def get_histories_by_session_id(self, user_id: str, session_id: str) -> List[AIHistoriesDto]:
         # Trim before validating: _is_valid_object_id requires exactly
@@ -111,8 +111,8 @@ class LocalAIService:
 
         logger.debug(f"Found histories for session_id: {session_id}, user_id: {user_id}")
         return [AIHistoriesDto(**serializable_dict)]
-    
-    
+
+
     async def delete_session(self, user_id: str, session_id: str) -> None:
         # Same trim as get_histories_by_session_id above: a padded id
         # failed the exact-24-hex check and silently no-op'd instead
@@ -135,8 +135,8 @@ class LocalAIService:
             logger.debug(f"Deleting history for session_id: {session_id}, user_id: {user_id} and history_id: {session.history_id}")
             await history.delete()
         await session.delete()
-        
-    
+
+
 
     async def save_user_query(self, user_id: str, query: str, response: str, session_id: str | None = None, tenant_id: str | None = None) -> None:
         # Same trim as is_session_exists above: a padded id failed the
