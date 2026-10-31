@@ -8,7 +8,7 @@ class NotificationBannerSettingDto(BaseModel):
     tenant_id: str | None = None
     created_at: str | None = None
     updated_at: str | None = None
-  
+
 
 class CreateNotificationBannerSettingDto(BaseModel):
     is_enabled: bool
