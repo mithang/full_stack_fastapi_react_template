@@ -17,7 +17,6 @@ export function Activation() {
     // toast. Keyed by token so a genuinely different link still runs.
     const attemptedTokenRef = useRef<string | null>(null);
     useEffect(() => {
-        console.log("Activating account for user:", userId);
         async function activate() {
             // Either parameter missing makes the link malformed: the
             // old && only rejected a link missing BOTH, so a link with
