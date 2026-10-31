@@ -23,7 +23,7 @@ class UserAccessManagement:
     ):
         """
         Initialize user access management
-        
+
         Args:
             required_permissions: List of permissions required to access the resource
             any_permission: If True, user needs ANY of the permissions. If False, user needs ALL permissions
@@ -34,7 +34,7 @@ class UserAccessManagement:
         self.allow_self_access = allow_self_access
 
     async def get_role_detail(self, role_id: str):
-    
+
         role_service = get_role_service()
         role = await role_service.get_role_by_id(role_id=role_id)
         return role
@@ -44,7 +44,7 @@ class UserAccessManagement:
         if not resource_id or not self.allow_self_access:
             return False
         return str(current_user.id) == str(resource_id)
-    
+
     async def has_permission(self, user_permissions: List[Permission], required_permissions: List[Permission]) -> bool:
         """Check if user has required permissions"""
         if self.any_permission:
@@ -53,7 +53,7 @@ class UserAccessManagement:
         else:
             # User needs ALL of the required permissions
             return all(perm in user_permissions for perm in required_permissions)
-    
+
     def __call__(self):
 
         async def check_permission(current_user: CurrentUser, request: Request) -> bool:
@@ -73,10 +73,10 @@ class UserAccessManagement:
             if current_user.role_id is None:
                 logger.info("User has no role assigned")
                 raise ForbiddenException(f"No role assigned. Required. Please contact support.")
-            
+
             role = await self.get_role_detail(current_user.role_id)
             user_permissions = role.permissions
-            
+
             logger.info(f"User permissions: {[p.value if hasattr(p, 'value') else str(p) for p in user_permissions]}")
             logger.info(f"Required permissions: {[p.value if hasattr(p, 'value') else str(p) for p in self.required_permissions]}")
 
@@ -90,14 +90,14 @@ class UserAccessManagement:
             if Permission.FULL_ACCESS in user_permissions:
                 logger.info("Full access granted - User has admin privileges")
                 return True
-            
+
             # Check for self-access permissions
-            if (Permission.USER_SELF_READ_AND_WRITE_ONLY in user_permissions and 
+            if (Permission.USER_SELF_READ_AND_WRITE_ONLY in user_permissions and
                 self.allow_self_access and resource_id):
                 if await self.check_self_access(current_user, resource_id):
                     logger.info("Self access granted - User accessing own resource")
                     return True
-            
+
             # Check required permissions. USER_SELF_READ_AND_WRITE_ONLY
             # is a self-only permission: it is honoured by the
             # self-access branch above and must not satisfy the general
@@ -121,7 +121,7 @@ class UserAccessManagement:
             # generic denial; the detail remains in the server log.
             logger.error(f"Access denied - Insufficient permissions. Required: {[p.value if hasattr(p, 'value') else str(p) for p in self.required_permissions]}")
             raise ForbiddenException("Insufficient permissions.")
-        
+
         return check_permission
-   
-     
+
+
