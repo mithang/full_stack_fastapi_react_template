@@ -59,7 +59,6 @@ export function Settings() {
         const storageProvider = provider as StorageProvider;
         setActiveTab(provider);
         const existingConfig = getStorageConfig(storageProvider);
-        console.log("Existing Config:", existingConfig);
         if (existingConfig) {
             setFormData({
                 provider: existingConfig.provider,
