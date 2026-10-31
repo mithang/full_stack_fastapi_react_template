@@ -42,7 +42,7 @@ class RoleRepository(BaseRepository[Role], AuditLogRepository):
         return result
 
     async def create(
-            self, 
+            self,
             data: CreateRoleDto,
         ) -> PydanticObjectId | None:
         new_role = Role(
@@ -97,7 +97,7 @@ class RoleRepository(BaseRepository[Role], AuditLogRepository):
                 user_id=None # Todo: Need to add a new property in role.. to determine who deleted it.
             ))
             return False
-    
+
         await super().delete(id)
         await self.add_audit_log(AuditLogDto(
             action="delete",
@@ -106,5 +106,5 @@ class RoleRepository(BaseRepository[Role], AuditLogRepository):
             tenant_id=str(existing_role.tenant_id) if existing_role.tenant_id else None,
             user_id=None # Todo: Need to add a new property in role.. to determine who deleted it.
         ))
-        
+
         return True
