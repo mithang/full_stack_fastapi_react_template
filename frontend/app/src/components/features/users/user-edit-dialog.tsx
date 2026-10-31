@@ -54,7 +54,6 @@ export function UserEditDialog({ open, onDismiss }: UserEditDialogProps) {
     });
 
     const onSubmit = async (data: EditUserFormInputs) => {
-        console.log("Form Data Submitted: ", data);
         setIsLoading(true);
         try {
             await onUpdateUser(selectedUser?.user.id!, {
@@ -101,7 +100,6 @@ export function UserEditDialog({ open, onDismiss }: UserEditDialogProps) {
     };
 
     function onDismissDialog(flag: boolean) {
-        console.log("onDismissDialog called with flag:", flag);
         if (!flag) onDismiss();
     }
     return (
