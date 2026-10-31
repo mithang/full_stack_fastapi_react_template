@@ -24,7 +24,7 @@ async def test_list_roles_from_host(client: AsyncClient):
     assert response.status_code == 200
 
     data = RoleListDto.model_validate(response.json())
- 
+
     assert data.roles == []
     assert data.total == 0
     assert data.hasNext == False
