@@ -369,11 +369,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // hosted frontend) until the tenant was re-selected.
         worker.postMessage({ tenantId: getTenant()?.id ?? null, apiBaseUrl: getApiBaseUrl() });
         worker.addEventListener("message", (event: MessageEvent<TokenSetDto | { type: string } | { message: string; code: number }>) => {
-            // Log only the message shape, never the payload: a refreshed
-            // token message carries the bearer access token, and logging
-            // it would expose a live credential in the browser console
-            // (readable by extensions and anyone with console access).
-            console.log("AuthProvider received message from worker:", event.data && 'access_token' in event.data ? "token refresh" : event.data && 'code' in event.data ? `status ${event.data.code}` : "unknown");
             if (event.data && 'access_token' in event.data) {
                 // Ignore tokens posted after an explicit logout: the
                 // worker is not torn down by logout(), so a refresh that
@@ -389,7 +384,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 // a server-rejected logout never calls logout(), so a
                 // kept session keeps receiving worker tokens as before.
                 if (loggedOutRef.current) {
-                    console.log("Ignoring worker token received after logout");
+                    // Token dropped: see the comment above for why.
                 } else {
                     setAccessToken(event.data.access_token);
                 }
@@ -426,7 +421,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // minutes (and duplicate tenant listeners), all posting tokens
         // and 401s into the provider.
         const onTenantSet = () => {
-            console.log("tenant_set event received in auth provider");
             const tenant = getTenant();
             if (tenant) {
                 worker.postMessage({ tenantId: tenant.id, apiBaseUrl: getApiBaseUrl() });
@@ -435,7 +429,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         };
 
         const onTenantRemoved = () => {
-            console.log("tenant_removed event received in auth provider");
             worker.postMessage({ tenantId: null, apiBaseUrl: getApiBaseUrl() });
         };
 
