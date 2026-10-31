@@ -119,7 +119,7 @@ export function AIChatHistory({ mobile }: AIChatHistoryProps) {
                     </CardTitle>
                     <CardContent className="p-4">
                         <ScrollArea className="h-[700px]">
-                            <ul className=" text-sm font-medium pr-4">
+                            <ul className="text-sm font-medium pr-4">
                                 {histories.map(history => (
                                     <li key={history.session_id} className={cn("p-2 hover:bg-primary/5 cursor-pointer flex justify-between", {
                                         "bg-primary/5": history.session_id === searchParams.get("session_id")

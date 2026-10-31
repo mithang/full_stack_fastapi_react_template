@@ -9,7 +9,7 @@ export function SimpleFooter() {
     const currentYear = new Date().getFullYear()
     return (
         <footer className="bg-background border-t border-border mx-5">
-            <div className=" px-4 py-6">
+            <div className="px-4 py-6">
                 <div className="flex flex-col sm:flex-row justify-between items-center space-y-4 sm:space-y-0">
                     {/* Brand */}
                     <div className="flex items-center space-x-2">
