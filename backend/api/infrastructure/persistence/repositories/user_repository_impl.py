@@ -44,7 +44,7 @@ class UserRepository(BaseRepository[User], AuditLogRepository):
         return result
 
     async def create(
-            self, 
+            self,
             data: CreateUserDto,
         ) -> PydanticObjectId | None:
 
