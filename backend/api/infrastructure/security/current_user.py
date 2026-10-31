@@ -9,7 +9,7 @@ from api.infrastructure.security.jwt_token_service import JwtTokenService
 from api.usecases.role_service import RoleService
 from api.usecases.subscription_plan_service import SubscriptionPlanService
 from api.usecases.user_service import UserService
-from api.core.container import get_role_service, get_subscription_plan_service, get_user_service, get_jwt_token_service  
+from api.core.container import get_role_service, get_subscription_plan_service, get_user_service, get_jwt_token_service
 from fastapi import Depends
 
 
