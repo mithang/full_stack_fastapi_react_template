@@ -6,7 +6,7 @@ class CoolifyAppDto(BaseModel):
     name: str
     fqdn: Optional[str] = None
 
-    
+
 
 class UpdateCoolifyAppDto(BaseModel):
     domain: str
