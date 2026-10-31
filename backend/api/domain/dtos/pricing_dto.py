@@ -83,4 +83,3 @@ class UpdatePricingDto(BaseModel):
    active: bool
    metadata: Optional[Dict[str, Any]] = None
    tax_behavior: Optional[Literal["exclusive", "inclusive", "unspecified"]] = None
-   
