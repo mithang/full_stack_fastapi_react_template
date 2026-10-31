@@ -459,9 +459,9 @@ class RedisCacheMiddleware(BaseHTTPMiddleware):
         if any(request.url.path.endswith(path) for path in not_allowed_cache_paths) or "/check_subdomain/" in request.url.path or "/search_by_subdomain/" in request.url.path or "/search_by_name/" in request.url.path or "/ai/sessions/" in request.url.path or "/api/v1/products/" in request.url.path or "/api/v1/billing/plans/" in request.url.path or "/api/v1/users/" in request.url.path or "/api/v1/roles/" in request.url.path or "/api/v1/ssos/" in request.url.path or token is None:
             logger.debug(f"Bypassing cache for path: {_safe_log_path(request.url.path)}")
             return await call_next(request)
-            
+
         try:
-            
+
             user_service = get_user_service()
             jwt_service = get_jwt_token_service()
             role_service = get_role_service()
@@ -519,7 +519,7 @@ class RedisCacheMiddleware(BaseHTTPMiddleware):
             await self._clear_cache(user_id, tenant_id)
             logger.debug("Cache cleared for non-GET request.")
             return await call_next(request)
-           
+
 
         # --- Try reading from cache; fail open on any cache failure
         # (Redis down, corrupted entry) so the handler still runs.
