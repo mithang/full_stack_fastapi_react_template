@@ -106,7 +106,6 @@ export function CreateNewTenantDialog({ open, onDismiss }: CreateNewTenantDialog
 
     }
     function onDismissDialog(flag: boolean) {
-        console.log("onDismissDialog called with flag:", flag);
         if (!flag) {
             form.reset();
             onDismiss();
