@@ -297,7 +297,7 @@ To use the Stripe payment features, you need to configure your Stripe account:
    ```bash
    cp backend/.env.example backend/.env
    ```
-   
+
    Edit `backend/.env` with your configuration:
 
    ```bash
@@ -351,7 +351,7 @@ To use the Stripe payment features, you need to configure your Stripe account:
 
         # Ollama settings
         OLLAMA_HOST="http://localhost:11434"
-      
+
         # Coolify settings for deployment
          COOLIFY_ENABLED="false" # Set to "true" to enable Coolify integration
          COOLIFY_API_URL="https://{replace_with_your_coolify_instance_endpoint}/api/v1"
@@ -477,7 +477,7 @@ make flower          # Start Flower monitoring UI
 Each service includes production-ready Dockerfiles:
 
 - **Backend**: Multi-stage build with Python optimization
-- **Frontend**: Static build served by backend. 
+- **Frontend**: Static build served by backend.
 
 ### Kubernetes Deployment
 
@@ -537,7 +537,7 @@ pnpm build                   # Test production build
 4. Add tests for new features
 5. Update API client after backend changes
 
-If you like this project, please consider supporting me on, [Ko-fi!](https://ko-fi.com/sajanvtech) Your support helps cover maintenance and server costs. I truly appreciate it 🙏 
+If you like this project, please consider supporting me on, [Ko-fi!](https://ko-fi.com/sajanvtech) Your support helps cover maintenance and server costs. I truly appreciate it 🙏
 ---
 
 This template provides a solid foundation for building modern, scalable full-stack applications with clear separation of concerns and comprehensive tooling.
