@@ -86,9 +86,9 @@ async def refresh_token(
 ):
     if cookies.refresh_token is None:
         raise ForbiddenException("Refresh token missing!")
-    
+
     token = TokenRefreshRequestDto(refresh_token=cookies.refresh_token)
-    
+
     token_set = await auth_service.refresh_token(token)
     # Same token-response no-store hardening as login() above.
     response.headers["Cache-Control"] = "no-store"
@@ -153,7 +153,7 @@ async def register(
 
     if x_tenant_id is not None:
         data.tenant_id = x_tenant_id
-      
+
     def process_user_creation(tenant_id: PydanticObjectId):
         logger.info(f"Processing user creation for tenant_id: {tenant_id}")
         data.tenant_id = tenant_id
@@ -177,7 +177,7 @@ async def register(
         handle_post_tenant_creation.delay(
             payload=payload.model_dump_json()
         )
-    
+
     data.role_id = role_guest.id
     if x_tenant_id is not None and is_tenancy_enabled():
         # Tenant-context registration: the middleware already selected
@@ -199,7 +199,7 @@ async def register(
         return status.HTTP_201_CREATED
     await auth_service.register(data, process_user_creation)
     return status.HTTP_201_CREATED
-        
+
 
 @router.get("/me", response_model=MeResponseDto, status_code=status.HTTP_200_OK)
 async def read_users_me(
@@ -257,7 +257,7 @@ async def password_reset_confirm(
         token=token,
         user_id=user_id
     )
-   
+
     return PasswordResetResponseDto(message="Password has been reset successfully. A notification email has been sent!")
 
 @router.post("/resend_activation_email", status_code=status.HTTP_202_ACCEPTED)
@@ -290,7 +290,7 @@ async def change_email(
     frontend_host: FrontendHost,
     auth_service: AuthService = Depends(get_auth_service)
 ):
-    
+
     # Do not wrap this in try/finally with a return: a return in finally
     # would swallow the service's InvalidOperationException (same email,
     # new email already in use, email-send failure) and report 202 for a
@@ -305,7 +305,7 @@ async def change_email(
     )
     return status.HTTP_202_ACCEPTED
 
-    
+
 @router.patch("/change_email_confirmation",  status_code=status.HTTP_200_OK, response_model=ChangeEmailResponseDto)
 async def change_email_confirmation(
     request: ChangeEmailConfirmRequestDto,
@@ -319,7 +319,7 @@ async def change_email_confirmation(
         )
     except InvalidOperationException as e:
         raise HTTPException(status_code=400, detail="Email change confirmation failed.")
-    
+
     return ChangeEmailResponseDto(message="Email changed successfully.")
 
 
@@ -371,7 +371,7 @@ async def passkey_register(
         raise PassKeyException("Passkey registration failed.") from e
 
     return status.HTTP_202_ACCEPTED
-    
+
 
 @router.post("/passkey/login_options", status_code=status.HTTP_200_OK)
 async def passkey_login_options(
@@ -419,7 +419,7 @@ async def passkey_login(
         result = await passkey_service.complete_auth_login(email, credential)
         if result is False:
             raise PassKeyException("Passkey authentication failed.")
-        
+
         token_set: TokenSetDto = await auth_service.login_with_passkey(email=email)
 
         # Same token-response no-store hardening as login() above.
@@ -437,7 +437,7 @@ async def passkey_login(
     except Exception as e:
         logger.error(f"Passkey login failed for email: {email} with error: {e}")
         raise PassKeyException("Passkey authentication failed.") from e
-    
+
 
 @router.post("/passkey/has_passkeys", response_model=HasPasskeysDto, status_code=status.HTTP_200_OK)
 async def has_passkeys(
@@ -460,7 +460,7 @@ async def email_magic_link_login(
         user_dto = UserDto(**user_doc)
         await magic_link_service.create_magic_link(user_dto)
         return MagicLinkResponseDto(message="If the email exists, a magic link has been sent.")
-  
+
     except Exception as e:
         if isinstance(e, UserNotFoundException):
             logger.error(f"Magic link login request for email: {email} wasn't successful: {e}")
@@ -473,8 +473,8 @@ async def email_magic_link_login(
         # avoid enumerating accounts.
         logger.error(f"Magic link login request for email: {email} wasn't successful: {e}")
         raise
-    
-       
+
+
 @router.get("/email_magic_link_validate", response_model=TokenSetDto, status_code=status.HTTP_200_OK)
 async def email_magic_link_validate(
     response: Response,
@@ -501,7 +501,7 @@ async def email_magic_link_validate(
     is_valid = await magic_link_service.validate_magic_link(user_id=user_id, token=token)
     if is_valid is False:
         raise ForbiddenException("Invalid or expired magic link.")
-    
+
     token_set: TokenSetDto = await auth_service.login_with_magic_link(user_id=user_id)
 
     # This is a GET that returns live tokens and sets the refresh
@@ -539,7 +539,7 @@ async def sso_provider_login(
     redirect.headers["Cache-Control"] = "no-store"
     redirect.headers["Pragma"] = "no-cache"
     return redirect
-    
+
 @router.get("/sso/{provider_name}/callback", status_code=status.HTTP_307_TEMPORARY_REDIRECT)
 async def sso_provider_callback(
     provider_name: SSOProvider,
@@ -572,10 +572,10 @@ async def sso_provider_callback(
         samesite="lax",
         max_age=settings.refresh_token_expire_days * 24 * 60 * 60
     )
-   
-    
-    return response
-    
 
-    
+
+    return response
+
+
+
 
