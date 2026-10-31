@@ -39,7 +39,7 @@ def decode_base64url(data: str) -> bytes:
 
 class PasskeyService():
     def __init__(
-            self, 
+            self,
             user_passkey_repo: UserPasskeyRepository = UserPasskeyRepository,
             challenges_repo: UserPasskeyChallengesRepository = UserPasskeyChallengesRepository
         ):
@@ -57,7 +57,7 @@ class PasskeyService():
                 rp_id=get_host_main_domain_name(),
                 rp_name=get_app_title()
             )
-        
+
         from api.usecases.tenant_service import TenantService
         from api.core.container import get_tenant_service
         tenant_service: TenantService = get_tenant_service()
@@ -94,7 +94,7 @@ class PasskeyService():
             user_passkey = UserPasskey(user_email=user_dto.email, credentials=[], tenant_id=user_dto.tenant_id)
             await self.user_passkey_repo.create(user_passkey.model_dump())
 
-        
+
         rep = await self._get_rep_id_and_name(tenant_id=user_dto.tenant_id)
         registration_options = generate_registration_options(
             rp_name=rep.rp_name,
@@ -121,7 +121,7 @@ class PasskeyService():
 
     async def complete_registration(self, email: EmailStr, credential: dict = Body(...)) -> bool:
         """
-        Complete the registration process by verifying the registration response. 
+        Complete the registration process by verifying the registration response.
         If successful, store the new credential in the user's passkey record and remove the used challenge.
         Raises PassKeyException on failure.
         """
@@ -173,7 +173,7 @@ class PasskeyService():
         await user_passkey.save()
         await self.challenges_repo.delete_challenge(email=email, type="registration")
         return True
-    
+
 
 
     async def auth_login_options(self, user_dto: UserDto) -> str:
@@ -183,7 +183,7 @@ class PasskeyService():
         user = await self.user_passkey_repo.single_or_none(user_email=user_dto.email)
         if not user or len(user.credentials) == 0:
             raise PassKeyException("No credentials found for the user. Please register first.")
-        
+
         user_credentials = user.credentials
         allow_credentials: List[PublicKeyCredentialDescriptor] = [
                 PublicKeyCredentialDescriptor(
@@ -212,7 +212,7 @@ class PasskeyService():
 
     async def complete_auth_login(self, email: EmailStr, credential: dict = Body(...)) -> bool:
         """
-        Complete the authentication process by verifying the authentication response. 
+        Complete the authentication process by verifying the authentication response.
         If successful, update the sign-in count for the credential and remove the used challenge.
         Raises PassKeyException on failure.
         """
@@ -268,7 +268,7 @@ class PasskeyService():
         await self.challenges_repo.delete_challenge(email=email, type="authentication")
         logger.info(f"Passkey Authentication verified for user {email}.")
         return True
-    
+
 
     async def has_passkeys(self, email: EmailStr) -> bool:
         """
@@ -276,7 +276,7 @@ class PasskeyService():
         """
         user = await self.user_passkey_repo.single_or_none(user_email=email)
         return user is not None and len(user.credentials) > 0
-    
+
     async def get_registered_passkeys(self, email: EmailStr) -> List[Credential]:
         """
         Retrieve registered passkeys for a user.
