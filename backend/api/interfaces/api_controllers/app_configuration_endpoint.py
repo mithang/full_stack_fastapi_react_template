@@ -74,7 +74,7 @@ async def get_app_configuration(
 
     enabled_sso_provider = await sso_settings_service.get_only_enabled_providers()
     enabled_sso_provider_names = [str(sso.provider) for sso in enabled_sso_provider.items]
-    
+
     branding = await branding_service.get_branding()
     if not branding:
         # If no branding is found, return a default branding configuration with default theme settings
@@ -107,6 +107,6 @@ async def get_app_configuration(
         environment = settings.fastapi_env,
         enabled_sso_providers=enabled_sso_provider_names,
         branding=branding
-        
+
     )
 
