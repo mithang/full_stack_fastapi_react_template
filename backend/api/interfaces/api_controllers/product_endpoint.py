@@ -115,7 +115,7 @@ async def create_product(
     scope = "tenant" if current_user.tenant_id else "host"
     await product_service.create_product(product_dto=product_dto, scope=scope)
     return status.HTTP_201_CREATED
-    
+
 
 
 @router.patch("/{product_id:path}", summary="Update a Product", status_code=status.HTTP_204_NO_CONTENT)
