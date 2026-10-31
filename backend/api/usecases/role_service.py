@@ -41,7 +41,7 @@ class RoleService:
             except Exception:
                 return RoleListDto(roles=[], skip=skip, limit=limit, total=0, has_previous=skip > 0, has_next=False)
         return await self.role_repository.list(skip=skip, limit=limit, tenant_id=tenant_oid)
-    
+
     async def find_by_name(self, name: str) -> Role:
         """Find a role by its name. Raises RoleNotFoundException if not found."""
         existing = await self.role_repository.single_or_none(name=name)
@@ -95,7 +95,7 @@ class RoleService:
         existing = await self.role_repository.single_or_none(name=role_data.name)
         if existing is not None:
             raise RoleAlreadyExistsException(name=role_data.name)
-        return await self.role_repository.create(data=role_data) 
+        return await self.role_repository.create(data=role_data)
 
     async def update_role(self, role_id: str, role_data: UpdateRoleDto, tenant_id: str | PydanticObjectId | None = None) -> Role | None:
         existing = await self.role_repository.get(id=role_id)
