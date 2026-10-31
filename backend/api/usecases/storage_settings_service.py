@@ -30,7 +30,7 @@ class StorageSettingsService:
             tenant_id=tenant_id,
             updated_by_user_id=setting.updated_by_user_id
         )
-      
+
         return await self.storage_settings_repository.configure_storage(setting=settings)
 
 
@@ -55,10 +55,10 @@ class StorageSettingsService:
         logger.debug(f"Resetting storage setting: id={_safe_log_value(storage_id)}, provider={storage_setting.provider if storage_setting else None}")
         if storage_setting is None:
             raise NotFoundException("StorageSetting", storage_id)
-        
+
         if tenant_id is not None and storage_setting.tenant_id != tenant_id:
             raise NotFoundException("StorageSetting", storage_id)
-        
+
         if storage_setting.provider == StorageProvider.AWS_S3.value:
             storage_setting.aws_access_key = None
             storage_setting.aws_secret_key = None
