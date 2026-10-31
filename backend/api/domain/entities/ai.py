@@ -10,13 +10,13 @@ class ChatSessionAI(ApiBaseModel):
     history_id: PydanticObjectId
 
 
-    
+
     async def to_serializable_dict(self):
         base_doc = await super().to_serializable_dict()
         return {
             **base_doc,
             "session_id": str(self.session_id),
-            "user_id": str(self.user_id), 
+            "user_id": str(self.user_id),
             "history_id": str(self.history_id)
         }
     class Settings:
