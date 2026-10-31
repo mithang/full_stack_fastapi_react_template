@@ -16,8 +16,8 @@ class BrandingDto(BaseModel):
     favicon_url: Optional[str] = None
     logo_url: Optional[str] = None
 
-   
-    
+
+
 class IdentityDto(BaseModel):
     app_name: str = "SaaS Org"
 
