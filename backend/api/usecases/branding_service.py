@@ -28,7 +28,7 @@ class BrandingService:
     def __init__(self, branding_repository: BrandingRepository, file_service: FileService):
         self.branding_repository = branding_repository
         self.file_service = file_service
-    
+
     async def default_theme_config(self) -> ThemeConfig:
         config = await self.branding_repository.default_theme_config()
         return config
@@ -45,7 +45,7 @@ class BrandingService:
         if branding.logo_url:
             branding.logo_url = await self.file_service.get_file_url(file_key=branding.logo_url)
         return branding
-    
+
     async def update_branding(self, id: str, data: UpdateBrandingDto, tenant_id: str | PydanticObjectId | None = None, request_tenant_id: str | PydanticObjectId | None = None) -> None:
         # Scope to the caller's tenant, mirroring the banner PUT fix:
         # the branding routes are FULL_ACCESS-gated with no tenant
@@ -143,7 +143,7 @@ class BrandingService:
         # routes that pass the singleton id they just fetched.
         if updated is None:
             raise BrandingException("Branding not found.")
-        
+
     async def create_branding(self, data: UpdateBrandingDto) -> BrandingDto:
         if await self.branding_repository.count() > 0:
             raise BrandingException("Branding already exists. Only one branding allowed.")
@@ -161,7 +161,7 @@ class BrandingService:
         if data.identity is not None:
             branding_kwargs["app_name"] = data.identity.app_name
         branding_data = Branding(**data.model_dump(), **branding_kwargs)
-        
+
         created_branding = await self.branding_repository.create_branding(data=branding_data)
         # Log the tenant id only: the full document carries contact_info PII.
         logger.debug(f"Created default branding for tenant {created_branding.tenant_id}")
