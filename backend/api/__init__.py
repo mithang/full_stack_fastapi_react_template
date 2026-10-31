@@ -115,7 +115,7 @@ async def api_exception_handler(req: Request, ex: ApiBaseException) -> JSONRespo
         # profile-image path), so no client change is needed.
         status_code = status.HTTP_502_BAD_GATEWAY
 
-    
+
     logger.error(f"API Exception: {ex.message}")
     return JSONResponse(
         status_code=status_code,
@@ -132,7 +132,7 @@ async def api_exception_handler(req: Request, ex: ApiBaseException) -> JSONRespo
 app.add_middleware(RedisCacheMiddleware)
 app.add_middleware(AuditLogsReadMiddleware)
 
-if is_tenancy_enabled(): 
+if is_tenancy_enabled():
     app.add_middleware(TenantMiddleware)
     logger.info("Multi-tenancy is enabled.")
 
