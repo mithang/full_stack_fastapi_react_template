@@ -123,5 +123,3 @@ class UserRepository(BaseRepository[User], AuditLogRepository):
                 tenant_id=str(existing_user.tenant_id) if existing_user and existing_user.tenant_id else None
             ))
             return False
-          
-       
