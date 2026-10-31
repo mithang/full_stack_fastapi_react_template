@@ -35,4 +35,3 @@ class UpdateDomainDto(UpdateCoolifyAppDto):
         if isinstance(self.domain, str):
             self.domain = self.domain.strip()
         return self
-    
