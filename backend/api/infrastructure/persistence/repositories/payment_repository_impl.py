@@ -78,7 +78,7 @@ class StripeSettingsRepository(BaseRepository[StripeSettings], AuditLogRepositor
                 user_id=None # Todo: Need to add a new property in role.. to determine who added it.
             ))
             raise StripeSettingsNotFoundException("Stripe settings not found.")
-    
+
 
 
 
