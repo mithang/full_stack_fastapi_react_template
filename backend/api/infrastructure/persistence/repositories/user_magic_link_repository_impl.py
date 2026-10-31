@@ -11,7 +11,7 @@ logger = get_logger(__name__)
 class UserMagicLinkRepository(BaseRepository[UserMagicLink], AuditLogRepository):
     def __init__(self):
         super().__init__(UserMagicLink)
-    
+
     async def create_magic_link(self, user_id: str, token: str) -> UserMagicLink:
         """
         Create a magic link for the given user ID with the provided token. Raises an exception if the user has exceeded the allowed number of magic link requests.
@@ -22,7 +22,7 @@ class UserMagicLinkRepository(BaseRepository[UserMagicLink], AuditLogRepository)
             UserMagicLink: The created UserMagicLink document.
         """
         count = await self.count({"user_id": PydanticObjectId(user_id)})
-        logger.info(f"Magic link requests count for user {user_id}: {count}")    
+        logger.info(f"Magic link requests count for user {user_id}: {count}")
         if count > 3:
             await self.add_audit_log(AuditLogDto(
                 action="create",
