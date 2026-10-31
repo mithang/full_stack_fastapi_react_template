@@ -23,7 +23,7 @@ class TenantRepository(BaseRepository[Tenant], AuditLogRepository):
         super().__init__(Tenant)
 
 
-    
+
     async def list(self, skip: int = 0, limit: int = 10) -> TenantListDto:
         docs = await self.model.find_all().skip(skip).limit(limit).to_list()
         total = await self.model.count()
@@ -37,9 +37,9 @@ class TenantRepository(BaseRepository[Tenant], AuditLogRepository):
             has_next=skip + limit < total
         )
         return result
-    
+
     async def create(self, data: CreateTenantDto) -> PydanticObjectId | None:
-        
+
         try:
             new_tenant = Tenant(
                 name=data.name,
