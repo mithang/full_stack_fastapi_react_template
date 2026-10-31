@@ -107,10 +107,10 @@ class SSOSettingsService:
             tenant = await self.tenant_service.get_tenant_by_id(tenant_id=sso_settings.tenant_id)
             redirect_uri = get_sso_redirect_uri(sso_settings.provider, tenant.custom_domain if tenant.custom_domain else tenant.subdomain)
 
-        sso_settings.redirect_uris = [redirect_uri]    
+        sso_settings.redirect_uris = [redirect_uri]
         res = await self.sso_settings_provider_repository.create_sso_settings(SSOSettings(**sso_settings.model_dump()))
         return str(res)
-    
+
     async def delete_sso_settings(self, id: str, tenant_id: str | PydanticObjectId | None = None) -> bool:
         # Cross-tenant delete must be indistinguishable from deleting an
         # unknown id: BaseRepository.delete returns False for unknown
@@ -120,7 +120,7 @@ class SSOSettingsService:
         if existing is None or not _caller_may_access(existing.tenant_id, tenant_id):
             return False
         return await self.sso_settings_provider_repository.delete_sso_settings(id)
-    
+
     async def list(self, tenant_id: str | None = None) -> SSOSettingsListDto:
         # Tenant callers see only their tenant's SSO settings; host
         # callers (tenant_id None) keep the global view, the same scope
@@ -143,7 +143,7 @@ class SSOSettingsService:
         logger.debug(f"SSO Settings providers: {[s.provider for s in ssos]}")
         items = [ReadSSOSettingsDto(**sso.model_dump(exclude={"client_secret": True})) for sso in ssos]
         return SSOSettingsListDto(items=items)
-    
+
     async def get_provider(self, provider_name: SSOProvider) -> SSOSettings:
         ssos: List[SSOSettings] = await self.sso_settings_provider_repository.list_sso_settings()
         for sso in ssos:
@@ -154,12 +154,12 @@ class SSOSettingsService:
         # has no settings row; NotFoundException (already imported) maps
         # to 404 via the handler, matching get_sso_settings_by_id above.
         raise NotFoundException("SSOSettings", provider_name)
-    
+
     async def get_only_enabled_providers(self) -> SSOSettingsListDto:
         ssos: List[SSOSettings] = await self.sso_settings_provider_repository.list_sso_settings()
         enabled_ssos = [sso for sso in ssos if sso.enabled]
         items = [ReadSSOSettingsDto(**sso.model_dump(exclude={"client_secret": True})) for sso in enabled_ssos]
         return SSOSettingsListDto(items=items)
-    
+
     async def get_available_sso_providers(self) -> List[str]:
         return list(get_args(SSOProvider))
