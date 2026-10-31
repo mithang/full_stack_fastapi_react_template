@@ -65,7 +65,7 @@ Before you begin, ensure you have the following installed:
    # Using uv (recommended)
    uv venv
    source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-   
+
    # Install dependencies
    uv pip install -e .
    ```
@@ -74,7 +74,7 @@ Before you begin, ensure you have the following installed:
    ```bash
    # Copy example environment file
    cp .env.example .env
-   
+
    # Edit .env with your configuration
    # Update MongoDB URI, Redis URI, SMTP settings, etc.
    ```
@@ -84,7 +84,7 @@ Before you begin, ensure you have the following installed:
    # From the root directory
    docker-compose -f dev.compose.yaml up -d
    ```
-   
+
    This starts:
    - MongoDB (port 27012)
    - Redis (port 6372)
@@ -101,7 +101,7 @@ Before you begin, ensure you have the following installed:
    ```bash
    # Celery worker
    make worker
-   
+
    # Flower (monitoring)
    make flower
    ```
@@ -198,7 +198,7 @@ frontend/app/src/
    # Backend tests
    cd backend
    pytest
-   
+
    # Frontend tests (if applicable)
    cd frontend/app
    pnpm test
@@ -249,7 +249,7 @@ from beanie import Document
 class Example(Document):
     name: str
     description: str
-    
+
     class Settings:
         name = "examples"
 
@@ -280,7 +280,7 @@ class ExampleRepository(BaseRepository[Example], IExampleRepository):
 class ExampleService:
     def __init__(self, repository: IExampleRepository):
         self._repository = repository
-    
+
     async def create_example(self, data: ExampleCreateDTO) -> Example:
         return await self._repository.create(data)
 
@@ -332,13 +332,13 @@ async def create_example(
 # Good example
 async def get_user_by_id(self, user_id: str) -> User | None:
     """Retrieve a user by their ID.
-    
+
     Args:
         user_id: The unique identifier of the user
-        
+
     Returns:
         User object if found, None otherwise
-        
+
     Raises:
         NotFoundException: If user does not exist
     """
@@ -391,7 +391,7 @@ export const UserCard: React.FC<UserCardProps> = ({ userId, onEdit }) => {
    ```python
    import pytest
    from httpx import AsyncClient
-   
+
    @pytest.mark.asyncio
    async def test_create_user(client: AsyncClient):
        response = await client.post(
@@ -406,10 +406,10 @@ export const UserCard: React.FC<UserCardProps> = ({ userId, onEdit }) => {
    ```bash
    # Run all tests
    pytest
-   
+
    # Run specific test file
    pytest tests/interfaces/test_user_endpoint.py
-   
+
    # Run with coverage
    pytest --cov=api
    ```
@@ -480,7 +480,7 @@ Fixes #456
 3. **PR Title Format**
    ```
    [Type] Brief description
-   
+
    Example: [Feature] Add magic link authentication
    Example: [Fix] Resolve subdomain routing issue
    ```
