@@ -30,7 +30,7 @@ class StorageSettings(ApiBaseModel):
             "provider": self.provider.value,
             "is_enabled": self.is_enabled,
             "region": self.region,
-            "aws_access_key": self.aws_access_key, 
+            "aws_access_key": self.aws_access_key,
             "aws_secret_key": self.aws_secret_key,
             "aws_bucket_name": self.aws_bucket_name,
             "azure_connection_string": self.azure_connection_string,
@@ -38,7 +38,7 @@ class StorageSettings(ApiBaseModel):
             "updated_by_user_id": self.updated_by_user_id
         }
         return AvailableStorageProviderDto(**result)
-       
+
     class Settings:
         name = "storage_settings"
         indexes = [
