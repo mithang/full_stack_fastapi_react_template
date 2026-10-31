@@ -51,7 +51,7 @@ src/
 
 ### Prerequisites
 
-- Node.js 22+ 
+- Node.js 22+
 - pnpm (recommended) or npm
 - Backend API running on `http://localhost:8000`
 
@@ -284,12 +284,12 @@ function MyForm() {
     resolver: zodResolver(schema),
     defaultValues: { name: '', email: '' }
   })
-  
+
   const onSubmit = (data) => {
     // Type-safe form data
     console.log(data) // { name: string, email: string }
   }
-  
+
   return <Form {...form}>...</Form>
 }
 ```
