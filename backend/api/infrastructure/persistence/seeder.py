@@ -102,5 +102,5 @@ async def seed_initial_data():
         logger.info("Seeded fake users.")
     
     # Create lock file to indicate seeding is done
-    with open(create_temp_file(LOCK_FILE), "w") as f:
+    with open(create_temp_file(LOCK_FILE), "w", encoding="utf-8") as f:
         f.write("seeding completed")
