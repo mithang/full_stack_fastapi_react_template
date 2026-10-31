@@ -43,14 +43,14 @@ class TenantMiddleware(BaseHTTPMiddleware):
                 else:
                     logger.debug(f"Host '{_safe_log_value(tenant_host)}' identified as custom domain.")
                     tenant = await tenant_service.find_by_custom_domain(tenant_host)
-                
+
                 tenant_id = str(tenant.id)
                 logger.debug(f"Tenant ID resolved from custom domain '{_safe_log_value(tenant_host)}': {tenant_id}")
                 request.state.frontend_host = tenant_host
             except TenantNotFoundException as e:
                 logger.warning(f"Error resolving tenant from custom domain '{_safe_log_value(tenant_host)}': {e}")
-                
-        
+
+
         if tenant_id is None:
             tenant_id = request.headers.get("X-Tenant-ID") or request.query_params.get('tenant_id') or None
             # Strip before conversion: an ObjectId never legitimately
@@ -103,7 +103,7 @@ class TenantMiddleware(BaseHTTPMiddleware):
         logger.debug("No tenant ID provided, using default database.")
 
         return await call_next(request)
-        
+
 
 
 def get_tenant_host(request: Request) -> Optional[str]:
@@ -131,7 +131,7 @@ def get_tenant_host(request: Request) -> Optional[str]:
     if host.startswith("localhost") or host.startswith("127.0.0.1"):
         # Handle localhost with optional
         return None
-    
+
     logger.debug(f"Extracted host: {_safe_log_value(host)}")
     return host
 
