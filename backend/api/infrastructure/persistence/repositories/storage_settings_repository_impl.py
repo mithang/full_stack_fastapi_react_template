@@ -33,7 +33,7 @@ class StorageSettingsRepository(BaseRepository[StorageSettings], AuditLogReposit
         existing: StorageSettings | None = await self.single_or_none(provider=setting.provider.value)
         if existing is None:
             logger.info(f"Creating new storage setting for provider: {setting.provider.value}")
-        
+
             result = await super().create(data=setting.model_dump())
             sett: StorageSettings = await super().get(result.id)
             await self.add_audit_log(AuditLogDto(
@@ -44,7 +44,7 @@ class StorageSettingsRepository(BaseRepository[StorageSettings], AuditLogReposit
                 user_id=setting.updated_by_user_id
             ))
             return result.id
-        
+
         logger.info(f"Updating existing setting for provider: {setting.provider.value}")
 
         # Masked secrets round-trip: GET serializes aws_access_key /
@@ -76,7 +76,7 @@ class StorageSettingsRepository(BaseRepository[StorageSettings], AuditLogReposit
                 user_id=setting.updated_by_user_id
             ))
         return result.id
-    
+
     async def get_storages(self, tenant_id: PydanticObjectId | None = None) -> list[AvailableStorageProviderDto]:
         # Tenant-scoped listing: the route is MANAGE_STORAGE_SETTINGS-
         # gated, and that gate also admits FULL_ACCESS holders — which
@@ -102,7 +102,7 @@ class StorageSettingsRepository(BaseRepository[StorageSettings], AuditLogReposit
         if setting is None:
             logger.warning(f"No storage setting found for provider: {provider.value}")
         return setting
-    
+
 
     async def reset_storage(self, id: str, data: StorageSettings) -> None:
         result = await super().update(id=id, data=data.model_dump())
