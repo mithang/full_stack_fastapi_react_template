@@ -26,10 +26,10 @@ async def seed_initial_data():
     if settings.fastapi_env != "development":
         logger.info("Seeding is only allowed in development environment. Skipping seeding.")
         return
-    
+
     if settings.mongo_db_name == "myapp":
         logger.warning("Using default database name 'myapp'. Please change it in production environments.")
-    
+
     if os.path.exists(create_temp_file(LOCK_FILE)):
         logger.info("Seeding has already been completed. Skipping...")
         return
@@ -100,7 +100,7 @@ async def seed_initial_data():
             )
             await user_repo.create(data=fake_user)
         logger.info("Seeded fake users.")
-    
+
     # Create lock file to indicate seeding is done
     with open(create_temp_file(LOCK_FILE), "w", encoding="utf-8") as f:
         f.write("seeding completed")
