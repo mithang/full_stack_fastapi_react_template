@@ -16,7 +16,6 @@ export function useFeatureCheck() {
             return false
         }
         if (!current_tenant?.features) {
-            console.log("No features found for current tenant.");
             return false;
         }
 
