@@ -52,4 +52,4 @@ class NotificationBannerService:
         if existing is not None and not _caller_may_access(existing.tenant_id, tenant_id):
             raise NotFoundException("NotificationBannerSetting", id)
         await self.repository.update_banner_setting(id, is_enabled, message)
-        
+
