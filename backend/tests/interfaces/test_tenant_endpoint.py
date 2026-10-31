@@ -14,7 +14,7 @@ from api.infrastructure.background.post_tenant_creation_task_service import Post
 def mock_post_tenant_service():
     with patch.object(PostTenantCreationTaskService, "_init_and_run", new_callable=AsyncMock) as mock_task:
         yield mock_task
-    
+
 # ------------------------
 # Mock Database for tenant tests
 # ------------------------
@@ -52,7 +52,7 @@ async def test_list_tenants_from_host(client: AsyncClient):
     assert response.status_code == 200
 
     data = TenantListDto.model_validate(response.json())
- 
+
     assert data.tenants == []
     assert data.total == 0
     assert data.hasNext == False
