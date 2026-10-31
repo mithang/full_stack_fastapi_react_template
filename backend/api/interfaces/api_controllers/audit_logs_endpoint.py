@@ -18,7 +18,7 @@ router = APIRouter(prefix="/audit-logs",  dependencies=[
         Depends(check_permissions_for_current_role(
             required_permissions=[
                 Permission.AUDIT_LOGS_VIEW_ONLY
-                
+
             ]
         )
     )]
@@ -79,7 +79,7 @@ async def download_audit_logs(
 ):
     if download_request.total_records <= 0:
         raise InvalidOperationException("Audit log download request must have at least one record.")
-    
+
     payload = WorkerPayloadDto[Dict[str, str | None]](
         data={
             "action": download_request.action if download_request.action else None,
