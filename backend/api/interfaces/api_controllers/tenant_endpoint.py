@@ -203,9 +203,9 @@ async def create_tenant(
     if current_user.tenant_id is not None:
         raise ForbiddenException("Tenant creation is restricted to host administrators.")
     tenant_id = await service.create_tenant(data)
-    
+
     response = CreateTenantResponseDto(id=str(tenant_id))
-    
+
     admin_user = CreateUserDto(
         email=data.admin_email,
         # Hash before enqueueing (iteration 1004): this DTO exists only
@@ -339,7 +339,7 @@ async def check_subdomain_availability(
     # as the search_by_subdomain GET above.
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
-    try: 
+    try:
         await service.find_by_subdomain(subdomain)
         is_available = False
     except TenantNotFoundException as e:
@@ -350,7 +350,7 @@ async def check_subdomain_availability(
     return SubdomainAvailabilityDto(is_available=is_available)
 
 
-@router.post("/{tenant_id}/update_dns", 
+@router.post("/{tenant_id}/update_dns",
             response_model=UpdateTenantResponseDto,
             description=
             f"""
@@ -387,7 +387,7 @@ async def update_tenant_dns_record(
         return UpdateTenantResponseDto(
             message="Your previous custom domain update is still in progress. Please wait until it is processed."
         )
-    
+
     if tenant.custom_domain_status == "active":
         return UpdateTenantResponseDto(
             message="Your custom domain is already active. If you want to change it, please contact support."
@@ -479,7 +479,7 @@ async def check_dns_status(
             },
             tenant_id=str(tenant_doc.id)
         )
-    
+
     if tenant_doc.custom_domain_status == "activation-progress":
         handle_tenant_dns_update.delay(
             payload=payload.model_dump_json()
@@ -487,14 +487,14 @@ async def check_dns_status(
         return UpdateTenantResponseDto(
             message="Your custom domain activation is still in progress. Please wait until it is processed."
         )
-    
+
     if tenant_doc.custom_domain_status == "active":
         return UpdateTenantResponseDto(
             message="Your custom domain is already active. No further action is needed."
         )
-    
+
     if tenant_doc.custom_domain_status == "failed":
-        
+
         handle_tenant_dns_update.delay(
             payload=payload.model_dump_json()
         )
@@ -565,7 +565,7 @@ async def get_tenant_features(
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
     return await tenant_service.get_features_by_tenant_id(tenant_id)
-    
+
 @router.patch("/{tenant_id}/update_feature", response_model=UpdateTenantResponseDto, status_code=status.HTTP_200_OK)
 async def update_tenant_feature(
     tenant_id: str,
@@ -645,11 +645,11 @@ async def activate_trial_plan(
         raise InvalidOperationException("No plans are configured. Please create a plan before activating a trial.")
 
     trial = list(filter(lambda p: p.trial_period_days is not None and p.trial_period_days > 0, all_plans.plans))
-    
+
     if not trial:
         logger.error("No trial plan is configured. Please create a plan with a trial period before activating a trial or update an existing plan.")
         raise InvalidOperationException("No trial plan is configured. Please create a plan with a trial period before activating a trial or update an existing plan.")
-    
+
     id = trial[0].id
     logger.debug(f"Trial plan found: {id}, activating for tenant ID: {tenant_id}")
     subscription_id = await subcription_plan_service.create_trial_plan_for_tenant(tenant_id, id)
