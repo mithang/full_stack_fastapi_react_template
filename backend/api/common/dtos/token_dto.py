@@ -43,7 +43,7 @@ class AccessTokenDto(BaseModel):
     token_type: str
     expires_in: datetime
 
-    
+
 class RefreshTokenDto(BaseModel):
     refresh_token: str
     refresh_token_expires_in: datetime
