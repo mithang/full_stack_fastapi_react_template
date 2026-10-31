@@ -45,9 +45,9 @@ class OllamaModels:
             if response.status_code != 200:
                 logger.error(f"Failed to fetch models from Ollama API: {response.status_code} - {response.text}")
                 raise Exception(f"Failed to fetch models from Ollama API: {response.status_code}")
-            
+
             data = response.json()
-            
+
             for item in data["models"]:
                 models.append(AIModelInfoDto(
                     name=item["name"],
@@ -62,12 +62,12 @@ class OllamaModels:
 
 
 class OllamaChat:
-    def __init__(self, 
-        user_id: str, 
-        username: str, 
-        model_name: str, 
-        current_session: str, 
-        local_ai_service: LocalAIService, 
+    def __init__(self,
+        user_id: str,
+        username: str,
+        model_name: str,
+        current_session: str,
+        local_ai_service: LocalAIService,
         tenant_id: str = None
         ):
         self.MAX_HISTORY = 10
@@ -84,7 +84,7 @@ class OllamaChat:
             "You are a helpful assistant talking to {username}.\n\n{history}\nUser: {question}\nAssistant:"
         )
         self.chain = self.prompt | self.llm
-        
+
 
     async def feed_previous_conversations(self, history_service: LocalAIService):
         is_session_valid = await history_service.is_session_exists(self.current_session)
@@ -109,7 +109,7 @@ class OllamaChat:
         for item in previous_histories:
             self.history.append(HumanMessage(content=item.query))
             self.history.append(AIMessage(content=item.response))
-    
+
 
     async def generate_response(self, question: str, background_tasks: BackgroundTasks):
         await self.feed_previous_conversations(self.local_ai_service)
