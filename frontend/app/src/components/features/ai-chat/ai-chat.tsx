@@ -398,7 +398,7 @@ export function AIChat() {
         // tenant arrival is safe.
     }, [searchParams, accessToken, current_tenant])
 
-    const generateId = () => Math.random().toString(36).substr(2, 9)
+    const generateId = () => Math.random().toString(36).slice(2, 11)
 
     const sendMessage = async () => {
         if (!input.trim() || chatState.isLoading) return
