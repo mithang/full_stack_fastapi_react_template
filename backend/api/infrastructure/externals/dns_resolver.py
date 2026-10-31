@@ -21,7 +21,7 @@ def _safe_log_value(value) -> str:
 class DnsResolver:
     def __init__(self, email_service: IEmailService):
         self.email_service = email_service
-    
+
     async def resolve(self, hostname: str, expected_target: str) -> bool:
         """
         Resolve the given domain to its DNS records.
@@ -56,7 +56,7 @@ class DnsResolver:
         #         )
 
         return True
-    
+
     async def notify_dns_status(self, user_info: UserDto,  hostname: str, is_success: bool, message: str):
         logger.info(f"Sending DNS status notification to {user_info.email} for hostname {_safe_log_value(hostname)} with status {'Success' if is_success else 'Failed'}")
         await self.email_service.send_email(
