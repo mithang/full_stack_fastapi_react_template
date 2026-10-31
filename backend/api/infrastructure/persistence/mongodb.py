@@ -45,8 +45,8 @@ class Database:
         self.models = models
         logger.debug("Database initializing...")
         self.is_tenant = False
-        
-    
+
+
     async def init_db(self, db_name: str, is_tenant: bool | None) -> None:
         self.db: AsyncDatabase = self.client[db_name]
         if self.models:
@@ -68,7 +68,7 @@ class Database:
     async def close(self) -> None:
         await self.client.close()
         logger.warning("Database connection has been closed.")
-    
+
     async def drop(self) -> None:
         await self.client.drop_database(self.db)
         logger.warning("Database has been deleted")
