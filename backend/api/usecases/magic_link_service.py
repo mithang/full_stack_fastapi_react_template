@@ -42,7 +42,7 @@ class EmailMagicLinkService:
                 # in the email. Fall back to the main domain, mirroring
                 # get_sso_redirect_uri's fallback for the same situation.
                 domain = tenant.custom_domain or tenant.subdomain or get_host_main_domain_name()
-                
+
             link = get_email_sharing_link(token=record.token, user_id=str(record.user_id), domain=domain, type="magic_link_login", tenant_id=str(record.tenant_id))
             html_content = magic_link_login_template(user_first_name=user_dto.first_name, magic_link=link)
             # The email IS the requested action, and the endpoint's contract
@@ -92,7 +92,7 @@ class EmailMagicLinkService:
         # into server stdout/logs.
         if record is None:
             return False
-        
+
         result = validate_hashed_value(value=user_id, hashed_value=token)
         if result:
             # A successful validation consumes every outstanding link
@@ -109,4 +109,4 @@ class EmailMagicLinkService:
                 await self.user_magic_link_repo.delete(id=str(link.id))
 
         return result
-        
+
