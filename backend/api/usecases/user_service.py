@@ -63,7 +63,7 @@ class UserService:
         if existing is None:
             raise UserNotFoundException(email)
         return existing
-    
+
     async def get_user_by_id(self, user_id: str, tenant_id: str | PydanticObjectId | None = None) -> User:
         """Get user by ID. Returns User model. Raises UserNotFoundException if not found."""
         existing = await self.user_repository.get(id=user_id)
@@ -128,9 +128,9 @@ class UserService:
         if not skip_password_hashing:
             user_data.password = hash_it(user_data.password)
         user_id = await self.user_repository.create(user_data)
-        
-        # Todo: Refactor this to use Celery task to Or fire and forget 
-        
+
+        # Todo: Refactor this to use Celery task to Or fire and forget
+
         # avoid circular import
         # from api.core.container import get_auth_service
 
@@ -141,7 +141,7 @@ class UserService:
         #     tenant_id=str(user_data.tenant_id),
         #     id=str(user_id)
         # )
-        # await auth_service.send_activation_email(welcome_email) 
+        # await auth_service.send_activation_email(welcome_email)
         return user_id
 
     async def update_user(self, user_id: str, user_data: UpdateUserDto, tenant_id: str | PydanticObjectId | None = None) -> User | None:
@@ -205,7 +205,7 @@ class UserService:
         }
         logger.info(f"Updating user {user_id} with data: {log_doc}")
         return await self.user_repository.update(user_id=user_id, data=UpdateUserDto(**doc))
-     
+
 
     async def delete_user(self, user_id: str, tenant_id: str | PydanticObjectId | None = None) -> None:
         """Delete user by ID. Returns None otherwise, Raises UserNotFoundException if user does not exist."""
@@ -223,7 +223,7 @@ class UserService:
             raise UserNotFoundException(user_id)
         if await self.user_repository.delete(user_id=user_id) is False:
             raise UserNotFoundException(user_id)
-        
+
 
     async def update_user_password(self, user_id: str, new_password: str) -> User | None:
         """Update user password by ID. Returns updated User model. Raises UserNotFoundException if user does not exist."""
@@ -247,7 +247,7 @@ class UserService:
     async def total_count(self, params: Any | None = None) -> int:
         """Get total user count."""
         return await self.user_repository.count(params=params)
-    
+
     async def request_password_reset(self, email: EmailStr) -> UserPasswordReset:
         """Set password reset for user by ID. Returns None otherwise, Raises InvalidOperationException on failure."""
         try:
@@ -283,14 +283,14 @@ class UserService:
         # stayed usable. Delete by the user_id field instead, via the
         # repository's delete_by_user_id (which also audits the delete).
         return await self.user_password_reset_repository.delete_by_user_id(user_id=user_id)
-    
+
     async def check_email_exists(self, email: EmailStr) -> bool:
         """Check if email exists. Returns boolean."""
         existing = await self.user_repository.single_or_none(email=email)
         return existing is not None
-    
+
     async def aggregate(self, pipeline: list[dict]) -> list[TimeSeriesDto]:
         """Aggregate users based on the provided pipeline. Returns an async list[TimeSeriesDto]."""
         return await self.user_repository.aggregate(pipeline, projection_model=TimeSeriesDto)
-    
+
 
