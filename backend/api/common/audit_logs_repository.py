@@ -39,7 +39,7 @@ class AuditLogRepository:
         await capture_audit_log(audit_log)
 
     async def list_audit_logs(self, tenant_id: str | None = None, limit: int = 10, skip: int = 0, action: Optional[AuditActionType] = None) -> AuditLogListDto:
-       
+
         files = await self._get_files_matching_pattern(tenant_id=tenant_id)
 
         total = 0
@@ -148,9 +148,9 @@ class AuditLogRepository:
                 # or directory-matching file must not abort the report;
                 # skip it and keep the entries from the readable files.
                 continue
-    
+
         if len(results) == 0:
             logger.info("No audit logs found.")
             return []
-    
+
         return results[::-1]  # return newest first
