@@ -46,5 +46,3 @@ class UserMagicLinkRepository(BaseRepository[UserMagicLink], AuditLogRepository)
             tenant_id=None
         ))
         return res
-    
-    
