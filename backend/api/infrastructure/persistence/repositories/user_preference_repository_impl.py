@@ -15,7 +15,7 @@ def _safe_log_keys(keys) -> list[str]:
     # extra log lines.
     return [str(k).replace("\r", " ").replace("\n", " ") for k in sorted(keys)]
 
-class UserPreferenceRepository(BaseRepository[UserPreference], AuditLogRepository): 
+class UserPreferenceRepository(BaseRepository[UserPreference], AuditLogRepository):
     def __init__(self):
         super().__init__(UserPreference)
 
