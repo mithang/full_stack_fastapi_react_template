@@ -117,7 +117,6 @@ export function CreateNewUserDialog({ open, onDismiss }: CreateNewUserDialogProp
     };
 
     function onDismissDialog(flag: boolean) {
-        console.log("onDismissDialog called with flag:", flag);
         if (!flag) onDismiss();
     }
     return (
