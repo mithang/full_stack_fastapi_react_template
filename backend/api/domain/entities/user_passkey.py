@@ -47,4 +47,3 @@ class Challenges(ApiBaseModel):
                 expireAfterSeconds=300  # Document expires 5 minutes after 'expired_at'
             )
         ]
-    
