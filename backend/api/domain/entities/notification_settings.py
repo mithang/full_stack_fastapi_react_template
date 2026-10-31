@@ -13,9 +13,9 @@ class NotificationBannerSetting(ApiBaseModel):
         if isinstance(value, PydanticObjectId):
             return str(value)
         if isinstance(value, datetime):
-            return str(value)  
+            return str(value)
         return value
-    
+
     class Settings:
         name = "notification_banner_settings"
         indexes = ["tenant_id"]
