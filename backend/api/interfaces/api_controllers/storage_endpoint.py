@@ -130,7 +130,7 @@ async def configure_storage(
             # toasted "updated successfully" for a save that never
             # happened. A real 400 makes the client throw instead.
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Tenant ID is missing in the current user context.")
-        
+
         configuration.updated_by_user_id = current_user.id
         await setting_service.configure_storage(setting=configuration, tenant_id=current_user.tenant_id)
         return status.HTTP_201_CREATED
