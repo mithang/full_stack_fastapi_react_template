@@ -21,7 +21,7 @@ class UserPreferenceService:
     async def get_preferences(self, user_id: str) -> UserPreference | None:
         user_pref = await self.user_preference_repository.get_preferences(user_id=user_id)
         return user_pref
-        
+
 
     async def set_preferences(self, user_id: str, payload: dict[str, Any]) -> None:
         # Log preference keys only, not values: values are user content and
