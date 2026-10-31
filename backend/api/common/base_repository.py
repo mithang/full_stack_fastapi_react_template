@@ -22,7 +22,7 @@ class BaseRepository(Generic[T]):
     async def single_or_none(self, **kwargs) -> Optional[T]:
         result = await self.model.find(kwargs).first_or_none()
         return result
-    
+
     async def get(self, id: str) -> Optional[T]:
         # Strip before conversion: PydanticObjectId() requires exactly
         # 24 hex chars, so a padded id (copied/pasted, %20-encoded in
@@ -65,11 +65,11 @@ class BaseRepository(Generic[T]):
     async def list(self) -> List[T]:
         results = await self.model.find_all().to_list()
         return results
-    
-    async def search(self, query: Dict[str, Any], limit: int = 100) -> List[T]:      
+
+    async def search(self, query: Dict[str, Any], limit: int = 100) -> List[T]:
         results = await self.model.find(query).to_list(length=limit)
         return results
-    
+
     async def create(self, data: dict) -> T:
         doc = self.model(**data)
         result = await doc.insert()
@@ -101,7 +101,7 @@ class BaseRepository(Generic[T]):
         await doc.delete()
         logger.info(f"Document with id: {id} deleted successfully.")
         return True
-    
+
     async def count(self, params: Optional[Any] | None = None) -> int:
         if params:
             return await self.model.find(params).count()
@@ -113,6 +113,6 @@ class BaseRepository(Generic[T]):
         else:
             data = self.model.aggregate(pipeline, projection_model=projection_model)
             return await data.to_list()
-        
+
     async def collection_name(self) -> str:
         return self.model.get_collection_name()
