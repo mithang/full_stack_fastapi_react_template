@@ -99,7 +99,6 @@ export function CreateNewRoleDialog({ open, onDismiss }: CreateNewRoleDialogProp
     };
 
     function onDismissDialog(flag: boolean) {
-        console.log("onDismissDialog called with flag:", flag);
         if (!flag) onDismiss();
     }
     return (
