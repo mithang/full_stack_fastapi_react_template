@@ -11,7 +11,7 @@ env:
 jobs:
   build-and-push-fastapi:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -74,7 +74,7 @@ jobs:
 
   push-fsrapp-worker-celery:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -125,7 +125,7 @@ jobs:
           echo "Celery image digest: ${{ steps.build-celery.outputs.digest }}"
           echo "Celery tags created:"
           echo "${{ steps.meta-celery.outputs.tags }}"
-      
+
       - name: Trigger deployment fsrappworker
         run: |
           echo "Triggering deployment via Coolify webhook"
