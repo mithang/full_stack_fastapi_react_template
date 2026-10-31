@@ -39,7 +39,7 @@ class CoolifyApp:
         """
         if settings.coolify_enabled is False:
             raise CoolifyIntegrationException("Coolify integration is not enabled in settings.")
-        
+
         url = f"{self.api_url}/applications/{self.application_id}"
         try:
             async with httpx.AsyncClient() as client:
@@ -60,7 +60,7 @@ class CoolifyApp:
 
         data: CoolifyAppDto = response.json()
         return CoolifyAppDto(**data)
-            
+
     async def update_domain(self, data: UpdateDomainDto) -> bool:
         """
             Update the Coolify application with the new domain.
@@ -73,7 +73,7 @@ class CoolifyApp:
         """
         if settings.coolify_enabled is False:
             raise CoolifyIntegrationException("Coolify integration is not enabled in settings.")
-        
+
         try:
             app_data = await self.get_app_details()
             domains = [d.strip() for d in app_data.fqdn.split(",") if d.strip()]
@@ -83,7 +83,7 @@ class CoolifyApp:
             elif data.mode == "remove":
                 if data.domain in domains:
                     domains.remove(data.domain)
-            
+
             new_domains = ",".join(domains)
             logger.debug(f"Updating Coolify app domains to: {_safe_log_value(new_domains)}")
 
@@ -116,7 +116,7 @@ class CoolifyApp:
         """
         if settings.coolify_enabled is False:
             raise CoolifyIntegrationException("Coolify integration is not enabled in settings.")
-        
+
         url = f"{self.api_url}/applications/{self.application_id}/restart"
         try:
             async with httpx.AsyncClient() as client:
