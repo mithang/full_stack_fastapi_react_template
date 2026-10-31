@@ -18,5 +18,5 @@ class AppConfigurationDto(BaseModel):
     branding: Optional[BrandingDto] = None
 
 
-    
+
 
