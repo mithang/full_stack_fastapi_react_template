@@ -42,7 +42,7 @@ class ProductService:
             # str(e) would leak Stripe/resolver internals to the client.
             raise ProductException("Failed to list products.") from e
         return ProductListDto(products=[product for product in result.data],  has_more=result.has_more)
-    
+
     async def get_product_by_id(self, product_id: str,  scope: ScopeType) -> ProductDto:
         # Strip before the Stripe lookup: unlike ObjectId path ids,
         # which BaseRepository.get() now strips centrally, Stripe
@@ -71,7 +71,7 @@ class ProductService:
             raise ProductException(f"Failed to retrieve product {_safe_log_value(product_id)}.") from e
         if not product:
             raise ProductNotFoundException(f"Product with ID {_safe_log_value(product_id)} not found.")
-        return ProductDto(id=product.id, name=product.name, description=product.description, active=product.active, tax_code=product.tax_code) 
+        return ProductDto(id=product.id, name=product.name, description=product.description, active=product.active, tax_code=product.tax_code)
 
     async def create_product(self, product_dto: CreateProductDto, scope: ScopeType):
         try:
@@ -94,7 +94,7 @@ class ProductService:
             existing_product = await sc.v1.products.retrieve_async(id=product_id)
             if not existing_product:
                 raise ProductNotFoundException(f"Product with ID {_safe_log_value(product_id)} not found.")
-            
+
             sc = await self.stripe_resolver.get_stripe_client(scope=scope)
             params = product_dto.model_dump()
             await sc.v1.products.update_async(id=product_id, params=params)
