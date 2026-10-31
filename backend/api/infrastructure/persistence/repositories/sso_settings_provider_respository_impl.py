@@ -13,19 +13,19 @@ class SSOSettingsProviderRepository(BaseRepository[SSOSettings], AuditLogReposit
     async def get_by_id(self, id: str) -> SSOSettings | None:
         sso_settings: SSOSettings = await self.get(id=id)
         return sso_settings
-    
+
     async def update_sso_settings(self, id: str, data: SSOSettings) -> SSOSettings | None:
         updated_sso_settings: SSOSettings | None = await super().update(id=id, data=SSOSettings.model_dump(data, exclude_unset=True))
         return updated_sso_settings
-    
+
     async def create_sso_settings(self, data: SSOSettings) -> PydanticObjectId:
         new_sso_settings: SSOSettings = await super().create(data=SSOSettings.model_dump(data))
         return new_sso_settings.id
-    
+
     async def delete_sso_settings(self, id: str) -> bool:
         result: bool =  await super().delete(id=id)
         return result
-    
+
     async def list_sso_settings(self, tenant_id: PydanticObjectId | None = None) -> list[SSOSettings]:
         # Tenant-scoped listing: no filter means the historic global view
         # (host callers and the SSO login flows, which resolve a provider
