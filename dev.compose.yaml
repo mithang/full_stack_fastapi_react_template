@@ -34,7 +34,7 @@ services:
     restart: unless-stopped
     # networks:
     #   - fastapi_network
-  
+
 
 volumes:
   mongodb_data:
