@@ -143,7 +143,7 @@ class UserResendActivationEmailRequestDto(BaseModel):
     email: EmailStr
     id: str
     first_name: str
-    tenant_id: Optional[str] = None 
+    tenant_id: Optional[str] = None
 
 class UserProfileImageUpdateDto(BaseModel):
     image_url: str
