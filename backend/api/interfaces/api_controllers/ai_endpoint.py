@@ -202,8 +202,8 @@ async def ask_ai(
 
     if query.model_name is None or query.model_name.strip() == "":
         raise InvalidOperationException("Model name cannot be empty")
-    
- 
+
+
     chat = OllamaChat(
         username=current_user.first_name,
         user_id=current_user.id,
