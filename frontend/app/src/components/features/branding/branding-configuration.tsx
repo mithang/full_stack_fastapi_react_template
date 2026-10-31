@@ -30,6 +30,7 @@ import {
     FormMessage
 } from "@/components/ui/form";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import type { UpdateBrandingDto } from "@/api";
 import ColorField from "@/components/features/branding/color-fields";
 
@@ -206,12 +207,12 @@ export default function BrandingConfiguration() {
             // which passed client validation and then failed server-side
             // with "Unsupported file type" after the upload round-trip.
             if (file.type !== 'image/png' && file.type !== 'image/jpeg') {
-                alert('Please select a PNG or JPEG image file');
+                toast.error('Please select a PNG or JPEG image file');
                 return;
             }
             // Validate file size (max 5MB)
             if (file.size > 5 * 1024 * 1024) {
-                alert('File size must be less than 5MB');
+                toast.error('File size must be less than 5MB');
                 return;
             }
             setLogoFile(file);
