@@ -40,7 +40,7 @@ class FileRetrieval:
                 return await azure.generate_read_url(file_key, expires_in)
             else:
                raise StorageNotEnabledException()
-            
+
         except StorageNotEnabledException as se:
 
             logger.warning(f"Unsupported storage provider: {str(se)}, Hence using default S3 storage")
