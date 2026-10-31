@@ -12,7 +12,7 @@ class RecurringDto(BaseModel):
    # it. No upper bound is invented — the form sets none.
    interval_count: int = Field(default=1, ge=1, description="Number of intervals between each billing cycle")
    usage_type: Literal["licensed", "metered"] = Field(default="licensed", description="Configures how the quantity per period should be determined. Can be either metered or licensed. licensed automatically bills the quantity set when adding it to a subscription. metered aggregates the total usage based on usage records. Defaults to licensed.")
-   
+
 class CreatePricingDto(BaseModel):
    # ISO currency codes are always 3 letters and the sibling plan/stripe
    # currency fields are already capped to exactly 3; an uncapped value
