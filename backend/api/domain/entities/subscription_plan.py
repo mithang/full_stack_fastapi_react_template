@@ -13,14 +13,14 @@ class SubscriptionPlan(ApiBaseModel):
     is_trial: bool = False
     actor: Literal["tenant", "end_user"] = "tenant" # who it is applied to, If end_userm, then user_id must be set
     user_id: PydanticObjectId | None = None  # The end user who has this subscription, if applicable
-    plan_id: str  # Corresponding Stripe Price ID    
+    plan_id: str  # Corresponding Stripe Price ID
 
     @field_serializer("id", "tenant_id", "created_at", "updated_at", "user_id")
     def serialize_as_str(self, value: datetime | PydanticObjectId | None) -> str | None:
        if value is None:
            return None
        return str(value)
-    
+
     class Settings:
         name = "subscription_plans"
         indexes = [
