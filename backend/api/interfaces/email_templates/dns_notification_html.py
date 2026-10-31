@@ -16,15 +16,15 @@ def dns_notification_email(user_first_name: str, hostname: str, status: str) -> 
             <p>Hello {user_first_name},</p>
             <p>We wanted to inform you about the status of your DNS configuration:</p>
             <p>Status: {status}</p>
-            
+
             <div style="text-align: center; margin: 30px 0;">
-                <a href="{hostname}" 
+                <a href="{hostname}"
                 style="background-color: #007bff; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block;"
                   target="_blank" rel="noopener">
                     View DNS Configuration Details
                 </a>
             </div>
-            
+
             <p>Or copy and paste this link in your browser:</p>
             <p style="word-break: break-all; color: #007bff;">{hostname}</p>
 
