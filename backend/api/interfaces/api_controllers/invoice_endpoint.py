@@ -61,5 +61,3 @@ async def list_invoices(
         scope = "tenant"
 
     return await billing_service.list_invoices(scope=scope)
-    
-    
