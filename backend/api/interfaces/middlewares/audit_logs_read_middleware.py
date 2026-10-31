@@ -93,4 +93,3 @@ class AuditLogsReadMiddleware(BaseHTTPMiddleware):
             return response
 
         return await call_next(request)
-        
