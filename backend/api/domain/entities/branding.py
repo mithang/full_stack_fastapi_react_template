@@ -12,39 +12,39 @@ class ThemeColors(BaseModel):
     """
     background: str = Field("oklch(1 0 0)", description="--background")
     foreground: str = Field("oklch(0.145 0 0)", description="--foreground")
-    
+
     card: str = Field("oklch(1 0 0)", description="--card")
     card_foreground: str = Field("oklch(0.145 0 0)", description="--card-foreground")
-    
+
     popover: str = Field("oklch(1 0 0)", description="--popover")
     popover_foreground: str = Field("oklch(0.145 0 0)", description="--popover-foreground")
-    
+
     primary: str = Field("oklch(0.205 0 0)", description="--primary")
     primary_foreground: str = Field("oklch(0.985 0 0)", description="--primary-foreground")
-    
+
     secondary: str = Field("oklch(0.97 0 0)", description="--secondary")
     secondary_foreground: str = Field("oklch(0.205 0 0)", description="--secondary-foreground")
-    
+
     muted: str = Field("oklch(0.97 0 0)", description="--muted")
     muted_foreground: str = Field("oklch(0.556 0 0)", description="--muted-foreground")
-    
+
     accent: str = Field("oklch(0.97 0 0)", description="--accent")
     accent_foreground: str = Field("oklch(0.205 0 0)", description="--accent-foreground")
-    
+
     destructive: str = Field("oklch(0.577 0.245 27.325)", description="--destructive")
     destructive_foreground: str = Field("oklch(0.985 0 0)", description="Implied white for contrast")
 
     border: str = Field("oklch(0.922 0 0)", description="--border")
     input: str = Field("oklch(0.922 0 0)", description="--input")
     ring: str = Field("oklch(0.708 0 0)", description="--ring")
-    
+
     # Charts
     chart_1: str = Field("oklch(0.646 0.222 41.116)", description="--chart-1")
     chart_2: str = Field("oklch(0.6 0.118 184.704)", description="--chart-2")
     chart_3: str = Field("oklch(0.398 0.07 227.392)", description="--chart-3")
     chart_4: str = Field("oklch(0.828 0.189 84.429)", description="--chart-4")
     chart_5: str = Field("oklch(0.769 0.188 70.08)", description="--chart-5")
-    
+
     # Sidebar
     sidebar: str = Field("oklch(0.985 0 0)", description="--sidebar")
     sidebar_foreground: str = Field("oklch(0.145 0 0)", description="--sidebar-foreground")
@@ -98,13 +98,13 @@ class ThemeConfig(BaseModel):
     Master configuration containing global settings and specific mode palettes.
     """
     radius: str = Field("0.625rem", description="--radius")
-    
+
     # Light mode defaults match the ThemeColors defaults
     light: ThemeColors = Field(default_factory=ThemeColors)
-    
+
     # Dark mode defaults explicitly set to the .dark values provided
     dark: ThemeColors = Field(default_factory=get_dark_theme_defaults)
-    
+
 LogoType = Literal["image/jpeg", "image/png"]
 
 class ContactInfo(BaseModel):
@@ -136,7 +136,7 @@ class Branding(ApiBaseModel):
     app_name: str = "SaaS Org"
     contact_info: Optional[ContactInfo] = None
     theme_config: ThemeConfig = Field(default_factory=ThemeConfig)
-    
+
     @field_serializer("id", "created_at", "updated_at", "tenant_id")
     def serialize_id(self, value: PydanticObjectId | datetime | None) -> str:
         if isinstance(value, PydanticObjectId):
