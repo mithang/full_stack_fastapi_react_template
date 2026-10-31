@@ -62,7 +62,7 @@ class PostTenantCreationTaskService(IBackgroundTask):
             logger.error(f"Email already exists: {eae} - Admin user creation skipped.")
         except UserNotFoundException as uex:
             logger.error(f"User not found: {uex} - Some issue in admin user creation.")
-            
+
         except RoleNotFoundException as rex:
             logger.error(f"Role not found: {rex}")
         except Exception as ex:
