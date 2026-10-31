@@ -69,7 +69,7 @@ async def get_registered_passkeys(
             changes={"Info": f"Retrieved {len(res)} passkeys for user {current_user.email}."},
             user_id=current_user.id,
             tenant_id=current_user.tenant_id
-        )   
+        )
     )
     return res
 
@@ -108,7 +108,7 @@ async def delete_registered_passkey(
                 changes={"Info": f"Deleted passkey {credential_id} for user {current_user.email}."},
                 user_id=current_user.id,
                 tenant_id=current_user.tenant_id
-            )   
+            )
         )
     except Exception as e:
         await audit_log_service.create_audit_log(
@@ -118,7 +118,7 @@ async def delete_registered_passkey(
                changes={"Info": f"Failed to delete passkey {credential_id} for user {current_user.email}."},
                user_id=current_user.id,
                tenant_id=current_user.tenant_id
-           )   
+           )
         )
         raise e
     return None
