@@ -19,7 +19,6 @@ let seeded = false;
 
 async function refreshOnce() {
     const url = `${apiBaseUrl}/api/v1/account/refresh`;
-    console.log("Worker fetching new token with tenantId:", tenantId);
     let response: Response;
     try {
         response = await fetch(url, {
@@ -64,10 +63,8 @@ self.addEventListener("message", (event: MessageEvent<{ tenantId: string | null;
         apiBaseUrl = event.data.apiBaseUrl;
     }
     if (event.data && event.data.tenantId) {
-        console.log("Worker received tenantId:", event.data.tenantId);
         tenantId = event.data.tenantId;
     } else if (event.data && event.data.tenantId === null) {
-        console.log("Worker received tenantId removal");
         tenantId = null;
     }
     // First message is the provider's seed (posted right after the
