@@ -13,7 +13,7 @@ def notify_email_change_template_html(user_first_name: str) -> str:
             <p>This is a confirmation that your email has been successfully changed.</p>
 
             <p>If you did not make this change, please contact our support team immediately.</p>
-            
+
             <hr style="margin: 30px 0; border: none; border-top: 1px solid #eee;">
             <p style="font-size: 12px; color: #666;">
                 If you didn't request an email change, please contact support immediately.
