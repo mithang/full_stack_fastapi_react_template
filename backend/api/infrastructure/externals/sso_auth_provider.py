@@ -15,7 +15,7 @@ class SSOAuthProvider:
         self.sso_settings_service: SSOSettingsService = sso_settings_service
         self.tenant_service: TenantService = tenant_service
         self.redirect_uri_to_app = None
-    
+
     async def _provider_instance(self, provider_name: SSOProvider, sso_provider: SSOSettings) -> fastapi_sso.SSOBase:
         domain = None
         if sso_provider.tenant_id:
@@ -131,7 +131,7 @@ class SSOAuthProvider:
                 )
             case _:
                 raise InvalidOperationException(f"SSO provider '{provider_name}' is not supported.")
-            
+
         return sso
 
 
@@ -150,7 +150,7 @@ class SSOAuthProvider:
         redirect = await sso.get_login_redirect()
         logger.info(f"Redirecting to SSO provider: {provider_name} for authentication")
         return redirect
-    
+
 
     async def callback(self, provider_name: SSOProvider, req: Request) -> fastapi_sso.OpenID:
         sso_provider = await self._get_sso_settings(provider_name)
@@ -162,7 +162,7 @@ class SSOAuthProvider:
         # in server logs (the api logger runs at DEBUG in all environments).
         logger.debug(f"SSO user retrieved for provider: {provider_name} (id: {getattr(user, 'id', 'unknown')})")
         return user
-    
+
     def get_redirect_uri_to_app(self) -> str:
         logger.debug(f"Retrieving redirect URI to app: {self.redirect_uri_to_app}")
         if not self.redirect_uri_to_app:
