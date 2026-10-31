@@ -175,7 +175,6 @@ const encodePathSegment = (path: string): string =>
   encodeURI(path).replace(/\?/g, "%3F").replace(/#/g, "%23");
 
 export function getApiClient(accessToken?: string) {
-  // console.log("Getting API client with access token:", accessToken);
   const tenant = getTenant();
   const apiBase = getApiBaseUrl();
   if (!accessToken) {
