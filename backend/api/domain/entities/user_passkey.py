@@ -17,7 +17,7 @@ class Credential(BaseModel):
     transports: list[AuthenticatorTransport] = []
     created_at: datetime
     last_used_at: Optional[datetime] = None
-    
+
 
 class UserPasskey(ApiBaseModel):
     user_email: EmailStr
