@@ -34,7 +34,7 @@ def _assert_read_scope(current_user: CurrentUser, request_tenant_id) -> None:
 
 
 router = APIRouter(
-    prefix="/invoices", 
+    prefix="/invoices",
     dependencies=[
         Depends(check_feature_access(feature_name=Feature.STRIPE)),
         Depends(check_permissions_for_current_role(required_permissions=[Permission.MANAGE_BILLING]))
