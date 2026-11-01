@@ -51,19 +51,24 @@ async def create_tenant(client: AsyncClient, mock_post_tenant_service) -> Create
     assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
     assert "permissions-policy" in response.headers
     # Presence alone would not catch the value being weakened: lock
-    # the five most sensitive directives as disabled, as on the
+    # the six most sensitive directives as disabled, as on the
     # permissions GET in iteration 1865 and the user/role-create POSTs
     # in iterations 1866-1867, using substring checks so later
     # additions to the list do not break this test. The full value
     # lives in _SECURITY_HEADERS. The fifth, clipboard-read,
     # is safe to lock here: the SPA never reads the clipboard
     # (only writeText calls, verified by grep in iteration 1914).
+    # The sixth, display-capture, is safe to lock here: the SPA
+    # never calls getDisplayMedia (verified by grep this run), so
+    # no screen-sharing flow exists to break, and a compromised
+    # script could otherwise capture the screen on the app origin.
     permissions_policy = response.headers["permissions-policy"]
     assert "camera=()" in permissions_policy
     assert "microphone=()" in permissions_policy
     assert "geolocation=()" in permissions_policy
     assert "payment=()" in permissions_policy
     assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
     mock_post_tenant_service.assert_awaited()
 
     return CreateUserResponseDto.model_validate(response.json())
