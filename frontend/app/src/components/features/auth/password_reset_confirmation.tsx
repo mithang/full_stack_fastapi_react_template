@@ -136,6 +136,7 @@ export function PasswordResetConfirmation() {
                                             <Input
                                                 type="password"
                                                 placeholder="Enter your new password"
+                                                autoComplete="new-password"
                                                 disabled={isLoading}
                                                 {...field}
                                             />
@@ -154,6 +155,7 @@ export function PasswordResetConfirmation() {
                                             <Input
                                                 type="password"
                                                 placeholder="Confirm your new password"
+                                                autoComplete="new-password"
                                                 disabled={isLoading}
                                                 {...field}
                                             />
