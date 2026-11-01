@@ -77,6 +77,12 @@ async def test_create_tenant_as_host(client: AsyncClient, mock_post_tenant_servi
     # Verify the user was created by listing users again
     response = await client.get("/tenants/?skip=0&limit=10")
     assert response.status_code == 200
+    # Same no-store lock as the tenant list GET (iteration 1786):
+    # this verification GET hits the same list endpoint, which sets
+    # both headers unconditionally, but asserted only status 200, so
+    # deleting the header lines would have gone uncaught here.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
     data = TenantListDto.model_validate(response.json())
     assert data.total == 1
     assert data.tenants[0].id == new_tenant_response.id
