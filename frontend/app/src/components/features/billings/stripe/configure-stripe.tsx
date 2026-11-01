@@ -368,7 +368,7 @@ export function ConfigureStripe() {
                                         value={selectedMode}
                                         onValueChange={(value) => setValue("mode", value as "one_time" | "recurring" | "both")}
                                     >
-                                        <SelectTrigger>
+                                        <SelectTrigger id="mode">
                                             <SelectValue placeholder="Select payment mode" />
                                         </SelectTrigger>
                                         <SelectContent>
