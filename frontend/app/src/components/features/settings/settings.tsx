@@ -260,7 +260,7 @@ export function Settings() {
                                                 value={formData.region}
                                                 onValueChange={(value) => updateField('region', value)}
                                             >
-                                                <SelectTrigger>
+                                                <SelectTrigger id="region">
                                                     <SelectValue placeholder="Select AWS region" />
                                                 </SelectTrigger>
                                                 <SelectContent>
@@ -393,7 +393,7 @@ export function Settings() {
                                                 defaultValue={getStorageConfig("azure_blob")?.region}
                                                 onValueChange={(value) => updateField('region', value)}
                                             >
-                                                <SelectTrigger>
+                                                <SelectTrigger id="azure-region">
                                                     <SelectValue placeholder="Select Azure region" />
                                                 </SelectTrigger>
                                                 <SelectContent>
