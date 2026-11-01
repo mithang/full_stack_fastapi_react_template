@@ -22,7 +22,7 @@ export function PageHeader({ title, subtitle, cta }: PageHeaderProps) {
                 {cta.label}
             </Button>
             }
-            {cta && <Button onClick={cta.onClick} disabled={cta.disabled} className="sm:hidden">
+            {cta && <Button onClick={cta.onClick} disabled={cta.disabled} className="sm:hidden" aria-label={cta.label}>
                 {cta.icon ? <>{cta.icon}</> : <Plus className="w-4 h-4" />}
             </Button>}
         </header>
