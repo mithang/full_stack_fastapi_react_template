@@ -180,5 +180,13 @@ async def test_create_role_with_default_permissions_in_host(client: AsyncClient)
     # Verify the role was created by listing roles again
     response = await client.get(f"/roles/{new_role_response.id}")
     assert response.status_code == 200
+    # The endpoint comment requires this GET never to be served from a
+    # browser or proxy cache (it returns a single role's name and
+    # permissions), but no test locked the headers in — deleting the
+    # two header lines would have gone uncaught, as with the pre-update
+    # single-role GET in iteration 1793 and the single-role GET in
+    # iteration 1790.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
     data = RoleDto.model_validate(response.json())
     assert data.permissions == [Permission.USER_VIEW_ONLY, Permission.ROLE_VIEW_ONLY]
