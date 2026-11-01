@@ -173,6 +173,7 @@ export default function ColorField({
                                 />
                                 <input
                                     type="color"
+                                    aria-label={`Choose ${label} color`}
                                     value={hexColor}
                                     onChange={handleColorChange}
                                     className="w-10 h-10 rounded border cursor-pointer"
