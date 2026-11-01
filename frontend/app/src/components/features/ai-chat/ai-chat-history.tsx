@@ -89,7 +89,7 @@ export function AIChatHistory({ mobile }: AIChatHistoryProps) {
                             onValueChange={(value) => {
                                 navigate(`?session_id=${value}`)
                             }}>
-                            <SelectTrigger className="w-full">
+                            <SelectTrigger className="w-full" aria-label="Show History">
                                 <SelectValue placeholder="Show History" />
                             </SelectTrigger>
                             <SelectContent>
