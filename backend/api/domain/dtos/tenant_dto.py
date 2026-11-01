@@ -21,6 +21,28 @@ class TenantDto(BaseModel):
     subscription_id: Optional[str] | None
 
 
+class PublicTenantDto(BaseModel):
+    # Narrowed shape for the unauthenticated tenant-search routes
+    # (search_by_name / search_by_subdomain), which exist so the
+    # pre-login tenant-selection page can resolve a tenant by name.
+    # Those callers only need identity and domain fields (id, name,
+    # subdomain, custom_domain) to redirect; the full TenantDto also
+    # carries features and subscription_id, and feature enablement is
+    # treated as sensitive elsewhere (the /{tenant_id}/features GET
+    # requires HOST_MANAGE_TENANTS plus a tenant-scope check), while
+    # subscription_id is billing data. Returning the full DTO from a
+    # public route leaked both to anyone who could guess a tenant
+    # name or subdomain. Authenticated list/detail routes keep
+    # returning the full TenantDto, so admin UIs (tenant table,
+    # subscription management) are unaffected.
+    id: Optional[str]
+    name: str
+    subdomain: Optional[str] | None
+    is_active: bool
+    custom_domain: Optional[str] | None
+    custom_domain_status: Literal["active", "failed", "activation-progress"] = "failed"
+
+
 class CreateTenantDto(BaseModel):
     # The UI sends the subdomain as the tenant name (create-new-tenant
     # dialog) and the SSO/register auto-creation path sends the

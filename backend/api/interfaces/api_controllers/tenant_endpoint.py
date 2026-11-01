@@ -6,7 +6,7 @@ from api.common.exceptions import ApiBaseException, ForbiddenException, InvalidO
 from api.common.utils import get_host_main_domain_name, get_logger, get_utc_now
 from api.core.container import    get_billing_record_service, get_subscription_plan_service, get_tenant_service
 from api.core.exceptions import InvalidSubdomainException, TenantNotFoundException
-from api.domain.dtos.tenant_dto import CreateTenantResponseDto, FeatureDto, SubdomainAvailabilityDto, TenantDto, TenantListDto, CreateTenantDto, UpdateTenantDto, UpdateTenantResponseDto
+from api.domain.dtos.tenant_dto import CreateTenantResponseDto, FeatureDto, PublicTenantDto, SubdomainAvailabilityDto, TenantDto, TenantListDto, CreateTenantDto, UpdateTenantDto, UpdateTenantResponseDto
 from api.domain.dtos.user_dto import CreateUserDto
 from api.domain.entities.tenant import Subdomain, Tenant
 from api.domain.enum.feature import Feature
@@ -292,13 +292,13 @@ async def delete_tenant(
 # The literal "/search_by_name/" prefix keeps this from shadowing
 # the search_by_subdomain / check_subdomain routes, and it is the
 # last segment, so nothing after it can be swallowed.
-@router.get("/search_by_name/{name:path}", response_model=TenantDto, status_code=status.HTTP_200_OK)
+@router.get("/search_by_name/{name:path}", response_model=PublicTenantDto, status_code=status.HTTP_200_OK)
 async def search_by_name(
     name: str,
     response: Response,
     service: TenantService = Depends(get_tenant_service)
 ):
-    # This GET returns a full tenant record, so it must never be served
+    # This GET returns a public tenant record, so it must never be served
     # from a browser or proxy cache: a cached 200 could serve one
     # tenant's record to another admin after an account switch on a
     # shared machine, or hide freshly updated tenant details — the
@@ -306,16 +306,18 @@ async def search_by_name(
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
     tenant = await service.find_by_name(name)
-    return TenantDto(**tenant.model_dump())
+    # Public shape only: features and subscription_id are withheld
+    # from this unauthenticated route (see PublicTenantDto).
+    return PublicTenantDto(**tenant.model_dump())
 
 
-@router.get("/search_by_subdomain/{subdomain}", response_model=TenantDto, status_code=status.HTTP_200_OK)
+@router.get("/search_by_subdomain/{subdomain}", response_model=PublicTenantDto, status_code=status.HTTP_200_OK)
 async def search_by_subdomain(
     subdomain: Subdomain,
     response: Response,
     service: TenantService = Depends(get_tenant_service)
 ):
-    # This GET returns a full tenant record, so it must never be served
+    # This GET returns a public tenant record, so it must never be served
     # from a browser or proxy cache: a cached 200 could serve one
     # tenant's record to another admin after an account switch on a
     # shared machine, or hide freshly updated tenant details — the
@@ -323,7 +325,9 @@ async def search_by_subdomain(
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
     tenant = await service.find_by_subdomain(subdomain)
-    return TenantDto(**tenant.model_dump())
+    # Public shape only: features and subscription_id are withheld
+    # from this unauthenticated route (see PublicTenantDto).
+    return PublicTenantDto(**tenant.model_dump())
 
 
 @router.get("/check_subdomain/{subdomain}", response_model=SubdomainAvailabilityDto, status_code=status.HTTP_200_OK)
