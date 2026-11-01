@@ -124,6 +124,7 @@ export function Login() {
                                         <FormControl>
                                             <Input
                                                 type="email"
+                                                autoComplete="username"
                                                 placeholder="Enter your email"
                                                 disabled={isLoading}
                                                 {...field}
@@ -142,6 +143,7 @@ export function Login() {
                                         <FormControl>
                                             <Input
                                                 type="password"
+                                                autoComplete="current-password"
                                                 placeholder="Enter your password"
                                                 disabled={isLoading}
                                                 {...field}
