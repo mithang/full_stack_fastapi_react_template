@@ -38,6 +38,20 @@ async def create_tenant(client: AsyncClient, mock_post_tenant_service) -> Create
     )
     response = await client.post("/tenants/", json=new_tenant.model_dump())
     assert response.status_code == 201
+    # The security-headers middleware (security_headers_middleware.py)
+    # stamps every HTTP response, not just GETs, and the tenant file's
+    # own create_tenant helper already locks its headers in — but this
+    # file's copy of the helper asserted only the 201, so deleting the
+    # middleware registration would have gone uncaught on this
+    # tenant-create response. The test client runs the real app over
+    # ASGI transport, so the pure-ASGI middleware applies here exactly
+    # as in production.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
     mock_post_tenant_service.assert_awaited()
 
     return CreateUserResponseDto.model_validate(response.json())
