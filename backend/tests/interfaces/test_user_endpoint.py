@@ -94,6 +94,20 @@ async def test_get_user_by_id_from_host(client: AsyncClient):
     # tenant list GET in iteration 1786.
     assert response.headers["Cache-Control"] == "no-store"
     assert response.headers["Pragma"] == "no-cache"
+
+    # The security-headers middleware (security_headers_middleware.py)
+    # must stamp every response, but this single-user GET locked only
+    # no-store — deleting the middleware registration would have gone
+    # uncaught here too. The test client runs the real app over ASGI
+    # transport, so the pure-ASGI middleware applies here exactly as
+    # in production, and the user list GET already locks the same
+    # headers, so the assertion holds for this single-user GET as well.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
     data = UserDto.model_validate(response.json())
     assert data.email == "test@example.com"
 
