@@ -184,6 +184,21 @@ async def test_delete_role_by_id_from_host(client: AsyncClient):
     assert response.headers["Cache-Control"] == "no-store"
     assert response.headers["Pragma"] == "no-cache"
 
+    # The security-headers middleware (security_headers_middleware.py)
+    # must stamp every response, but only the role list, create-role
+    # verification, single-role, and pre-update GETs locked its headers
+    # in — deleting the middleware registration would have gone
+    # uncaught on this delete-verification 404 too. The middleware is
+    # app-level pure ASGI, so it stamps exception-handler responses
+    # exactly as it stamps success responses, and the test client runs
+    # the real app over ASGI transport.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+
 
 @pytest.mark.asyncio
 async def test_get_nonexistent_role_by_id_from_host(client: AsyncClient):
