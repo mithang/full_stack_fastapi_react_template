@@ -129,6 +129,16 @@ async def test_search_tenant_by_subdomain_as_host(client: AsyncClient, mock_post
     # GET in iteration 1786 and the single-role GET in iteration 1790.
     assert response.headers["Cache-Control"] == "no-store"
     assert response.headers["Pragma"] == "no-cache"
+    # Same security-header lock as the tenant list GET: this search
+    # GET goes through the same pure-ASGI middleware under the test
+    # client, but only locked the no-store headers — deleting the
+    # middleware registration would have gone uncaught here.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
     # The search routes return the public shape since iteration 1780:
     # validating against the full TenantDto would fail, because it
     # requires subscription_id, which the public shape deliberately
