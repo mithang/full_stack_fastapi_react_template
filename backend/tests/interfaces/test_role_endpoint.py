@@ -173,6 +173,17 @@ async def test_update_role_by_id_from_host(client: AsyncClient):
     updated_data = UpdateRoleDto(name="Test Role Updated")
     response = await client.put(f"/roles/{new_role_response.id}", json=updated_data.model_dump())
     assert response.status_code == 200
+    # Same security-header lock as the user-update PUT in this suite
+    # (iteration 1855): the middleware stamps every HTTP response, so
+    # it stamps this PUT response too, but until now only its status
+    # and body were asserted — deleting the middleware registration
+    # would have gone uncaught on role-update responses.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
     new_role_updated_data = RoleDto.model_validate(response.json())
     assert new_role_updated_data.name == "Test Role Updated"
     assert data.name != new_role_updated_data.name
