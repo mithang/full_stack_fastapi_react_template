@@ -148,7 +148,7 @@ export function Invoices() {
                     <RefreshCw className="h-4 w-4 mr-2" />
                     Refresh
                 </Button>
-                <Button onClick={fetchInvoices} variant="outline" className="sm:hidden" size="icon">
+                <Button onClick={fetchInvoices} variant="outline" className="sm:hidden" size="icon" aria-label="Refresh">
                     <RefreshCw className="h-4 w-4" />
                 </Button>
             </div>
