@@ -101,6 +101,29 @@ async def test_search_tenant_by_subdomain_as_host(client: AsyncClient, mock_post
 
 
 @pytest.mark.asyncio
+async def test_search_tenant_by_name_as_host(client: AsyncClient, mock_post_tenant_service, mock_db):
+    """
+        Get a tenant by name:
+    """
+    new_tenant_response = await create_tenant(client, mock_post_tenant_service)
+    response = await client.get("/tenants/search_by_name/test")
+    assert response.status_code == 200
+    # Mirror of the search_by_subdomain test (iteration 1782): the
+    # search routes return the public shape since iteration 1780,
+    # but only the subdomain route had a success test locking that
+    # narrowing in — a regression on search_by_name (returning the
+    # full TenantDto with subscription_id/features) would have gone
+    # uncaught. Asserting the absence of both withheld fields here
+    # closes that gap for the second public search route.
+    assert "subscription_id" not in response.json()
+    assert "features" not in response.json()
+    data = PublicTenantDto.model_validate(response.json())
+    assert data.name == "test"
+    assert data.subdomain == "test.fsrapp.com"
+    assert data.id == new_tenant_response.id
+
+
+@pytest.mark.asyncio
 async def test_delete_tenant_by_id_from_host(client: AsyncClient, mock_post_tenant_service, mock_db):
     """
         Delete a tenant by ID:
