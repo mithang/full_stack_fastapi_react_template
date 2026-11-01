@@ -22,6 +22,13 @@ async def test_list_roles_from_host(client: AsyncClient):
     """
     response = await client.get("/roles/?skip=0&limit=10")
     assert response.status_code == 200
+    # The endpoint comment requires this GET never to be served from a
+    # browser or proxy cache (it lists roles with their permissions),
+    # but no test locked the headers in — deleting the two header
+    # lines would have gone uncaught, as with the app-configuration
+    # GET in iteration 1785 and the tenant list GET in iteration 1786.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
 
     data = RoleListDto.model_validate(response.json())
 
