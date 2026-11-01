@@ -270,6 +270,7 @@ export function Profile() {
                                 <Button
                                     size="sm"
                                     className="absolute bottom-0 right-0 rounded-full"
+                                    aria-label="Change profile picture"
                                     onClick={() => fileInputRef.current?.click()}
                                     disabled={uploadingImage}
                                 >
