@@ -323,6 +323,7 @@ export default function BrandingConfiguration() {
                                                     variant="destructive"
                                                     size="icon"
                                                     className="absolute -top-2 -right-2 h-8 w-8 rounded-full"
+                                                    aria-label="Remove logo"
                                                     onClick={handleRemoveLogo}
                                                 >
                                                     <IconX className="h-4 w-4" />
