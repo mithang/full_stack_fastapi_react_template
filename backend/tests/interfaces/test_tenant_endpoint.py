@@ -207,6 +207,10 @@ async def test_list_of_tenants_paginated_in_host(client: AsyncClient, mock_post_
 
     response = await client.get("/tenants/?skip=1&limit=1")
     assert response.status_code == 200
+    # Same unconditional headers as page 1 above: the list route sets
+    # them before any branch, so they hold for every paginated page.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
     data = TenantListDto.model_validate(response.json())
     assert data.total == 3
     assert len(data.tenants) == 1
