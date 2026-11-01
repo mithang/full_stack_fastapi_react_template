@@ -219,6 +219,17 @@ async def test_delete_tenant_by_id_from_host(client: AsyncClient, mock_post_tena
     assert response.status_code == 404
     assert response.headers["Cache-Control"] == "no-store"
     assert response.headers["Pragma"] == "no-cache"
+    # Same security-header lock as the tenant search-by-name GET
+    # (locked in iteration 1846): this delete-verification re-GET
+    # goes through the same pure-ASGI middleware under the test
+    # client, but only locked the no-store headers — deleting the
+    # middleware registration would have gone uncaught on it.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
 
 
 
