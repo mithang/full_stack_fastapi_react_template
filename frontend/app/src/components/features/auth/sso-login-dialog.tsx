@@ -2,7 +2,7 @@ import { useAppConfig } from "@/components/providers/app-config-provider";
 import { providerConfig } from "@/components/features/sso-configurations/sso-provider-configuration";
 import { Button } from "@/components/ui/button";
 import { IconBrandAuth0 } from "@tabler/icons-react";
-import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { cn, getApiBaseUrl } from "@/lib/utils";
 
 export function SSOLoginDialog() {
@@ -31,7 +31,8 @@ export function SSOLoginDialog() {
                     </Button>
                 </DialogTrigger>
                 <DialogContent className="w-100px">
-                    <div className="text-lg font-medium mb-4">Single Sign-On (SSO) Login</div>
+                    <DialogTitle className="font-medium mb-4">Single Sign-On (SSO) Login</DialogTitle>
+                    <DialogDescription className="mb-4">Choose an identity provider to continue.</DialogDescription>
                     <div className={cn("grid gap-4 place-content-center", {
                         "sm:grid-cols-2": enabled_sso_providers.length > 1,
                     })}>
