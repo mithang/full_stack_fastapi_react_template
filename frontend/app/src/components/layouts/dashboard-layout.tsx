@@ -75,7 +75,7 @@ export function DashboardLayout() {
                             "mt-10": !auth.user?.is_active
                         })}>
                             <Avatar className="size-14">
-                                <AvatarImage src={userImage} />
+                                <AvatarImage src={userImage} alt="" />
                                 <AvatarFallback>{auth.user?.first_name[0]}</AvatarFallback>
                             </Avatar>
                             <span className="pl-2 mr-auto flex-1 capitalize flex flex-col">
