@@ -144,6 +144,7 @@ export function TenantSelection({
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                         placeholder={placeholder}
+                        aria-label={placeholder}
                         className={cn("pr-20", error && "border-red-500")}
                     />
 
