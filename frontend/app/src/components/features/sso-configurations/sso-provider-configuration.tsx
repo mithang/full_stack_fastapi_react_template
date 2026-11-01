@@ -278,8 +278,8 @@ export function SSOProviderConfiguration() {
                                                     Scopes
                                                 </Label>
                                                 <div className="flex flex-wrap gap-1 mt-1">
-                                                    {provider.scopes.map((scope, idx) => (
-                                                        <Badge key={idx} variant="outline" className="text-xs">
+                                                    {provider.scopes.map((scope) => (
+                                                        <Badge key={scope} variant="outline" className="text-xs">
                                                             {scope}
                                                         </Badge>
                                                     ))}
