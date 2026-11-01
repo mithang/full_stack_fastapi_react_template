@@ -310,6 +310,7 @@ export default function AdvanceTable<T>({
                                     onClick={() => table.firstPage()}
                                     disabled={!table.getCanPreviousPage()}
                                     aria-disabled={!table.getCanPreviousPage()}
+                                    aria-label="Go to first page"
                                 >
                                     <ArrowLeftIcon />
                                 </Button>
@@ -321,6 +322,7 @@ export default function AdvanceTable<T>({
                                     onClick={() => table.previousPage()}
                                     disabled={!table.getCanPreviousPage()}
                                     aria-disabled={!table.getCanPreviousPage()}
+                                    aria-label="Go to previous page"
                                 >
                                     <ChevronLeftIcon />
                                 </Button>
@@ -337,6 +339,7 @@ export default function AdvanceTable<T>({
                                     onClick={() => table.nextPage()}
                                     disabled={!table.getCanNextPage()}
                                     aria-disabled={!table.getCanNextPage()}
+                                    aria-label="Go to next page"
                                 >
                                     <ChevronRightIcon />
                                 </Button>
@@ -348,6 +351,7 @@ export default function AdvanceTable<T>({
                                     onClick={() => table.lastPage()}
                                     disabled={!table.getCanNextPage()}
                                     aria-disabled={!table.getCanNextPage()}
+                                    aria-label="Go to last page"
                                 >
                                     <ArrowRightIcon />
                                 </Button>
