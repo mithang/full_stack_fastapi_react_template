@@ -218,6 +218,19 @@ async def test_delete_tenant_by_id_from_host(client: AsyncClient, mock_post_tena
     new_tenant_response = await create_tenant(client, mock_post_tenant_service)
     response = await client.delete(f"/tenants/{new_tenant_response.id}")
     assert response.status_code == 202
+    # The security-headers middleware (security_headers_middleware.py)
+    # stamps every HTTP response, not just GETs, but until this run
+    # only GET responses and the create POSTs locked its headers in —
+    # deleting the middleware registration would have gone uncaught
+    # on tenant-delete responses too. The test client runs the real
+    # app over ASGI transport, so the pure-ASGI middleware applies
+    # here exactly as in production.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
 
     # Verify the tenant was deleted by searching for it again. There
     # is no GET /tenants/{id} route, so search_by_name is the
