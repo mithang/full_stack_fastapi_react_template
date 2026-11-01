@@ -196,6 +196,7 @@ export default function Register() {
                                             <Input
                                                 type="text"
                                                 placeholder="Enter your first name"
+                                                autoComplete="given-name"
                                                 disabled={isLoading}
                                                 {...field}
                                             />
@@ -216,6 +217,7 @@ export default function Register() {
                                             <Input
                                                 type="text"
                                                 placeholder="Enter your last name"
+                                                autoComplete="family-name"
                                                 disabled={isLoading}
                                                 {...field}
                                             />
@@ -277,6 +279,7 @@ export default function Register() {
                                             <Input
                                                 type="email"
                                                 placeholder="Enter your email"
+                                                autoComplete="email"
                                                 disabled={isLoading}
                                                 {...field}
                                             />
@@ -324,6 +327,7 @@ export default function Register() {
                                             <Input
                                                 type="password"
                                                 placeholder="Enter your password"
+                                                autoComplete="new-password"
                                                 disabled={isLoading}
                                                 {...field}
                                             />
@@ -344,6 +348,7 @@ export default function Register() {
                                             <Input
                                                 type="password"
                                                 placeholder="Confirm your password"
+                                                autoComplete="new-password"
                                                 disabled={isLoading}
                                                 {...field}
                                             />
