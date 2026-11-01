@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from "react-router";
+import { Routes, Route, Navigate, useLocation } from "react-router";
 import { DefaultLayout } from "@/components/layouts/default-layout";
 import { Login } from "@/components/features/auth/login";
 import { Dashboard } from "@/components/features/dashboard/dashboard";
@@ -40,6 +40,50 @@ import { useEffect } from "react";
 import { updateThemeConfiguration } from "./lib/utils";
 import { useTheme } from "@/components/providers/theme-provider"
 
+// Every route previously kept the static index.html title ("Full Stack
+// FastAPI React"), so screen-reader and tab users could not tell pages
+// apart (WCAG 2.4.2 Page Titled). Set document.title from the current
+// route on navigation; unknown paths keep the default title. Keys are
+// matched exactly (trailing slashes stripped), so no route needs its
+// own title effect and a new route only adds one map entry.
+const PAGE_TITLES: Record<string, string> = {
+  "/login": "Sign in",
+  "/register": "Register",
+  "/forgot-password": "Forgot password",
+  "/password_reset_confirmation": "Reset password",
+  "/activation": "Activate account",
+  "/magic_link_login": "Magic link login",
+  "/non-active": "Account inactive",
+  "/checkout/success": "Checkout successful",
+  "/checkout/cancel": "Checkout cancelled",
+  "/dashboard": "Dashboard",
+  "/users": "Users",
+  "/roles": "Roles",
+  "/tenants": "Tenants",
+  "/audit-logs": "Audit logs",
+  "/settings/storage": "Storage settings",
+  "/settings/general": "General settings",
+  "/settings/payment": "Payment settings",
+  "/settings/notifications": "Notification settings",
+  "/settings/sso": "SSO settings",
+  "/billing": "Billing",
+  "/billing/invoices": "Invoices",
+  "/billing/products": "Products",
+  "/billing/checkouts": "Checkouts",
+  "/profile": "Profile",
+  "/ai": "AI chat",
+};
+
+function PageTitle() {
+  const { pathname } = useLocation();
+
+  useEffect(() => {
+    const page = PAGE_TITLES[pathname.replace(/\/+$/, "") || "/"];
+    document.title = page ? `${page} | Full Stack FastAPI React` : "Full Stack FastAPI React";
+  }, [pathname]);
+  return null;
+}
+
 function App() {
   const { user } = useAuthContext();
   const { branding } = useAppConfig();
@@ -49,6 +93,8 @@ function App() {
     updateThemeConfiguration(branding);
   }, [branding, theme]);
   return (
+    <>
+    <PageTitle />
     <Routes>
       <Route element={<DefaultLayout />}>
         <Route index path="login" element={<Login />} />
@@ -146,7 +192,7 @@ function App() {
         <Route path="*" element={<Navigate to="/dashboard" />} />
       </Route>
     </Routes>
-
+    </>
   )
 }
 
