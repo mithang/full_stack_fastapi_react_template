@@ -149,6 +149,14 @@ async def test_list_of_roles_paginated_in_host(client: AsyncClient):
     # Verify the user was created by listing users again
     response = await client.get("/roles/?skip=0&limit=1")
     assert response.status_code == 200
+    # The endpoint comment requires this GET never to be served from a
+    # browser or proxy cache (it lists roles with their permissions),
+    # but no test locked the headers in for the paginated pages —
+    # deleting the two header lines would have gone uncaught on these
+    # pages even though the unpaginated list GET is locked, as with
+    # the create-role list verification GET in iteration 1795.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
     data = RoleListDto.model_validate(response.json())
     assert data.total == 3
     assert len(data.roles) == 1
