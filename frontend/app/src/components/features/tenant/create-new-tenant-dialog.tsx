@@ -151,6 +151,7 @@ export function CreateNewTenantDialog({ open, onDismiss }: CreateNewTenantDialog
                                     <FormControl>
                                         <Input
                                             type="text"
+                                            autoComplete="given-name"
                                             placeholder="Enter your first name"
                                             disabled={isLoading}
                                             {...field}
@@ -171,6 +172,7 @@ export function CreateNewTenantDialog({ open, onDismiss }: CreateNewTenantDialog
                                     <FormControl>
                                         <Input
                                             type="text"
+                                            autoComplete="family-name"
                                             placeholder="Enter your last name"
                                             disabled={isLoading}
                                             {...field}
@@ -231,6 +233,7 @@ export function CreateNewTenantDialog({ open, onDismiss }: CreateNewTenantDialog
                                     <FormControl>
                                         <Input
                                             type="email"
+                                            autoComplete="email"
                                             placeholder="This will be the admin email"
                                             disabled={isLoading}
                                             {...field}
@@ -278,6 +281,7 @@ export function CreateNewTenantDialog({ open, onDismiss }: CreateNewTenantDialog
                                     <FormControl>
                                         <Input
                                             type="password"
+                                            autoComplete="new-password"
                                             placeholder="This will be the admin password"
                                             disabled={isLoading}
                                             {...field}
@@ -298,6 +302,7 @@ export function CreateNewTenantDialog({ open, onDismiss }: CreateNewTenantDialog
                                     <FormControl>
                                         <Input
                                             type="password"
+                                            autoComplete="new-password"
                                             placeholder="Retype the password"
                                             disabled={isLoading}
                                             {...field}
