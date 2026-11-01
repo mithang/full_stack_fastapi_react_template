@@ -212,6 +212,17 @@ async def test_get_nonexistent_user_by_id_from_host(client: AsyncClient):
     # the endpoint's own Response, which the exception path discards.
     assert response.headers["Cache-Control"] == "no-store"
     assert response.headers["Pragma"] == "no-cache"
+    # Same security-header lock as the delete-verification re-GET in
+    # this file: this 404 goes through the same route and the same
+    # pure-ASGI middleware under the test client, but only locked the
+    # no-store headers — deleting the middleware registration would
+    # have gone uncaught here.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
     assert response.json()["error"] == "User with identifier 68c3031f449ed3590028c778 not found."
 
 
