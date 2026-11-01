@@ -174,6 +174,17 @@ async def test_update_user_by_id_from_host(client: AsyncClient):
     updated_data = UpdateUserDto(**data.model_dump())
     response = await client.put(f"/users/{new_user_response.id}", json=updated_data.model_dump())
     assert response.status_code == 200
+    # Same security-header lock as the create-user POST in this file
+    # (iteration 1852): the middleware stamps every HTTP response, so
+    # it stamps this PUT response too, but until now only its status
+    # and body were asserted — deleting the middleware registration
+    # would have gone uncaught on update responses.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
     new_user_updated_data = UserDto.model_validate(response.json())
     assert new_user_updated_data.gender == Gender.MALE
 
