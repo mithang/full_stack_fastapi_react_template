@@ -231,7 +231,7 @@ export default function AdvanceTable<T>({
             {dropdownActions && (
                 <div className="p-4 flex justify-end">
                     <Select onValueChange={onDropdownChange} value={selectedAction}>
-                        <SelectTrigger className="w-[180px] ">
+                        <SelectTrigger className="w-[180px] " aria-label="Actions">
                             <IconFilter className="w-4 h-4" />
                             <SelectValue placeholder="Actions" />
                         </SelectTrigger>
