@@ -101,7 +101,7 @@ function PassKeyManagement({ accessToken, shouldRefresh }: PassKeyManagementProp
                                 <TableCell>{new Date(passkey.created_at).toLocaleString()}</TableCell>
                                 <TableCell>{passkey.last_used_at ? new Date(passkey.last_used_at).toLocaleString() : "Never"}</TableCell>
                                 <TableCell className="text-right">
-                                    <Button variant="destructive" size="icon" onClick={() => onDeletePasskey(passkey.credential_id)}>
+                                    <Button variant="destructive" size="icon" aria-label="Delete passkey" onClick={() => onDeletePasskey(passkey.credential_id)}>
                                         <Trash />
                                     </Button>
                                 </TableCell>
