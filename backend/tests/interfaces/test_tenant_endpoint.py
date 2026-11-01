@@ -161,6 +161,20 @@ async def test_delete_tenant_by_id_from_host(client: AsyncClient, mock_post_tena
     response = await client.delete(f"/tenants/{new_tenant_response.id}")
     assert response.status_code == 202
 
+    # Verify the tenant was deleted by searching for it again. There
+    # is no GET /tenants/{id} route, so search_by_name is the
+    # post-delete re-GET analogue of the user/role delete tests:
+    # find_by_name raises TenantNotFoundException, which subclasses
+    # NotFoundException, so this 404 goes through the central
+    # api_exception_handler whose no-store headers were added in
+    # iteration 1810 — but no test locked them in for this re-GET,
+    # so deleting them would have gone uncaught, as with the
+    # nonexistent-tenant 404 in this file (iteration 1812).
+    response = await client.get("/tenants/search_by_name/test")
+    assert response.status_code == 404
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+
 
 
 @pytest.mark.asyncio
