@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { DialogHeader, DialogFooter, Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { DialogHeader, DialogFooter, Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import {
     Form, FormField, FormLabel, FormControl, FormItem, FormMessage,
 } from "@/components/ui/form";
@@ -108,7 +108,9 @@ export function UserEditDialog({ open, onDismiss }: UserEditDialogProps) {
             <DialogContent>
                 <DialogHeader>
                     <DialogTitle>Edit New User</DialogTitle>
-
+                    <DialogDescription>
+                        Update the user's details.
+                    </DialogDescription>
                 </DialogHeader>
                 <Form {...form}>
                     <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
