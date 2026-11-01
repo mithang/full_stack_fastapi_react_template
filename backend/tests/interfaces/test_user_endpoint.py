@@ -53,6 +53,12 @@ async def test_create_user_in_host(client: AsyncClient):
     # Verify the user was created by listing users again
     response = await client.get("/users/?skip=0&limit=10")
     assert response.status_code == 200
+    # Same no-store lock as the list GETs (iterations 1788/1799-1801):
+    # this verification GET hits the same list endpoint, which sets
+    # both headers unconditionally, but asserted only status 200, so
+    # deleting the header lines would have gone uncaught here.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
     data = UserListDto.model_validate(response.json())
     assert data.total == 1
     assert data.users[0].id == new_user_response.id
