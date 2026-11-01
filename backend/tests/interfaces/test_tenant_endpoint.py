@@ -50,6 +50,12 @@ async def test_list_tenants_from_host(client: AsyncClient):
     """
     response = await client.get("/tenants/?skip=0&limit=10")
     assert response.status_code == 200
+    # The endpoint comment requires this GET never to be served from a
+    # browser or proxy cache (it lists tenants), but no test locked the
+    # headers in — deleting the two header lines would have gone
+    # uncaught, as with the app-configuration GET in iteration 1785.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
 
     data = TenantListDto.model_validate(response.json())
 
