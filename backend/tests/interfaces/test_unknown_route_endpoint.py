@@ -27,6 +27,26 @@ async def test_unknown_api_route_returns_no_store_404(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_spa_shell_returns_no_store_headers(client: AsyncClient):
+    """
+        An unmatched SPA route:
+    """
+    # Absolute URL, as in the iteration-1816 lock, so this does not
+    # depend on how httpx merges the shared client's /api/v1 base_url:
+    # the request must reach the catch-all react_router with a
+    # non-api full_path, which serves the committed UI build's
+    # index.html. The shell previously set only Cache-Control:
+    # no-store, unlike every other no-store site in api/__init__.py,
+    # so an HTTP/1.0 cache honouring only Pragma could serve a stale
+    # shell from before a deploy, referencing asset files the new
+    # build no longer ships.
+    response = await client.get("http://test/spa-route-that-does-not-exist")
+    assert response.status_code == 200
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+
+
+@pytest.mark.asyncio
 async def test_bare_api_path_returns_no_store_404(client: AsyncClient):
     """
         A bare /api GET:

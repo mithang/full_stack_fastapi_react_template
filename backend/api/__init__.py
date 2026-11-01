@@ -11063,9 +11063,12 @@ async def react_router(full_path: str):
         # reference asset files the new build no longer ships, leaving
         # the client broken until its cache expires. The hashed assets
         # themselves are cacheable; only the shell must stay fresh.
+        # Pragma: no-cache matches the other no-store sites in this
+        # file, so an HTTP/1.0 cache honouring only Pragma cannot
+        # serve a stale shell either.
         return FileResponse(
             os.path.join(build_path, "index.html"),
-            headers={"Cache-Control": "no-store"},
+            headers={"Cache-Control": "no-store", "Pragma": "no-cache"},
         )
     else:
         # No UI build exists, so there is no SPA shell to serve: return
