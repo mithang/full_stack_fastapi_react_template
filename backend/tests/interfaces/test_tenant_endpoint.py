@@ -102,7 +102,7 @@ async def test_list_tenants_from_host(client: AsyncClient):
     assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
     assert "permissions-policy" in response.headers
     # Presence alone would not catch the value being weakened: lock
-    # the five most sensitive directives as disabled, mirroring the
+    # the six most sensitive directives as disabled, mirroring the
     # permissions GET lock (iteration 1865), the user/role/tenant
     # create locks (iterations 1866-1868), and the app-config GET
     # lock (iteration 1869), using substring checks so later
@@ -110,12 +110,17 @@ async def test_list_tenants_from_host(client: AsyncClient):
     # lives in _SECURITY_HEADERS. The fifth, clipboard-read,
     # is safe to lock here: the SPA never reads the clipboard
     # (only writeText calls, verified by grep this run).
+    # The sixth, display-capture, is safe to lock here: the SPA
+    # never calls getDisplayMedia (verified by grep this run), so
+    # no screen-sharing flow exists to break, and a compromised
+    # script could otherwise capture the screen on the app origin.
     permissions_policy = response.headers["permissions-policy"]
     assert "camera=()" in permissions_policy
     assert "microphone=()" in permissions_policy
     assert "geolocation=()" in permissions_policy
     assert "payment=()" in permissions_policy
     assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
 
     data = TenantListDto.model_validate(response.json())
 
