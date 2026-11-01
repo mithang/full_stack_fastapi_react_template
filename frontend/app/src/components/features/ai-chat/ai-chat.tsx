@@ -917,6 +917,7 @@ export function AIChat() {
                                                                 <Button
                                                                     variant="ghost"
                                                                     size="sm"
+                                                                    aria-label="Copy message"
                                                                     onClick={() => copyMessage(message.content)}
                                                                     className="h-6 sm:h-7 px-1 sm:px-2 text-xs "
                                                                 >
@@ -996,6 +997,7 @@ export function AIChat() {
                                     </section>
                                     <Button
                                         onClick={sendMessage}
+                                        aria-label="Send message"
                                         disabled={!input.trim() || chatState.isLoading || !selectedModel?.name || availableAiModels.length === 0 || !availableAiModels.some((model) => model.name === selectedModel?.name)}
                                         className="px-3 sm:px-6 h-10 sm:h-11"
                                         size="default"
