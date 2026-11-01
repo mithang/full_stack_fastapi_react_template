@@ -976,6 +976,7 @@ export function AIChat() {
                                             onChange={handleInputChange}
                                             onKeyDown={handleKeyPress}
                                             placeholder="Type your message..."
+                                            aria-label="Type your message..."
                                             disabled={chatState.isLoading}
                                             className="pr-8 sm:pr-12 min-h-[40px] sm:min-h-[44px] max-h-[120px] text-sm sm:text-base resize-none"
                                             maxLength={2000}
