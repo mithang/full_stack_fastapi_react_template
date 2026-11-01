@@ -291,6 +291,7 @@ export function SSOProviderConfiguration() {
                                     <div className="flex items-center justify-between pt-2 border-t">
                                         <div className="flex items-center space-x-2">
                                             <Switch
+                                                aria-label={`Enable ${provider.provider} SSO provider`}
                                                 checked={provider.enabled}
                                                 onCheckedChange={() => handleToggleEnabled(provider)}
                                             />
