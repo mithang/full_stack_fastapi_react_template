@@ -197,6 +197,17 @@ async def test_delete_role_by_id_from_host(client: AsyncClient):
     new_role_response = await create_role(client)
     response = await client.delete(f"/roles/{new_role_response.id}")
     assert response.status_code == 202
+    # Same security-header lock as the tenant-delete and user-delete
+    # DELETE responses (iterations 1857-1858): the middleware stamps
+    # every HTTP response, so it stamps this DELETE response too, but
+    # until now only its status was asserted — deleting the middleware
+    # registration would have gone uncaught on role-delete responses.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
 
     # Verify the role was deleted by attempting to get the role again
     response = await client.get(f"/roles/{new_role_response.id}")
