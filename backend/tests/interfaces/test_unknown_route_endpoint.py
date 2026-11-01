@@ -84,15 +84,19 @@ async def test_spa_shell_returns_no_store_headers(client: AsyncClient):
     assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
     assert "permissions-policy" in response.headers
     # Presence alone would not catch the value being weakened: lock
-    # the four most sensitive directives as disabled, mirroring the
+    # the five most sensitive directives as disabled, mirroring the
     # unknown-API-route 404 lock above, using substring checks so
     # later additions to the list do not break this test. The full
-    # value lives in _SECURITY_HEADERS.
+    # value lives in _SECURITY_HEADERS. The fifth, clipboard-read,
+    # is safe to lock here: the SPA never reads the clipboard (only
+    # writeText calls, verified by grep in iteration 1914 and
+    # re-verified this run).
     permissions_policy = response.headers["permissions-policy"]
     assert "camera=()" in permissions_policy
     assert "microphone=()" in permissions_policy
     assert "geolocation=()" in permissions_policy
     assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
 
 
 @pytest.mark.asyncio
