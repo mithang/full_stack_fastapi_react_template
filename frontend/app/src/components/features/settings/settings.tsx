@@ -306,6 +306,7 @@ export function Settings() {
                                             <Input
                                                 id="secret-key"
                                                 type="password"
+                                                autoComplete="new-password"
                                                 placeholder="••••••••••••••••"
                                                 value={formData.aws_secret_key || ''}
                                                 onChange={(e) => updateField('aws_secret_key', e.target.value)}
@@ -427,6 +428,7 @@ export function Settings() {
                                             <Input
                                                 id="connection-string"
                                                 type="password"
+                                                autoComplete="new-password"
                                                 placeholder="DefaultEndpointsProtocol=https;AccountName=..."
                                                 value={formData.azure_connection_string || ''}
                                                 onChange={(e) => updateField('azure_connection_string', e.target.value)}

@@ -126,6 +126,7 @@ export default function SSOConfigurationEditDialog({ editSSOProvider, onClose }:
                                     <FormControl>
                                         <Input
                                             type="password"
+                                            autoComplete="new-password"
                                             placeholder="Enter client secret"
                                             {...field}
                                         />
