@@ -772,6 +772,7 @@ export function AIChat() {
                                     onClick={retryLastMessage}
                                     disabled={chatState.isLoading || chatState.messages.length === 0}
                                     className="sm:hidden"
+                                    aria-label="Retry"
                                 >
                                     <RefreshCw className="w-4 h-4" />
                                 </Button>
