@@ -171,6 +171,17 @@ async def test_search_tenant_by_name_as_host(client: AsyncClient, mock_post_tena
     # GET in iteration 1791.
     assert response.headers["Cache-Control"] == "no-store"
     assert response.headers["Pragma"] == "no-cache"
+    # Same security-header lock as the search_by_subdomain GET (locked
+    # in iteration 1845): this search GET goes through the same
+    # pure-ASGI middleware under the test client, but only locked the
+    # no-store headers — deleting the middleware registration would
+    # have gone uncaught here.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
     # Mirror of the search_by_subdomain test (iteration 1782): the
     # search routes return the public shape since iteration 1780,
     # but only the subdomain route had a success test locking that
