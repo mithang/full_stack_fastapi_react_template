@@ -67,6 +67,14 @@ async def test_get_user_by_id_from_host(client: AsyncClient):
     new_user_response = await create_user(client)
     response = await client.get(f"/users/{new_user_response.id}")
     assert response.status_code == 200
+    # The endpoint comment requires this GET never to be served from a
+    # browser or proxy cache (it returns one user's personal data),
+    # but no test locked the headers in — deleting the two header
+    # lines would have gone uncaught, as with the user list GET in
+    # iteration 1788, the role list GET in iteration 1787, and the
+    # tenant list GET in iteration 1786.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
     data = UserDto.model_validate(response.json())
     assert data.email == "test@example.com"
 
