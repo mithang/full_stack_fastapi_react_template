@@ -402,6 +402,7 @@ export default function BrandingConfiguration() {
                                                         type="email"
                                                         placeholder="support@example.com"
                                                         {...field}
+                                                        autoComplete="email"
                                                     />
                                                 </FormControl>
                                                 <FormDescription>
@@ -423,8 +424,10 @@ export default function BrandingConfiguration() {
                                                 </FormLabel>
                                                 <FormControl>
                                                     <Input
+                                                        type="tel"
                                                         placeholder="+1 (555) 123-4567"
                                                         {...field}
+                                                        autoComplete="tel"
                                                     />
                                                 </FormControl>
                                                 <FormDescription>
@@ -448,6 +451,7 @@ export default function BrandingConfiguration() {
                                                     <Input
                                                         placeholder="123 Main St, City, State ZIP"
                                                         {...field}
+                                                        autoComplete="street-address"
                                                     />
                                                 </FormControl>
                                                 <FormDescription>
