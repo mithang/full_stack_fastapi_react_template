@@ -117,9 +117,18 @@ async def api_exception_handler(req: Request, ex: ApiBaseException) -> JSONRespo
 
 
     logger.error(f"API Exception: {ex.message}")
+    # Error responses must not be cached either: the single-record GET
+    # endpoints set no-store on their success path, but an ApiBaseException
+    # raised after the headers were set discards the injected Response,
+    # so the error response previously carried no cache headers at all —
+    # a cached 404/403 could then be served to a different user after an
+    # account switch on a shared machine, the same class as the GET
+    # hardening. Set them here, at the one central error-response site,
+    # covering every ApiBaseException (404/401/403/409/406/502/400).
     return JSONResponse(
         status_code=status_code,
-        content={"error": ex.message, "code": status_code}
+        content={"error": ex.message, "code": status_code},
+        headers={"Cache-Control": "no-store", "Pragma": "no-cache"},
     )
 
 # Audit logging must run before the Redis cache: Starlette runs

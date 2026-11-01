@@ -129,6 +129,14 @@ async def test_get_nonexistent_role_by_id_from_host(client: AsyncClient):
     """
     response = await client.get("/roles/68c3031f449ed3590028c778")
     assert response.status_code == 404
+    # The 404 comes from the central ApiBaseException handler, not from
+    # the endpoint's own Response: the endpoint sets no-store headers
+    # before the lookup, but the exception path discards them, so until
+    # iteration 1810 this error response carried no cache headers at
+    # all. Lock the handler's headers in here, the same no-store
+    # hardening as the success-path GET locks.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
     assert response.json()["error"] == "Role with identifier 68c3031f449ed3590028c778 not found."
 
 
