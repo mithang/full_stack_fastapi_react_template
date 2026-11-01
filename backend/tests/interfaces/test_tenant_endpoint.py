@@ -292,6 +292,20 @@ async def test_list_of_tenants_paginated_in_host(client: AsyncClient, mock_post_
     # the paginated user list pages in iterations 1799-1801.
     assert response.headers["Cache-Control"] == "no-store"
     assert response.headers["Pragma"] == "no-cache"
+    # The security-headers middleware (security_headers_middleware.py)
+    # must stamp every response, but this paginated page 1 GET locked
+    # only no-store — deleting the middleware registration would have
+    # gone uncaught here too. The test client runs the real app over
+    # ASGI transport, so the pure-ASGI middleware applies here exactly
+    # as in production, and the unpaginated list GET already locks the
+    # same headers, so the assertion holds for this paginated page
+    # as well.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
     data = TenantListDto.model_validate(response.json())
     assert data.total == 3
     assert len(data.tenants) == 1
@@ -306,6 +320,17 @@ async def test_list_of_tenants_paginated_in_host(client: AsyncClient, mock_post_
     # them before any branch, so they hold for every paginated page.
     assert response.headers["Cache-Control"] == "no-store"
     assert response.headers["Pragma"] == "no-cache"
+    # Same security-header lock as paginated page 1 above: this page 2
+    # GET goes through the same list route and the same pure-ASGI
+    # middleware under the test client, but only locked the no-store
+    # headers — deleting the middleware registration would have gone
+    # uncaught here.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
     data = TenantListDto.model_validate(response.json())
     assert data.total == 3
     assert len(data.tenants) == 1
@@ -320,6 +345,17 @@ async def test_list_of_tenants_paginated_in_host(client: AsyncClient, mock_post_
     # them before any branch, so they hold for every paginated page.
     assert response.headers["Cache-Control"] == "no-store"
     assert response.headers["Pragma"] == "no-cache"
+    # Same security-header lock as paginated pages 1-2 above: this
+    # page 3 GET goes through the same list route and the same
+    # pure-ASGI middleware under the test client, but only locked the
+    # no-store headers — deleting the middleware registration would
+    # have gone uncaught here.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
     data = TenantListDto.model_validate(response.json())
     assert data.total == 3
     assert len(data.tenants) == 1
