@@ -131,6 +131,12 @@ async def test_get_nonexistent_user_by_id_from_host(client: AsyncClient):
     """
     response = await client.get("/users/68c3031f449ed3590028c778")
     assert response.status_code == 404
+    # Same no-store lock as the role 404 test (iteration 1810): the 404
+    # comes from the central ApiBaseException handler, whose headers were
+    # added in iteration 1810, so lock them here rather than relying on
+    # the endpoint's own Response, which the exception path discards.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
     assert response.json()["error"] == "User with identifier 68c3031f449ed3590028c778 not found."
 
 
