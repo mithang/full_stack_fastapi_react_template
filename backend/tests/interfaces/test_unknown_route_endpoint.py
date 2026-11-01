@@ -59,6 +59,16 @@ async def test_spa_shell_returns_no_store_headers(client: AsyncClient):
     assert response.status_code == 200
     assert response.headers["Cache-Control"] == "no-store"
     assert response.headers["Pragma"] == "no-cache"
+    # Same security-headers lock as the unknown-API-route 404 above
+    # (iteration 1825): the middleware must stamp every response,
+    # including the SPA shell, or deleting its registration would go
+    # uncaught on this route too.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
 
 
 @pytest.mark.asyncio
