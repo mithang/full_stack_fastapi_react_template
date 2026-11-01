@@ -449,18 +449,22 @@ async def test_list_of_users_paginated_in_host(client: AsyncClient):
         assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
         assert "permissions-policy" in response.headers
         # Presence alone would not catch the value being weakened: lock
-        # the five most sensitive directives as disabled, mirroring the
+        # the six most sensitive directives as disabled, mirroring the
         # paginated page GET locks in this test, using substring
         # checks so later additions to the list do not break this test.
         # The full value lives in _SECURITY_HEADERS. The fifth,
         # clipboard-read, is safe to lock here: the SPA never reads
         # the clipboard (only writeText calls, verified by grep).
+        # The sixth, display-capture, is safe to lock here: the SPA has
+        # no screen-sharing flow (zero getDisplayMedia calls, verified
+        # by grep this run).
         permissions_policy = response.headers["permissions-policy"]
         assert "camera=()" in permissions_policy
         assert "microphone=()" in permissions_policy
         assert "geolocation=()" in permissions_policy
         assert "payment=()" in permissions_policy
         assert "clipboard-read=()" in permissions_policy
+        assert "display-capture=()" in permissions_policy
     # Create a single user and return the response
 
     # Verify the user was created by listing users again
