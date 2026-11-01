@@ -132,7 +132,7 @@ export function AIChatHistory({ mobile }: AIChatHistoryProps) {
                                         </div>
                                         <DropdownMenu>
                                             <DropdownMenuTrigger asChild>
-                                                <Button size="icon" variant="ghost">
+                                                <Button size="icon" variant="ghost" aria-label="Open session menu">
                                                     <Menu className="h-4 w-4" />
                                                 </Button>
                                             </DropdownMenuTrigger>
