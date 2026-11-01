@@ -275,7 +275,7 @@ export function Products() {
                                     <Plus className="h-4 w-4 mr-2" />
                                     Create Product
                                 </Button>
-                                <Button onClick={openCreateDialog} className="sm:hidden" size="icon">
+                                <Button onClick={openCreateDialog} className="sm:hidden" size="icon" aria-label="Create Product">
                                     <Plus className="h-4 w-4" />
                                 </Button>
                             </>
