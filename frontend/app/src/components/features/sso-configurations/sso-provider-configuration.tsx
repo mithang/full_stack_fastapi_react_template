@@ -307,6 +307,7 @@ export function SSOProviderConfiguration() {
                                             <Button
                                                 variant="destructive"
                                                 size="sm"
+                                                aria-label="Delete SSO provider"
                                                 onClick={() => handleDelete(provider)}
                                             >
                                                 <IconTrash className="h-4 w-4" />
