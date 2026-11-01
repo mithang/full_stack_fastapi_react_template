@@ -343,6 +343,7 @@ export default function BrandingConfiguration() {
                                                 id="logo-upload"
                                                 type="file"
                                                 accept="image/png,image/jpeg"
+                                                aria-label="Upload logo"
                                                 onChange={handleLogoChange}
                                                 className="hidden"
                                             />
