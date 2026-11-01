@@ -153,7 +153,7 @@ export function ListPermission({
                                 {permission?.name || permissionName}
                                 <button
                                     type="button"
-                                    className="ml-1 hover:text-destructive  focus:text-destructive rounded-full"
+                                    className="ml-1 hover:text-destructive focus:text-destructive rounded-full"
                                     onClick={() => handleRemovePermission(permissionName)}
                                 >
                                     ×

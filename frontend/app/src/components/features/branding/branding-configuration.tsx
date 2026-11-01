@@ -488,7 +488,7 @@ export default function BrandingConfiguration() {
                                             <h3 className="text-lg font-medium capitalize">{mode} Mode</h3>
 
                                             {/* Core Colors */}
-                                            <div className="grid grid-cols-1 md:grid-cols-2  gap-4">
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                                 <ColorField control={form.control} name={`theme_config.${mode}.background`} label="Background" />
                                                 <ColorField control={form.control} name={`theme_config.${mode}.foreground`} label="Foreground" />
                                                 <ColorField control={form.control} name={`theme_config.${mode}.card`} label="Card" />
@@ -500,7 +500,7 @@ export default function BrandingConfiguration() {
                                             {/* Sidebar Group */}
 
                                             <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Sidebar</h4>
-                                            <div className="grid grid-cols-1 md:grid-cols-2  gap-4">
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                                 <ColorField control={form.control} name={`theme_config.${mode}.sidebar`} label="Sidebar Bg" />
                                                 <ColorField control={form.control} name={`theme_config.${mode}.sidebar_foreground`} label="Sidebar Text" />
                                                 <ColorField control={form.control} name={`theme_config.${mode}.sidebar_primary`} label="Sidebar Primary" />
@@ -511,7 +511,7 @@ export default function BrandingConfiguration() {
                                             {/* Charts Group */}
                                             <div className="space-y-2">
                                                 <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Charts</h4>
-                                                <div className="grid grid-cols-1 md:grid-cols-2  gap-2">
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                                                     {[1, 2, 3, 4, 5].map((i) => (
                                                         <ColorField key={i} control={form.control} name={`theme_config.${mode}.chart_${i}`} label={`Chart ${i}`} />
                                                     ))}

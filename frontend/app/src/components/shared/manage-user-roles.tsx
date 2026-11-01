@@ -211,7 +211,7 @@ export function ManageUserRoles({ open, onDismiss, userId }: ManageUserRolesProp
                                                         )}
                                                     </div>
                                                     {role.description && (
-                                                        <p className="text-xs  mt-1">
+                                                        <p className="text-xs mt-1">
                                                             {role.description}
                                                         </p>
                                                     )}
@@ -232,7 +232,7 @@ export function ManageUserRoles({ open, onDismiss, userId }: ManageUserRolesProp
                         <>
                             <Separator />
                             <div className="p-3 rounded-lg">
-                                <p className="text-sm font-medium  mb-1">Selected Role:</p>
+                                <p className="text-sm font-medium mb-1">Selected Role:</p>
                                 <div className="flex items-center justify-between">
                                     <span className="text-sm">{selectedRole.name}</span>
                                     <Badge variant="default" className="text-xs">

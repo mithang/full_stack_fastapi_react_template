@@ -164,7 +164,7 @@ export function TenantSelection({
                         )}
                     </div>
                     {error && (
-                        <span className="inline-flex pt-4   text-sm text-red-500">{error}</span>
+                        <span className="inline-flex pt-4 text-sm text-red-500">{error}</span>
                     )}
                 </div>
             </CardContent>

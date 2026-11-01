@@ -208,7 +208,7 @@ export function ManageFeature({ open, onDismiss }: ManageFeatureTenantDialogProp
                                     {features.map((feature) => (
                                         <Card key={feature.name} className="transition-all hover:shadow-md">
                                             <CardContent className="p-0 px-2">
-                                                <div className="flex  justify-between items-start">
+                                                <div className="flex justify-between items-start">
                                                     <div className="flex items-center space-x-3">
                                                         <div className={cn("p-1 rounded-lg", feature.enabled
                                                             ? 'bg-green-100 text-green-600'
