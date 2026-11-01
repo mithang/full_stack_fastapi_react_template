@@ -139,6 +139,21 @@ async def test_update_role_by_id_from_host(client: AsyncClient):
     # iterations 1791-1792.
     assert response.headers["Cache-Control"] == "no-store"
     assert response.headers["Pragma"] == "no-cache"
+
+    # The security-headers middleware (security_headers_middleware.py)
+    # must stamp every response, but only the role list, create-role
+    # verification, and single-role GETs locked its headers in —
+    # deleting the middleware registration would have gone uncaught
+    # on this pre-update GET too. The test client runs the real app
+    # over ASGI transport, so the pure-ASGI middleware applies here
+    # exactly as in production.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+
     data = RoleDto.model_validate(response.json())
 
     # Update the role's name
