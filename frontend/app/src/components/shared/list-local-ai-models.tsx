@@ -75,7 +75,7 @@ export function ListLocalAIModels({ onModelSelect, selectedModel, avilableModels
                     }}
                     value={selectedModel?.name}
                 >
-                    <SelectTrigger className="w-full h-11 bg-background hover:bg-accent/50 transition-colors">
+                    <SelectTrigger className="w-full h-11 bg-background hover:bg-accent/50 transition-colors" aria-label="AI Model">
                         <SelectValue placeholder={
                             loading ? "Loading models..." : "Choose AI Model"
                         } />
