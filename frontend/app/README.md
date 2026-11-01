@@ -42,8 +42,7 @@ src/
 │   └── ui/               # shadcn/ui base components
 ├── hooks/                # Custom React hooks
 ├── lib/                  # Utility functions
-│   ├── utils.ts         # General utilities
-│   └── image-utils.ts   # Image processing utilities
+│   └── utils.ts         # General utilities
 └── assets/              # Static assets
 ```
 
