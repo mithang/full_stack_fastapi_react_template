@@ -237,6 +237,7 @@ export function ManageFeature({ open, onDismiss }: ManageFeatureTenantDialogProp
                                                             <Loader2 className="w-4 h-4 animate-spin" />
                                                         )}
                                                         <Switch
+                                                            aria-label={`Toggle ${feature.name} feature`}
                                                             checked={feature.enabled}
                                                             onCheckedChange={(checked) =>
                                                                 updateFeature(feature.name, checked)
