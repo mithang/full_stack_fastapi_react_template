@@ -86,6 +86,17 @@ async def test_bare_api_path_returns_no_store_404(client: AsyncClient):
     assert response.json() == {"detail": "API route not found"}
     assert response.headers["Cache-Control"] == "no-store"
     assert response.headers["Pragma"] == "no-cache"
+    # Same security-headers lock as the /api/v1/does-not-exist 404
+    # above (iteration 1825) and the SPA shell (iteration 1826):
+    # the middleware must stamp every response, including this bare
+    # /api spelling, or deleting its registration would go uncaught
+    # on this route too.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
 
 
 @pytest.mark.asyncio
