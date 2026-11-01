@@ -324,7 +324,7 @@ export function Profile() {
                                                 <FormItem>
                                                     <FormLabel>First Name</FormLabel>
                                                     <FormControl>
-                                                        <Input placeholder="Enter your first name" {...field} />
+                                                        <Input placeholder="Enter your first name" {...field} autoComplete="given-name" />
                                                     </FormControl>
                                                     <FormMessage />
                                                 </FormItem>
@@ -338,7 +338,7 @@ export function Profile() {
                                                 <FormItem>
                                                     <FormLabel>Last Name</FormLabel>
                                                     <FormControl>
-                                                        <Input placeholder="Enter your last name" {...field} />
+                                                        <Input placeholder="Enter your last name" {...field} autoComplete="family-name" />
                                                     </FormControl>
                                                     <FormMessage />
                                                 </FormItem>
