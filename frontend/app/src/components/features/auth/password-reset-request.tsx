@@ -93,6 +93,7 @@ export function PasswordResetRequest() {
                                         <FormControl>
                                             <Input
                                                 type="email"
+                                                autoComplete="email"
                                                 placeholder="Enter your email"
                                                 disabled={isLoading}
                                                 {...field}
