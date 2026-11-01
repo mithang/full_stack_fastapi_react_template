@@ -265,7 +265,7 @@ export function Products() {
                         <RefreshCw className="h-4 w-4 mr-2" />
                         Refresh
                     </Button>
-                    <Button onClick={fetchProducts} variant="outline" className="sm:hidden" size="icon">
+                    <Button onClick={fetchProducts} variant="outline" className="sm:hidden" size="icon" aria-label="Refresh">
                         <RefreshCw className="h-4 w-4" />
                     </Button>
                     <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
