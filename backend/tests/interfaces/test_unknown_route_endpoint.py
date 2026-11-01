@@ -122,3 +122,12 @@ async def test_no_build_404_returns_no_store_headers(client: AsyncClient, monkey
     # build is deployed, until the cached entry expires.
     assert response.headers["Cache-Control"] == "no-store"
     assert response.headers["Pragma"] == "no-cache"
+    # Same security-headers lock as the other tests in this file:
+    # the middleware is pure ASGI, so it also applies to this
+    # no-build 404 response.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
