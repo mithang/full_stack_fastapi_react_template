@@ -96,6 +96,17 @@ async def test_create_tenant_as_host(client: AsyncClient, mock_post_tenant_servi
     # deleting the header lines would have gone uncaught here.
     assert response.headers["Cache-Control"] == "no-store"
     assert response.headers["Pragma"] == "no-cache"
+    # Same security-header lock as the tenant list GET: this
+    # verification GET goes through the same list route and the same
+    # pure-ASGI middleware under the test client, but only locked the
+    # no-store headers — deleting the middleware registration would
+    # have gone uncaught here.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
     data = TenantListDto.model_validate(response.json())
     assert data.total == 1
     assert data.tenants[0].id == new_tenant_response.id
