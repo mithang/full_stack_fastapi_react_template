@@ -127,6 +127,7 @@ export function UserEditDialog({ open, onDismiss }: UserEditDialogProps) {
                                             placeholder="Enter your first name"
                                             disabled={isLoading}
                                             {...field}
+                                            autoComplete="given-name"
                                         />
                                     </FormControl>
                                     <FormMessage />
@@ -147,6 +148,7 @@ export function UserEditDialog({ open, onDismiss }: UserEditDialogProps) {
                                             placeholder="Enter your last name"
                                             disabled={isLoading}
                                             {...field}
+                                            autoComplete="family-name"
                                         />
                                     </FormControl>
                                     <FormMessage />
