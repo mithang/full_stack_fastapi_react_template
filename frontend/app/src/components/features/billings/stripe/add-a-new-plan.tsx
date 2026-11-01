@@ -209,7 +209,7 @@ export function AddANewPlan({ onPlanCreated }: AddANewPlanProps) {
                                     value={selectedProductId}
                                     onValueChange={(value) => setValue("product_id", value)}
                                 >
-                                    <SelectTrigger>
+                                    <SelectTrigger id="product_id">
                                         <SelectValue placeholder="Select a product" />
                                     </SelectTrigger>
                                     <SelectContent>
@@ -283,7 +283,7 @@ export function AddANewPlan({ onPlanCreated }: AddANewPlanProps) {
                                 Billing Interval <span className="text-destructive">*</span>
                             </Label>
                             <Select value={selectedInterval} onValueChange={(value) => setValue("interval", value as "month" | "year")}>
-                                <SelectTrigger>
+                                <SelectTrigger id="interval">
                                     <SelectValue placeholder="Select billing interval" />
                                 </SelectTrigger>
                                 <SelectContent>
