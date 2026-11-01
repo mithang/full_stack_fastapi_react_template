@@ -91,6 +91,14 @@ async def test_search_tenant_by_subdomain_as_host(client: AsyncClient, mock_post
     new_tenant_response = await create_tenant(client, mock_post_tenant_service)
     response = await client.get(f"/tenants/search_by_subdomain/test.fsrapp.com")
     assert response.status_code == 200
+    # The endpoint comment requires this GET never to be served from a
+    # browser or proxy cache (a cached 200 could serve one tenant's
+    # record to another admin after an account switch on a shared
+    # machine), but no test locked the headers in — deleting the two
+    # header lines would have gone uncaught, as with the tenant list
+    # GET in iteration 1786 and the single-role GET in iteration 1790.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
     # The search routes return the public shape since iteration 1780:
     # validating against the full TenantDto would fail, because it
     # requires subscription_id, which the public shape deliberately
