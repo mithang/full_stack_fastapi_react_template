@@ -92,7 +92,7 @@ export default function CreateNewSSODialog() {
                         <IconPlus className="mr-2 h-4 w-4" />
                         Add New SSO Provider
                     </Button>
-                    <Button onClick={() => setOpen(true)} className="flex sm:hidden p-2">
+                    <Button onClick={() => setOpen(true)} className="flex sm:hidden p-2" aria-label="Add New SSO Provider">
                         <IconPlus className="h-4 w-4" />
                     </Button>
                 </div>
