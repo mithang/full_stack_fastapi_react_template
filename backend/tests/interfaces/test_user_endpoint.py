@@ -142,6 +142,12 @@ async def test_list_of_users_paginated_in_host(client: AsyncClient):
     # Verify the user was created by listing users again
     response = await client.get("/users/?skip=0&limit=1")
     assert response.status_code == 200
+    # Same no-store lock as the unpaginated list GET (iteration 1788):
+    # the list endpoint sets both headers unconditionally, but the
+    # paginated pages asserted only status 200, so deleting the header
+    # lines would have gone uncaught on the paginated path.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
     data = UserListDto.model_validate(response.json())
     assert data.total == 3
     assert len(data.users) == 1
