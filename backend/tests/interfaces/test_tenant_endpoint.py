@@ -170,6 +170,14 @@ async def test_get_nonexistent_tenant_by_name_as_host(client: AsyncClient,  mock
     """
     response = await client.get("/tenants/search_by_name/nonexistent-tenant")
     assert response.status_code == 404
+    # TenantNotFoundException subclasses NotFoundException, which
+    # subclasses ApiBaseException, so this 404 goes through the central
+    # api_exception_handler whose no-store headers were added in
+    # iteration 1810 — but no test locked them in for this route, so
+    # deleting them would have gone uncaught, as with the role 404
+    # in iteration 1810 and the user 404 in iteration 1811.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
     assert response.json()["error"] == "Tenant with identifier nonexistent-tenant not found."
 
 
