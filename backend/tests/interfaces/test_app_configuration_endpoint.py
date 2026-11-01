@@ -74,3 +74,9 @@ async def test_app_configuration_as_logged_out_visitor(client: AsyncClient, mock
     assert public_tenant.name == "test"
     assert public_tenant.subdomain == "test.fsrapp.com"
     assert public_tenant.id == new_tenant_response.id
+    # The endpoint comment requires this GET never to be served from a
+    # browser or proxy cache (it carries per-user preferences and the
+    # current tenant's branding), but no test locked the headers in —
+    # deleting the two header lines would have gone uncaught.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
