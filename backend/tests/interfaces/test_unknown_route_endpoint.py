@@ -26,6 +26,19 @@ async def test_unknown_api_route_returns_no_store_404(client: AsyncClient):
     # and ApiBaseException GET hardening.
     assert response.headers["Cache-Control"] == "no-store"
     assert response.headers["Pragma"] == "no-cache"
+    # The security-headers middleware (security_headers_middleware.py)
+    # must stamp every response, but only the permissions, roles,
+    # users, app-configuration, and tenants GETs locked its headers
+    # in (iterations 1820-1824) — deleting the middleware
+    # registration would have gone uncaught on this route too. The
+    # test client runs the real app over ASGI transport, so the
+    # pure-ASGI middleware applies here exactly as in production.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
 
 
 @pytest.mark.asyncio
