@@ -186,6 +186,17 @@ async def test_delete_user_by_id_from_host(client: AsyncClient):
     # post-delete re-GET, which is still unlocked.
     assert response.headers["Cache-Control"] == "no-store"
     assert response.headers["Pragma"] == "no-cache"
+    # Same security-header lock as the single-user GET: this re-GET
+    # goes through the same route and the same pure-ASGI middleware
+    # under the test client, but only locked the no-store headers —
+    # deleting the middleware registration would have gone uncaught
+    # here.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
 
 
 @pytest.mark.asyncio
