@@ -24,6 +24,14 @@ async def test_list_users_from_host(client: AsyncClient):
     """
     response = await client.get("/users/?skip=0&limit=10")
     assert response.status_code == 200
+    # The endpoint comment requires this GET never to be served from a
+    # browser or proxy cache (it lists the tenant's users with names,
+    # emails, and roles), but no test locked the headers in — deleting
+    # the two header lines would have gone uncaught, as with the
+    # app-configuration GET in iteration 1785, the tenant list GET in
+    # iteration 1786, and the role list GET in iteration 1787.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
 
     data = UserListDto.model_validate(response.json())
 
