@@ -378,6 +378,7 @@ export function Settings() {
                                             </p>
                                         </div>
                                         <Switch
+                                            aria-label="Enable Azure Blob Storage"
                                             checked={formData.is_enabled}
                                             onCheckedChange={(checked) => updateField('is_enabled', checked)}
                                         />
