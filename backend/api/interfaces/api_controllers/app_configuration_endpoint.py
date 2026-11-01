@@ -7,7 +7,7 @@ from api.common.utils import get_host_main_domain_name, get_logger, get_tenancy_
 from api.core.container import   get_deps, get_passkey_service, get_sso_settings_service,  get_tenant_service, get_user_preference_service
 from api.core.exceptions import  TenantNotFoundException
 from api.domain.dtos.branding_dto import BrandingDto
-from api.domain.dtos.tenant_dto import TenantDto
+from api.domain.dtos.tenant_dto import PublicTenantDto, TenantDto
 from api.domain.entities.tenant import Tenant
 from api.infrastructure.security.current_user import  CurrentUserOptional
 from api.infrastructure.security.passkey_service import PasskeyService
@@ -96,6 +96,21 @@ async def get_app_configuration(
             updated_at=datetime.now(timezone.utc).isoformat()
         )
 
+
+    # This endpoint is fetched on every page load, including the public
+    # login page, so an unauthenticated visitor previously received the
+    # full TenantDto for the resolved tenant — feature enablement and
+    # the Stripe subscription_id — without ever logging in, the same
+    # leak class as the unauthenticated tenant-search routes narrowed
+    # to PublicTenantDto in the previous iteration. Narrow only the
+    # logged-out case: logged-in callers keep the full shape, which
+    # feature gating (use-feature-check) and admin UIs read, and the
+    # public shape still carries everything pre-login callers use
+    # (id, name, subdomain, custom_domain for the tenant-domain
+    # redirect and the X-Tenant-ID header). A logged-out feature check
+    # reads no features and correctly resolves to disabled.
+    if not is_user_logged_in and current_tenant is not None:
+        current_tenant = PublicTenantDto(**current_tenant.model_dump())
 
     return AppConfigurationDto(
         is_multi_tenant_enabled=is_tenancy_enabled(),
