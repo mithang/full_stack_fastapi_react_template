@@ -26,6 +26,19 @@ async def test_list_permissions_from_host(client: AsyncClient):
     assert response.headers["Cache-Control"] == "no-store"
     assert response.headers["Pragma"] == "no-cache"
 
+    # The security-headers middleware (security_headers_middleware.py)
+    # must stamp every response, but no test locked its headers in —
+    # deleting the middleware registration would have gone uncaught,
+    # as the no-store lines above did before iterations 1785-1819.
+    # The test client runs the real app over ASGI transport, so the
+    # pure-ASGI middleware applies here exactly as in production.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+
     data = [PermissionDto.model_validate(item) for item in response.json()]
 
     # Host caller (tenant_id None): the full enum, unfiltered.
