@@ -3,7 +3,7 @@ import pytest
 from httpx import AsyncClient
 from api.common.enums.gender import Gender
 from api.core.exceptions import InvalidSubdomainException
-from api.domain.dtos.tenant_dto import CreateTenantDto, CreateTenantResponseDto, TenantDto, TenantListDto
+from api.domain.dtos.tenant_dto import CreateTenantDto, CreateTenantResponseDto, PublicTenantDto, TenantListDto
 from api.domain.dtos.user_dto import CreateUserResponseDto
 from api.infrastructure.background.post_tenant_creation_task_service import PostTenantCreationTaskService
 
@@ -85,7 +85,14 @@ async def test_search_tenant_by_subdomain_as_host(client: AsyncClient, mock_post
     new_tenant_response = await create_tenant(client, mock_post_tenant_service)
     response = await client.get(f"/tenants/search_by_subdomain/test.fsrapp.com")
     assert response.status_code == 200
-    data = TenantDto.model_validate(response.json())
+    # The search routes return the public shape since iteration 1780:
+    # validating against the full TenantDto would fail, because it
+    # requires subscription_id, which the public shape deliberately
+    # withholds (billing data). Asserting the absence of both withheld
+    # fields locks that narrowing in instead of weakening the test.
+    assert "subscription_id" not in response.json()
+    assert "features" not in response.json()
+    data = PublicTenantDto.model_validate(response.json())
     assert data.name == "test"
     assert data.subdomain == "test.fsrapp.com"
     assert data.id == new_tenant_response.id
