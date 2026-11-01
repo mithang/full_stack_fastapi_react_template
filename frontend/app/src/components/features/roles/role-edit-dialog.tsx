@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { DialogHeader, DialogFooter, Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { DialogHeader, DialogFooter, Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import {
     Form, FormField, FormLabel, FormControl, FormItem, FormMessage,
 } from "@/components/ui/form";
@@ -104,7 +104,9 @@ export function RoleEditDialog({ open, onDismiss }: RoleEditDialogProps) {
             <DialogContent>
                 <DialogHeader>
                     <DialogTitle>Edit Role</DialogTitle>
-
+                    <DialogDescription>
+                        Update the role&apos;s name and description.
+                    </DialogDescription>
                 </DialogHeader>
                 <Form {...form}>
                     <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
