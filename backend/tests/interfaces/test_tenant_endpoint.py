@@ -425,15 +425,20 @@ async def test_list_of_tenants_paginated_in_host(client: AsyncClient, mock_post_
         assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
         assert "permissions-policy" in response.headers
         # Presence alone would not catch the value being weakened: lock
-        # the four most sensitive directives as disabled, as on the
+        # the five most sensitive directives as disabled, as on the
         # tenant-create POST in iteration 1868, using substring checks
         # so later additions to the list do not break this test. The
-        # full value lives in _SECURITY_HEADERS.
+        # full value lives in _SECURITY_HEADERS. The fifth,
+        # clipboard-read, is safe to lock here: the SPA never reads
+        # the clipboard (no readText/clipboard.read calls in
+        # frontend/app/src, only writeText calls in ai-chat and
+        # copy-text).
         permissions_policy = response.headers["permissions-policy"]
         assert "camera=()" in permissions_policy
         assert "microphone=()" in permissions_policy
         assert "geolocation=()" in permissions_policy
         assert "payment=()" in permissions_policy
+        assert "clipboard-read=()" in permissions_policy
     # Create a single user and return the response
 
     # Verify the user was created by listing users again
