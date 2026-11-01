@@ -669,16 +669,20 @@ async def test_validate_password_when_tenant_creation(client: AsyncClient, mock_
     assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
     assert "permissions-policy" in response.headers
     # Presence alone would not catch the value being weakened: lock
-    # the five most sensitive directives as disabled, as on the
+    # the six most sensitive directives as disabled, as on the
     # tenant responses in iterations 1865-1879, using substring
     # checks so later additions to the list do not break this test.
     # The full value lives in _SECURITY_HEADERS. The fifth,
     # clipboard-read, is safe to lock here: the SPA never reads
     # the clipboard (only writeText calls in ai-chat/copy-text).
+    # The sixth, display-capture, is safe to lock here: the SPA has
+    # no screen-sharing flow (zero getDisplayMedia calls, verified
+    # by grep), so disabling display capture breaks nothing.
     permissions_policy = response.headers["permissions-policy"]
     assert "camera=()" in permissions_policy
     assert "microphone=()" in permissions_policy
     assert "geolocation=()" in permissions_policy
     assert "payment=()" in permissions_policy
     assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
     assert response.json()["error"] == "Password must be at least 8 characters long, include uppercase and lowercase letters, a number, and a special character."
