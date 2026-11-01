@@ -81,6 +81,14 @@ async def test_update_role_by_id_from_host(client: AsyncClient):
     new_role_response = await create_role(client)
     response = await client.get(f"/roles/{new_role_response.id}")
     assert response.status_code == 200
+    # The endpoint comment requires this GET never to be served from a
+    # browser or proxy cache (it returns a single role's name and
+    # permissions), but no test locked the headers in — deleting the
+    # two header lines would have gone uncaught, as with the single
+    # role GET in iteration 1790 and the tenant search GETs in
+    # iterations 1791-1792.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
     data = RoleDto.model_validate(response.json())
 
     # Update the role's name
