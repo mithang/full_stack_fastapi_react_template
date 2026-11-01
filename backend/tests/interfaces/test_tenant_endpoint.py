@@ -271,18 +271,23 @@ async def test_search_tenant_by_name_as_host(client: AsyncClient, mock_post_tena
     assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
     assert "permissions-policy" in response.headers
     # Presence alone would not catch the value being weakened: lock
-    # the five most sensitive directives as disabled, mirroring the
+    # the six most sensitive directives as disabled, mirroring the
     # search_by_subdomain GET lock (iteration 1872) on this search
     # route, using substring checks so later additions to the list do
     # not break this test. The full value lives in _SECURITY_HEADERS.
     # The fifth, clipboard-read, is safe to lock here: the SPA never
     # reads the clipboard (no readText calls, only writeText copies).
+    # The sixth, display-capture, is safe to lock here: the SPA
+    # never calls getDisplayMedia (verified by grep this run), so
+    # no screen-sharing flow exists to break, and a compromised
+    # script could otherwise capture the screen on the app origin.
     permissions_policy = response.headers["permissions-policy"]
     assert "camera=()" in permissions_policy
     assert "microphone=()" in permissions_policy
     assert "geolocation=()" in permissions_policy
     assert "payment=()" in permissions_policy
     assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
     # Mirror of the search_by_subdomain test (iteration 1782): the
     # search routes return the public shape since iteration 1780,
     # but only the subdomain route had a success test locking that
