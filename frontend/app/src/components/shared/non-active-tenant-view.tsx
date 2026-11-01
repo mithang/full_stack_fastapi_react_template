@@ -42,7 +42,13 @@ export function NonActiveTenantView() {
     };
 
     const handleGoBack = () => {
-        navigate("/");
+        // "/" has no route: it falls through to the DashboardLayout
+        // catch-all, which sends the user to /dashboard, whose
+        // inactive-tenant effect sends them straight back here — so
+        // "Go Back" was a no-op. /login is a real public route that
+        // also renders tenant selection, letting the user pick a
+        // different tenant or sign in again.
+        navigate("/login");
     };
 
     return (
