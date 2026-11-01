@@ -246,6 +246,7 @@ export function Settings() {
                                             </p>
                                         </div>
                                         <Switch
+                                            aria-label="Enable S3 Storage"
                                             checked={formData.is_enabled}
                                             onCheckedChange={(checked) => updateField('is_enabled', checked)}
                                         />
