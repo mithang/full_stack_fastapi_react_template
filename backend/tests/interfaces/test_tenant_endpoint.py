@@ -358,6 +358,16 @@ async def test_get_nonexistent_tenant_by_name_as_host(client: AsyncClient,  mock
     assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
     assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
     assert "permissions-policy" in response.headers
+    # Presence alone would not catch the value being weakened: lock
+    # the four most sensitive directives as disabled, mirroring the
+    # tenant post-delete re-GET lock (iteration 1875) on this 404
+    # response, using substring checks so later additions to the list
+    # do not break this test. The full value lives in _SECURITY_HEADERS.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
     assert response.json()["error"] == "Tenant with identifier nonexistent-tenant not found."
 
 
