@@ -120,6 +120,12 @@ async def test_delete_role_by_id_from_host(client: AsyncClient):
     # Verify the role was deleted by attempting to get the role again
     response = await client.get(f"/roles/{new_role_response.id}")
     assert response.status_code == 404
+    # Same central-handler no-store lock as the nonexistent-role 404
+    # above (iteration 1810): the deleted role's GET raises
+    # RoleNotFoundException via the service, so this 404 also goes
+    # through api_exception_handler.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
 
 
 @pytest.mark.asyncio
