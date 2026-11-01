@@ -170,7 +170,7 @@ export function AddANewPlan({ onPlanCreated }: AddANewPlanProps) {
                         <Plus className="h-4 w-4 mr-2" />
                         Add a Plan
                     </Button>
-                    <Button className="sm:hidden" size="icon" onClick={() => setIsOpen(true)}>
+                    <Button className="sm:hidden" size="icon" aria-label="Add a Plan" onClick={() => setIsOpen(true)}>
                         <Plus className="h-4 w-4" />
                     </Button>
                 </>
