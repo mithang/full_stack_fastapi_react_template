@@ -184,7 +184,7 @@ async def test_list_of_users_paginated_in_host(client: AsyncClient):
 
     response = await client.get("/users/?skip=2&limit=1")
     assert response.status_code == 200
-    # Same no-store lock as pages 1-2 (iterations 1788/1799): this page
+    # Same no-store lock as pages 1-2 (iterations 1799/1800): this page
     # hits the same list endpoint, which sets both headers
     # unconditionally, but page 3 asserted only status 200, so deleting
     # the header lines would have gone uncaught on this page.
