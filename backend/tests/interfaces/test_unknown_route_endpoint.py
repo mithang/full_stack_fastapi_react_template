@@ -1,6 +1,8 @@
 import pytest
 from httpx import AsyncClient
 
+import api
+
 
 @pytest.mark.asyncio
 async def test_unknown_api_route_returns_no_store_404(client: AsyncClient):
@@ -59,5 +61,30 @@ async def test_bare_api_path_returns_no_store_404(client: AsyncClient):
     response = await client.get("http://test/api")
     assert response.status_code == 404
     assert response.json() == {"detail": "API route not found"}
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+
+
+@pytest.mark.asyncio
+async def test_no_build_404_returns_no_store_headers(client: AsyncClient, monkeypatch, tmp_path):
+    """
+        An unmatched SPA route with no UI build:
+    """
+    # The committed UI build exists in this checkout, so the no-build
+    # branch is unreachable without redirecting it: react_router
+    # reads the module-level build_path at request time (the
+    # StaticFiles mount reads it only at import), so pointing it
+    # at an empty directory reaches the else branch without
+    # touching the mounted assets. monkeypatch reverts it after
+    # the test, so no other test sees the redirected path.
+    monkeypatch.setattr(api, "build_path", str(tmp_path))
+    response = await client.get("http://test/spa-route-that-does-not-exist")
+    assert response.status_code == 404
+    assert response.json() == {"detail": "UI build not found"}
+    # This was the only JSON error return site in react_router
+    # without any cache directive, while the API 404 and the SPA
+    # shell above it both set no-store plus Pragma: without this
+    # lock, a cached 404 could keep answering SPA routes after a
+    # build is deployed, until the cached entry expires.
     assert response.headers["Cache-Control"] == "no-store"
     assert response.headers["Pragma"] == "no-cache"

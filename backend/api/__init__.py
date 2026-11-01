@@ -11076,8 +11076,18 @@ async def react_router(full_path: str):
         # above) instead of a 200 body claiming an endpoint was not
         # found, which a client could mistake for a successful
         # response. API paths never reach here (intercepted above),
-        # so this branch only serves SPA routes with no build.
+        # so this branch only serves SPA routes with no build. It
+        # still carries the same no-store headers as the other two
+        # return sites in this function: it is the only JSON error
+        # response here without any cache directive, so a cached
+        # 404 could otherwise keep answering SPA routes after a
+        # build is deployed (a restart mounts the new build, but
+        # a browser cache survives the restart), leaving the app
+        # broken until the cached entry expires — the same stale
+        # after-deploy class as the shell hardening above.
         return JSONResponse(
-            status_code=404, content={"detail": "UI build not found"}
+            status_code=404,
+            content={"detail": "UI build not found"},
+            headers={"Cache-Control": "no-store", "Pragma": "no-cache"},
         )
 
