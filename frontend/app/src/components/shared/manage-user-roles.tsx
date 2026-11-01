@@ -201,6 +201,15 @@ export function ManageUserRoles({ open, onDismiss, userId }: ManageUserRolesProp
                                             : 'hover:bg-primary/10'
                                             }`}
                                         onClick={() => handleRoleSelect(role)}
+                                        role="button"
+                                        tabIndex={0}
+                                        aria-pressed={selectedRole?.id === role.id}
+                                        onKeyDown={(e) => {
+                                            if (e.key === "Enter" || e.key === " ") {
+                                                e.preventDefault();
+                                                handleRoleSelect(role);
+                                            }
+                                        }}
                                     >
                                         <CardContent className="p-1">
                                             <div className="flex items-center justify-between">
