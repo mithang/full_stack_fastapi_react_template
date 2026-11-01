@@ -122,6 +122,14 @@ async def test_delete_user_by_id_from_host(client: AsyncClient):
     # Verify the user was deleted by attempting to get the user again
     response = await client.get(f"/users/{new_user_response.id}")
     assert response.status_code == 404
+    # Same no-store lock as the nonexistent-user 404 in this file
+    # (iteration 1811): the post-delete re-GET 404 comes from the
+    # central ApiBaseException handler, whose headers were added in
+    # iteration 1810, but no test locked them in for this re-GET —
+    # deleting them would have gone uncaught, as with the role
+    # post-delete re-GET, which is still unlocked.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
 
 
 @pytest.mark.asyncio
