@@ -147,6 +147,7 @@ export function ManageUserRoles({ open, onDismiss, userId }: ManageUserRolesProp
                         <Input
                             type="text"
                             placeholder="Search roles by name..."
+                            aria-label="Search roles by name..."
                             value={query}
                             onChange={(e) => setQuery(e.target.value)}
                             onKeyUp={handleKeyPress}
