@@ -248,6 +248,17 @@ async def test_get_nonexistent_tenant_by_name_as_host(client: AsyncClient,  mock
     # in iteration 1810 and the user 404 in iteration 1811.
     assert response.headers["Cache-Control"] == "no-store"
     assert response.headers["Pragma"] == "no-cache"
+    # Same security-header lock as the tenant delete-verification GET
+    # (locked in iteration 1847): this 404 goes through the same pure-
+    # ASGI middleware under the test client, but only locked the
+    # no-store headers — deleting the middleware registration would
+    # have gone uncaught on this route too.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
     assert response.json()["error"] == "Tenant with identifier nonexistent-tenant not found."
 
 
