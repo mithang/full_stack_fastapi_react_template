@@ -190,6 +190,13 @@ async def test_list_of_tenants_paginated_in_host(client: AsyncClient, mock_post_
     # Verify the user was created by listing users again
     response = await client.get("/tenants/?skip=0&limit=1")
     assert response.status_code == 200
+    # The list endpoint sets both headers unconditionally
+    # (tenant_endpoint.py: list_tenants), so they hold for paginated
+    # pages too, but no test locked them in for this paginated path —
+    # deleting the two header lines would have gone uncaught, as with
+    # the paginated user list pages in iterations 1799-1801.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
     data = TenantListDto.model_validate(response.json())
     assert data.total == 3
     assert len(data.tenants) == 1
