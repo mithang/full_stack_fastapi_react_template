@@ -154,6 +154,7 @@ export function ListPermission({
                                 <button
                                     type="button"
                                     className="ml-1 hover:text-destructive focus:text-destructive rounded-full"
+                                    aria-label={`Remove ${permissionName}`}
                                     onClick={() => handleRemovePermission(permissionName)}
                                 >
                                     ×
