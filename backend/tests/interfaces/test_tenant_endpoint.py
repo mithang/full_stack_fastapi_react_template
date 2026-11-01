@@ -306,6 +306,20 @@ async def test_list_of_tenants_paginated_in_host(client: AsyncClient, mock_post_
         response = await client.post("/tenants/", json=new_tenant.model_dump())
         mock_post_tenant_service.assert_awaited()
         assert response.status_code == 201
+        # The security-headers middleware (security_headers_middleware.py)
+        # stamps every HTTP response, and the shared create_tenant helper
+        # already locks its headers on the identical POST — but these
+        # paginated-setup POSTs asserted only status 201, so deleting
+        # the middleware registration would have gone uncaught on this
+        # path too. The test client runs the real app over ASGI
+        # transport, so the pure-ASGI middleware applies here exactly
+        # as in production.
+        assert response.headers["x-content-type-options"] == "nosniff"
+        assert response.headers["x-frame-options"] == "DENY"
+        assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+        assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+        assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+        assert "permissions-policy" in response.headers
     # Create a single user and return the response
 
     # Verify the user was created by listing users again
