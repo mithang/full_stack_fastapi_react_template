@@ -389,7 +389,7 @@ export function CheckoutOverview() {
                     <RefreshCw className="h-4 w-4 mr-2" />
                     Refresh
                 </Button>
-                <Button onClick={() => fetchCheckoutRecords(pagination.skip)} variant="outline" className="sm:hidden">
+                <Button onClick={() => fetchCheckoutRecords(pagination.skip)} variant="outline" className="sm:hidden" aria-label="Refresh">
                     <RefreshCw className="h-4 w-4" />
                 </Button>
             </div>
