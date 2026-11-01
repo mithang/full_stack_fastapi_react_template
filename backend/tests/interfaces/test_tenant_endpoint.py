@@ -425,4 +425,19 @@ async def test_validate_password_when_tenant_creation(client: AsyncClient, mock_
     )
     response = await client.post("/tenants/", json=new_tenant.model_dump())
     assert response.status_code == 406
+    # The security-headers middleware (security_headers_middleware.py)
+    # is pure ASGI and stamps every HTTP response, including error
+    # responses from mutation routes, but until now only success
+    # mutation responses and 404s locked its headers in — deleting
+    # the middleware registration would have gone uncaught on this
+    # 406 error response too. The test client runs the real app over
+    # ASGI transport, so the middleware applies here exactly as in
+    # production, and the tenant-create 201 already locks the same
+    # headers, so the assertion holds for this error response as well.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
     assert response.json()["error"] == "Password must be at least 8 characters long, include uppercase and lowercase letters, a number, and a special character."
