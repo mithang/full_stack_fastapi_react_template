@@ -167,6 +167,12 @@ async def test_list_of_roles_paginated_in_host(client: AsyncClient):
 
     response = await client.get("/roles/?skip=1&limit=1")
     assert response.status_code == 200
+    # Same no-store lock as the first paginated page (iteration 1796):
+    # the list endpoint sets both headers unconditionally, so the
+    # assertion holds for page 2 as well, and deleting the header
+    # lines would otherwise go uncaught on this page.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
     data = RoleListDto.model_validate(response.json())
     assert data.total == 3
     assert len(data.roles) == 1
