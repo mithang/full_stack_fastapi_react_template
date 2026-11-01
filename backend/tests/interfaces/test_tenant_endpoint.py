@@ -122,6 +122,15 @@ async def test_search_tenant_by_name_as_host(client: AsyncClient, mock_post_tena
     new_tenant_response = await create_tenant(client, mock_post_tenant_service)
     response = await client.get("/tenants/search_by_name/test")
     assert response.status_code == 200
+    # The endpoint sets the same no-store headers as the
+    # search_by_subdomain GET (tenant_endpoint.py: search_by_name sets
+    # Cache-Control: no-store and Pragma: no-cache so a cached 200 is
+    # never served to another admin after an account switch on a shared
+    # machine), but no test locked them in — deleting the two header
+    # lines would have gone uncaught, as with the search_by_subdomain
+    # GET in iteration 1791.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
     # Mirror of the search_by_subdomain test (iteration 1782): the
     # search routes return the public shape since iteration 1780,
     # but only the subdomain route had a success test locking that
