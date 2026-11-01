@@ -792,6 +792,7 @@ export function AIChat() {
                                     onClick={clearChat}
                                     disabled={chatState.isLoading}
                                     className="sm:hidden"
+                                    aria-label="Clear"
                                 >
                                     <Trash2 className="w-4 h-4" />
                                 </Button>
