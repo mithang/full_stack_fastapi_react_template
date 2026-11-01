@@ -1,4 +1,4 @@
-import { Dialog, DialogContent, DialogHeader, DialogTrigger, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTrigger, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { extractErrorMessage, getApiClient } from "@/lib/utils";
 import { toast } from "sonner";
@@ -83,6 +83,9 @@ function PassKeyManagement({ accessToken, shouldRefresh }: PassKeyManagementProp
                 <DialogTitle>
                     List of Registered Passkeys
                 </DialogTitle>
+                <DialogDescription>
+                    View and manage your registered passkeys.
+                </DialogDescription>
             </DialogHeader>
             <section className="mt-4 overflow-x-auto">
                 <Table>
