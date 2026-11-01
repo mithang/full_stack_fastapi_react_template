@@ -24,3 +24,20 @@ async def test_unknown_api_route_returns_no_store_404(client: AsyncClient):
     # and ApiBaseException GET hardening.
     assert response.headers["Cache-Control"] == "no-store"
     assert response.headers["Pragma"] == "no-cache"
+
+
+@pytest.mark.asyncio
+async def test_bare_api_path_returns_no_store_404(client: AsyncClient):
+    """
+        A bare /api GET:
+    """
+    # The catch-all's api/ branch has two spellings: full_path == "api"
+    # and full_path.startswith("api/"). The iteration-1816 lock covered
+    # only the startswith spelling (/api/v1/does-not-exist); this locks
+    # the bare spelling too, which returns the same 404 body and the
+    # same no-store headers from the same return site.
+    response = await client.get("http://test/api")
+    assert response.status_code == 404
+    assert response.json() == {"detail": "API route not found"}
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
