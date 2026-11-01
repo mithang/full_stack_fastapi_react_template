@@ -21,7 +21,7 @@ export function Loading({
 
     if (variant === "spinner") {
         return (
-            <div className={cn("flex flex-col items-center justify-center gap-3", className)}>
+            <div role="status" className={cn("flex flex-col items-center justify-center gap-3", className)}>
                 <div className={cn(
                     "animate-spin rounded-full border-2 border-gray-300 border-t-blue-600",
                     sizeClasses[size]
@@ -35,7 +35,7 @@ export function Loading({
 
     if (variant === "dots") {
         return (
-            <div className={cn("flex flex-col items-center justify-center gap-3", className)}>
+            <div role="status" className={cn("flex flex-col items-center justify-center gap-3", className)}>
                 <div className="flex space-x-1">
                     <div className={cn(
                         "bg-blue-600 rounded-full animate-bounce [animation-delay:0ms]",
@@ -59,7 +59,7 @@ export function Loading({
 
     if (variant === "pulse") {
         return (
-            <div className={cn("flex flex-col items-center justify-center gap-3", className)}>
+            <div role="status" className={cn("flex flex-col items-center justify-center gap-3", className)}>
                 <div className={cn(
                     "bg-gradient-to-r from-blue-500 to-purple-600 rounded-full animate-pulse",
                     sizeClasses[size]
@@ -73,7 +73,7 @@ export function Loading({
 
     if (variant === "skeleton") {
         return (
-            <div className={cn("space-y-3", className)}>
+            <div role="status" className={cn("space-y-3", className)}>
                 <div className="animate-pulse">
                     <div className="bg-gray-300 rounded h-4 w-3/4"></div>
                 </div>
