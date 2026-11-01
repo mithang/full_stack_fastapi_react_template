@@ -11045,8 +11045,17 @@ async def react_router(full_path: str):
     # the same {"detail": ...} shape FastAPI returns for unknown routes.
     # SPA routes are unaffected: only the api/ prefix is intercepted.
     if full_path == "api" or full_path.startswith("api/"):
+        # Same no-store hardening as the central ApiBaseException
+        # handler (iteration 1810): this unmatched-API-route 404
+        # bypasses that handler (Starlette routing, not an exception),
+        # so without these headers a cached 404 for a mistyped or
+        # removed route could be served to a different user after an
+        # account switch on a shared machine. The UI-build 404 below
+        # is left alone: it is an SPA route, not an API response.
         return JSONResponse(
-            status_code=404, content={"detail": "API route not found"}
+            status_code=404,
+            content={"detail": "API route not found"},
+            headers={"Cache-Control": "no-store", "Pragma": "no-cache"},
         )
     if os.path.exists(os.path.join(build_path, "index.html")):
         # Never cache the SPA shell: asset filenames are content-hashed
