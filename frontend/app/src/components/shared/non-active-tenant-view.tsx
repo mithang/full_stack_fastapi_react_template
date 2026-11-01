@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useAppConfig } from "@/components/providers/app-config-provider";
 import { useNavigate } from "react-router";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -65,9 +65,9 @@ export function NonActiveTenantView() {
                         <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-secondary">
                             <AlertTriangle className="h-8 w-8 text-secondary-foreground" />
                         </div>
-                        <CardTitle className="text-2xl font-bold text-card-foreground">
+                        <h1 className="leading-none font-semibold text-2xl font-bold text-card-foreground">
                             Account Temporarily Inactive
-                        </CardTitle>
+                        </h1>
                         <CardDescription className="text-lg text-muted-foreground mt-2">
                             Your tenant account is currently inactive and requires activation
                         </CardDescription>
