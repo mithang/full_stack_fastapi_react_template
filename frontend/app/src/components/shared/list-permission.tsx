@@ -178,7 +178,7 @@ export function ListPermission({
                 </PopoverTrigger>
                 <PopoverContent className="p-0">
                     <Command>
-                        <CommandInput placeholder={pending ? "Loading..." : "Search permission..."} />
+                        <CommandInput placeholder={pending ? "Loading..." : "Search permission..."} aria-label="Search permission..." />
                         <CommandList>
                             <CommandEmpty>No permission found.</CommandEmpty>
                             <CommandGroup>
