@@ -157,6 +157,7 @@ export function TenantSelection({
                                 variant="ghost"
                                 size="sm"
                                 onClick={clearSelection}
+                                aria-label="Clear selection"
                                 className="h-auto p-1"
                             >
                                 <X className="w-4 h-4" />
