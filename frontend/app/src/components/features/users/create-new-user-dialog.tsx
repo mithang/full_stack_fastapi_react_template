@@ -141,6 +141,7 @@ export function CreateNewUserDialog({ open, onDismiss }: CreateNewUserDialogProp
                                     <FormControl>
                                         <Input
                                             type="text"
+                                            autoComplete="given-name"
                                             placeholder="Enter your first name"
                                             disabled={isLoading}
                                             {...field}
@@ -161,6 +162,7 @@ export function CreateNewUserDialog({ open, onDismiss }: CreateNewUserDialogProp
                                     <FormControl>
                                         <Input
                                             type="text"
+                                            autoComplete="family-name"
                                             placeholder="Enter your last name"
                                             disabled={isLoading}
                                             {...field}
@@ -181,6 +183,7 @@ export function CreateNewUserDialog({ open, onDismiss }: CreateNewUserDialogProp
                                     <FormControl>
                                         <Input
                                             type="email"
+                                            autoComplete="email"
                                             placeholder="Enter your email"
                                             disabled={isLoading}
                                             {...field}
@@ -228,6 +231,7 @@ export function CreateNewUserDialog({ open, onDismiss }: CreateNewUserDialogProp
                                     <FormControl>
                                         <Input
                                             type="password"
+                                            autoComplete="new-password"
                                             placeholder="Enter your password"
                                             disabled={isLoading}
                                             {...field}
