@@ -93,6 +93,12 @@ async def test_update_user_by_id_from_host(client: AsyncClient):
     new_user_response = await create_user(client)
     response = await client.get(f"/users/{new_user_response.id}")
     assert response.status_code == 200
+    # Same no-store lock as the single-user GET (iteration 1789):
+    # this pre-fetch GET hits the same get_user endpoint, which sets
+    # both headers unconditionally, but asserted only status 200, so
+    # deleting the header lines would have gone uncaught here.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
     data = UserDto.model_validate(response.json())
 
     # Update the user's email
