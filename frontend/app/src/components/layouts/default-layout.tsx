@@ -12,9 +12,9 @@ export function DefaultLayout() {
             </a>
             <header className="p-4 bg-secondary border-b border-border">
                 <section className="container mx-auto flex justify-between items-center">
-                    <h1 className="text-xl font-bold text-primary">
+                    <div className="text-xl font-bold text-primary">
                         <Logo />
-                    </h1>
+                    </div>
                     <DarkMode />
                 </section>
             </header>
