@@ -201,6 +201,8 @@ export function PasskeyLogin() {
                                             <div className="relative">
                                                 <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
                                                 <Input
+                                                    type="email"
+                                                    autoComplete="email"
                                                     placeholder="Enter your email"
                                                     className="pl-10"
                                                     disabled={isLoading}

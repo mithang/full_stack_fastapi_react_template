@@ -207,6 +207,7 @@ export function MagicLinkLogin() {
                                                         <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
                                                         <Input
                                                             type="email"
+                                                            autoComplete="email"
                                                             placeholder="Enter your email address"
                                                             className="pl-10"
                                                             disabled={isLoading}
