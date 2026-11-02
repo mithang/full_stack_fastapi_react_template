@@ -129,7 +129,7 @@ async def test_list_tenants_from_host(client: AsyncClient):
     assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
     assert "permissions-policy" in response.headers
     # Presence alone would not catch the value being weakened: lock
-    # the ten most sensitive directives as disabled, mirroring the
+    # the eleven most sensitive directives as disabled, mirroring the
     # permissions GET lock (iteration 1865), the user/role/tenant
     # create locks (iterations 1866-1868), and the app-config GET
     # lock (iteration 1869), using substring checks so later
@@ -159,6 +159,11 @@ async def test_list_tenants_from_host(client: AsyncClient):
     # no compass flow (zero Magnetometer/magnetometer matches in
     # frontend/app/src, verified by grep this run), and the
     # middleware value already contains magnetometer=().
+    # The eleventh, xr-spatial-tracking, is safe to lock here: the SPA has
+    # no XR flow (zero navigator.xr/XRSession/XRSystem/immersive-ar/
+    # immersive-vr/requestSession matches in frontend/app/src,
+    # verified by grep this run), and the middleware value already
+    # contains xr-spatial-tracking=().
     permissions_policy = response.headers["permissions-policy"]
     assert "camera=()" in permissions_policy
     assert "microphone=()" in permissions_policy
@@ -170,6 +175,7 @@ async def test_list_tenants_from_host(client: AsyncClient):
     assert "accelerometer=()" in permissions_policy
     assert "gyroscope=()" in permissions_policy
     assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
 
     data = TenantListDto.model_validate(response.json())
 
