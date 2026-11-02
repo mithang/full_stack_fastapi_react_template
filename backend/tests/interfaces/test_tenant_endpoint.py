@@ -568,7 +568,7 @@ async def test_get_nonexistent_tenant_by_name_as_host(client: AsyncClient,  mock
     assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
     assert "permissions-policy" in response.headers
     # Presence alone would not catch the value being weakened: lock
-    # the nine most sensitive directives as disabled, mirroring the
+    # the ten most sensitive directives as disabled, mirroring the
     # tenant post-delete re-GET lock (iteration 1875) on this 404
     # response, using substring checks so later additions to the list
     # do not break this test. The full value lives in _SECURITY_HEADERS.
@@ -589,6 +589,10 @@ async def test_get_nonexistent_tenant_by_name_as_host(client: AsyncClient,  mock
     # no gyroscope flow (zero Gyroscope/DeviceOrientation matches
     # in frontend/app/src, verified by grep this run), and the
     # middleware value already contains gyroscope=().
+    # The tenth, magnetometer, is safe to lock here: the SPA has
+    # no compass flow (zero Magnetometer/magnetometer matches in
+    # frontend/app/src, verified by grep this run), and the
+    # middleware value already contains magnetometer=().
     permissions_policy = response.headers["permissions-policy"]
     assert "camera=()" in permissions_policy
     assert "microphone=()" in permissions_policy
@@ -599,6 +603,7 @@ async def test_get_nonexistent_tenant_by_name_as_host(client: AsyncClient,  mock
     assert "fullscreen=()" in permissions_policy
     assert "accelerometer=()" in permissions_policy
     assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
     assert response.json()["error"] == "Tenant with identifier nonexistent-tenant not found."
 
 
