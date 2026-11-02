@@ -51,7 +51,7 @@ async def create_tenant(client: AsyncClient, mock_post_tenant_service) -> Create
     assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
     assert "permissions-policy" in response.headers
     # Presence alone would not catch the value being weakened: lock
-    # the eleven most sensitive directives as disabled, as on the
+    # the twelve most sensitive directives as disabled, as on the
     # permissions GET in iteration 1865 and the user/role-create POSTs
     # in iterations 1866-1867, using substring checks so later
     # additions to the list do not break this test. The full value
@@ -84,6 +84,11 @@ async def create_tenant(client: AsyncClient, mock_post_tenant_service) -> Create
     # immersive-vr/requestSession matches in frontend/app/src,
     # verified by grep this run), and the middleware value already
     # contains xr-spatial-tracking=().
+    # The twelfth, idle-detection, is safe to lock here: the SPA has
+    # no idle-detection flow (zero IdleDetector/idle matches in
+    # frontend/app/src, verified by grep this run), and the
+    # middleware value already contains idle-detection=()
+    # immediately after xr-spatial-tracking=().
     permissions_policy = response.headers["permissions-policy"]
     assert "camera=()" in permissions_policy
     assert "microphone=()" in permissions_policy
@@ -96,6 +101,7 @@ async def create_tenant(client: AsyncClient, mock_post_tenant_service) -> Create
     assert "gyroscope=()" in permissions_policy
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
     mock_post_tenant_service.assert_awaited()
 
     return CreateUserResponseDto.model_validate(response.json())
