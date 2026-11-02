@@ -338,7 +338,7 @@ async def test_delete_user_by_id_from_host(client: AsyncClient):
     assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
     assert "permissions-policy" in response.headers
     # Presence alone would not catch the value being weakened: lock
-    # the six most sensitive directives as disabled, mirroring the
+    # the seven most sensitive directives as disabled, mirroring the
     # user update PUT lock in this file (iteration 1899), using
     # substring checks so later additions to the list do not break
     # this test. The full value lives in _SECURITY_HEADERS. The
@@ -348,6 +348,9 @@ async def test_delete_user_by_id_from_host(client: AsyncClient):
     # The sixth, display-capture, is safe to lock here: the SPA has
     # no screen-sharing flow (zero getDisplayMedia calls, verified
     # by grep this run).
+    # The seventh, fullscreen, is safe to lock here: the SPA has no
+    # fullscreen flow (zero requestFullscreen calls, verified by
+    # grep this run).
     permissions_policy = response.headers["permissions-policy"]
     assert "camera=()" in permissions_policy
     assert "microphone=()" in permissions_policy
@@ -355,6 +358,7 @@ async def test_delete_user_by_id_from_host(client: AsyncClient):
     assert "payment=()" in permissions_policy
     assert "clipboard-read=()" in permissions_policy
     assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
 
     # Verify the user was deleted by attempting to get the user again
     response = await client.get(f"/users/{new_user_response.id}")
