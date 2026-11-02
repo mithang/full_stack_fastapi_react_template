@@ -622,7 +622,7 @@ async def test_get_nonexistent_user_by_id_from_host(client: AsyncClient):
     assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
     assert "permissions-policy" in response.headers
     # Presence alone would not catch the value being weakened: lock
-    # the eleven most sensitive directives as disabled, mirroring the
+    # the twelve most sensitive directives as disabled, mirroring the
     # user post-delete re-GET lock in this file (iteration 1930),
     # using substring checks so later additions to the list do not
     # break this test. The full value lives in _SECURITY_HEADERS. The
@@ -649,6 +649,11 @@ async def test_get_nonexistent_user_by_id_from_host(client: AsyncClient):
     # XRSession/XRSystem/immersive-ar/immersive-vr/requestSession
     # matches and no webxr/three entry in package.json, verified by
     # grep this run).
+    # The twelfth, idle-detection, is safe to lock here for the
+    # same reason: the SPA has no idle-detection flow (zero
+    # IdleDetector matches, zero case-insensitive idle matches,
+    # and zero requestIdleCallback matches, verified by grep
+    # this run).
     permissions_policy = response.headers["permissions-policy"]
     assert "camera=()" in permissions_policy
     assert "microphone=()" in permissions_policy
@@ -661,6 +666,7 @@ async def test_get_nonexistent_user_by_id_from_host(client: AsyncClient):
     assert "gyroscope=()" in permissions_policy
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
     assert response.json()["error"] == "User with identifier 68c3031f449ed3590028c778 not found."
 
 
