@@ -693,7 +693,7 @@ async def test_list_of_tenants_paginated_in_host(client: AsyncClient, mock_post_
         assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
         assert "permissions-policy" in response.headers
         # Presence alone would not catch the value being weakened: lock
-        # the ten most sensitive directives as disabled, as on the
+        # the eleven most sensitive directives as disabled, as on the
         # tenant-create POST in iteration 1868, using substring checks
         # so later additions to the list do not break this test. The
         # full value lives in _SECURITY_HEADERS. The fifth,
@@ -719,7 +719,14 @@ async def test_list_of_tenants_paginated_in_host(client: AsyncClient, mock_post_
         # is safe to lock here: the SPA has no compass flow (zero
         # Magnetometer/magnetometer matches in frontend/app/src,
         # verified by grep this run), and the middleware value
-        # already contains magnetometer=().
+        # already contains magnetometer=(). The eleventh,
+        # xr-spatial-tracking, is safe to lock here: the SPA has
+        # no XR flow (zero navigator.xr/XRSession/XRSystem/
+        # immersive-ar/immersive-vr/requestSession matches in
+        # frontend/app/src and no webxr/three dependency, verified
+        # by grep this run), and the middleware value already
+        # contains xr-spatial-tracking=() immediately after
+        # magnetometer=().
         permissions_policy = response.headers["permissions-policy"]
         assert "camera=()" in permissions_policy
         assert "microphone=()" in permissions_policy
@@ -731,6 +738,7 @@ async def test_list_of_tenants_paginated_in_host(client: AsyncClient, mock_post_
         assert "accelerometer=()" in permissions_policy
         assert "gyroscope=()" in permissions_policy
         assert "magnetometer=()" in permissions_policy
+        assert "xr-spatial-tracking=()" in permissions_policy
     # Create a single user and return the response
 
     # Verify the user was created by listing users again
