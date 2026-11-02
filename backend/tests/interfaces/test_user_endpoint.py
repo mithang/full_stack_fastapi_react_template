@@ -700,7 +700,7 @@ async def test_list_of_users_paginated_in_host(client: AsyncClient):
         assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
         assert "permissions-policy" in response.headers
         # Presence alone would not catch the value being weakened: lock
-        # the eleven most sensitive directives as disabled, mirroring the
+        # the twelve most sensitive directives as disabled, mirroring the
         # paginated page GET locks in this test, using substring
         # checks so later additions to the list do not break this test.
         # The full value lives in _SECURITY_HEADERS. The fifth,
@@ -727,6 +727,11 @@ async def test_list_of_users_paginated_in_host(client: AsyncClient):
         # XRSession/XRSystem/immersive-ar/immersive-vr/requestSession
         # matches and no webxr/three entry in package.json, verified by
         # grep this run).
+        # The twelfth, idle-detection, is safe to lock here for the
+        # same reason: the SPA has no idle-detection flow (zero
+        # IdleDetector matches, zero case-insensitive idle matches,
+        # and zero requestIdleCallback matches, verified by grep
+        # this run).
         permissions_policy = response.headers["permissions-policy"]
         assert "camera=()" in permissions_policy
         assert "microphone=()" in permissions_policy
@@ -739,6 +744,7 @@ async def test_list_of_users_paginated_in_host(client: AsyncClient):
         assert "gyroscope=()" in permissions_policy
         assert "magnetometer=()" in permissions_policy
         assert "xr-spatial-tracking=()" in permissions_policy
+        assert "idle-detection=()" in permissions_policy
     # Create a single user and return the response
 
     # Verify the user was created by listing users again
