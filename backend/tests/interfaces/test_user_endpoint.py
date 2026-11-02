@@ -532,7 +532,7 @@ async def test_list_of_users_paginated_in_host(client: AsyncClient):
     assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
     assert "permissions-policy" in response.headers
     # Presence alone would not catch the value being weakened: lock
-    # the six most sensitive directives as disabled, mirroring the
+    # the seven most sensitive directives as disabled, mirroring the
     # unpaginated user-list GET lock in this file, using substring
     # checks so later additions to the list do not break this test.
     # The full value lives in _SECURITY_HEADERS. The fifth,
@@ -542,6 +542,9 @@ async def test_list_of_users_paginated_in_host(client: AsyncClient):
     # The sixth, display-capture, is safe to lock here: the SPA has
     # no screen-sharing flow (zero getDisplayMedia calls, verified
     # by grep this run).
+    # The seventh, fullscreen, is safe to lock here: the SPA has
+    # no fullscreen flow (zero requestFullscreen calls, verified
+    # by grep this run).
     permissions_policy = response.headers["permissions-policy"]
     assert "camera=()" in permissions_policy
     assert "microphone=()" in permissions_policy
@@ -549,6 +552,7 @@ async def test_list_of_users_paginated_in_host(client: AsyncClient):
     assert "payment=()" in permissions_policy
     assert "clipboard-read=()" in permissions_policy
     assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
     data = UserListDto.model_validate(response.json())
     assert data.total == 3
     assert len(data.users) == 1
