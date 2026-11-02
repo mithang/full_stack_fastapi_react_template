@@ -27,7 +27,7 @@ async def create_user(client: AsyncClient) -> CreateUserResponseDto:
     assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
     assert "permissions-policy" in response.headers
     # Presence alone would not catch the value being weakened: lock
-    # the six most sensitive directives as disabled, as on the
+    # the seven most sensitive directives as disabled, as on the
     # permissions GET in iteration 1865, using substring checks so
     # later additions to the list do not break this test. The full
     # value lives in _SECURITY_HEADERS. The fifth, clipboard-read,
@@ -36,6 +36,9 @@ async def create_user(client: AsyncClient) -> CreateUserResponseDto:
     # The sixth, display-capture, is safe to lock here: the SPA has
     # no screen-sharing flow (zero getDisplayMedia calls, verified
     # by grep this run).
+    # The seventh, fullscreen, is safe to lock here: the SPA has no
+    # fullscreen flow (zero requestFullscreen calls and zero
+    # <video>/<audio> elements, verified by grep this run).
     permissions_policy = response.headers["permissions-policy"]
     assert "camera=()" in permissions_policy
     assert "microphone=()" in permissions_policy
@@ -43,6 +46,7 @@ async def create_user(client: AsyncClient) -> CreateUserResponseDto:
     assert "payment=()" in permissions_policy
     assert "clipboard-read=()" in permissions_policy
     assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
     return CreateUserResponseDto.model_validate(response.json())
 
 
