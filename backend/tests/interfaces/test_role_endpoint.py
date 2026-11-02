@@ -362,7 +362,7 @@ async def test_delete_role_by_id_from_host(client: AsyncClient):
     assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
     assert "permissions-policy" in response.headers
     # Presence alone would not catch the value being weakened: lock
-    # the seven most sensitive directives as disabled, mirroring the
+    # the eight most sensitive directives as disabled, mirroring the
     # role-update PUT lock (iteration 1890), using substring checks
     # so later additions to the list do not break this test. The
     # full value lives in _SECURITY_HEADERS. The fifth,
@@ -375,6 +375,11 @@ async def test_delete_role_by_id_from_host(client: AsyncClient):
     # here: the SPA has no fullscreen flow (zero requestFullscreen
     # calls and zero <video>/<audio> elements, verified by grep this
     # run), and the middleware value already contains fullscreen=().
+    # The eighth, accelerometer, is safe to lock here: the SPA has no
+    # motion-sensor flow (zero DeviceMotion/DeviceOrientation/
+    # Accelerometer/Gyroscope/Magnetometer matches, verified by grep
+    # this run), and the middleware value already contains
+    # accelerometer=().
     permissions_policy = response.headers["permissions-policy"]
     assert "camera=()" in permissions_policy
     assert "microphone=()" in permissions_policy
@@ -383,6 +388,7 @@ async def test_delete_role_by_id_from_host(client: AsyncClient):
     assert "clipboard-read=()" in permissions_policy
     assert "display-capture=()" in permissions_policy
     assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
 
     # Verify the role was deleted by attempting to get the role again
     response = await client.get(f"/roles/{new_role_response.id}")
