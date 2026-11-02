@@ -51,7 +51,7 @@ async def create_tenant(client: AsyncClient, mock_post_tenant_service) -> Create
     assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
     assert "permissions-policy" in response.headers
     # Presence alone would not catch the value being weakened: lock
-    # the seven most sensitive directives as disabled, as on the
+    # the eight most sensitive directives as disabled, as on the
     # permissions GET in iteration 1865 and the user/role-create POSTs
     # in iterations 1866-1867, using substring checks so later
     # additions to the list do not break this test. The full value
@@ -66,6 +66,11 @@ async def create_tenant(client: AsyncClient, mock_post_tenant_service) -> Create
     # no fullscreen flow (zero requestFullscreen calls and zero
     # <video>/<audio> elements, verified by grep this run), and
     # the middleware value already contains fullscreen=().
+    # The eighth, accelerometer, is safe to lock here: the SPA
+    # never reads motion sensors (zero Accelerometer/Gyroscope/
+    # Magnetometer/DeviceMotion/DeviceOrientation matches in
+    # frontend/app/src, verified by grep this run), and the
+    # middleware value already contains accelerometer=().
     permissions_policy = response.headers["permissions-policy"]
     assert "camera=()" in permissions_policy
     assert "microphone=()" in permissions_policy
@@ -74,6 +79,7 @@ async def create_tenant(client: AsyncClient, mock_post_tenant_service) -> Create
     assert "clipboard-read=()" in permissions_policy
     assert "display-capture=()" in permissions_policy
     assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
     mock_post_tenant_service.assert_awaited()
 
     return CreateUserResponseDto.model_validate(response.json())
