@@ -508,7 +508,7 @@ async def test_list_of_tenants_paginated_in_host(client: AsyncClient, mock_post_
         assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
         assert "permissions-policy" in response.headers
         # Presence alone would not catch the value being weakened: lock
-        # the six most sensitive directives as disabled, as on the
+        # the seven most sensitive directives as disabled, as on the
         # tenant-create POST in iteration 1868, using substring checks
         # so later additions to the list do not break this test. The
         # full value lives in _SECURITY_HEADERS. The fifth,
@@ -518,6 +518,10 @@ async def test_list_of_tenants_paginated_in_host(client: AsyncClient, mock_post_
         # copy-text). The sixth, display-capture, is safe to lock
         # here: the SPA never calls getDisplayMedia (verified by
         # grep this run), so no screen-sharing flow exists to break.
+        # The seventh, fullscreen, is safe to lock here: the SPA
+        # never calls requestFullscreen and has no video/audio
+        # element (verified by grep this run), so no fullscreen
+        # flow exists to break.
         permissions_policy = response.headers["permissions-policy"]
         assert "camera=()" in permissions_policy
         assert "microphone=()" in permissions_policy
@@ -525,6 +529,7 @@ async def test_list_of_tenants_paginated_in_host(client: AsyncClient, mock_post_
         assert "payment=()" in permissions_policy
         assert "clipboard-read=()" in permissions_policy
         assert "display-capture=()" in permissions_policy
+        assert "fullscreen=()" in permissions_policy
     # Create a single user and return the response
 
     # Verify the user was created by listing users again
