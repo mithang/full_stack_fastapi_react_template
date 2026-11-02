@@ -293,7 +293,7 @@ async def test_search_tenant_by_subdomain_as_host(client: AsyncClient, mock_post
     assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
     assert "permissions-policy" in response.headers
     # Presence alone would not catch the value being weakened: lock
-    # the ten most sensitive directives as disabled, mirroring the
+    # the eleven most sensitive directives as disabled, mirroring the
     # tenant-list GET lock (iteration 1870) on this search route,
     # using substring checks so later additions to the list do not
     # break this test. The full value lives in _SECURITY_HEADERS.
@@ -321,6 +321,12 @@ async def test_search_tenant_by_subdomain_as_host(client: AsyncClient, mock_post
     # no compass flow (zero Magnetometer/magnetometer matches in
     # frontend/app/src, verified by grep this run), and the
     # middleware value already contains magnetometer=().
+    # The eleventh, xr-spatial-tracking, is safe to lock here: the
+    # SPA has no XR flow (zero navigator.xr/XRSession/XRSystem/
+    # immersive-ar/immersive-vr/requestSession matches in
+    # frontend/app/src and no webxr/three dependency, verified by
+    # grep this run), and the middleware value already contains
+    # xr-spatial-tracking=() immediately after magnetometer=().
     permissions_policy = response.headers["permissions-policy"]
     assert "camera=()" in permissions_policy
     assert "microphone=()" in permissions_policy
@@ -332,6 +338,7 @@ async def test_search_tenant_by_subdomain_as_host(client: AsyncClient, mock_post
     assert "accelerometer=()" in permissions_policy
     assert "gyroscope=()" in permissions_policy
     assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
     # The search routes return the public shape since iteration 1780:
     # validating against the full TenantDto would fail, because it
     # requires subscription_id, which the public shape deliberately
