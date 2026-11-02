@@ -613,7 +613,7 @@ async def test_list_of_roles_paginated_in_host(client: AsyncClient):
         assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
         assert "permissions-policy" in response.headers
         # Presence alone would not catch the value being weakened: lock
-        # the nine most sensitive directives as disabled, mirroring the
+        # the ten most sensitive directives as disabled, mirroring the
         # paginated page GET locks in this test, using substring
         # checks so later additions to the list do not break this test.
         # The full value lives in _SECURITY_HEADERS. The fifth,
@@ -634,6 +634,10 @@ async def test_list_of_roles_paginated_in_host(client: AsyncClient):
         # gyroscope flow (zero Gyroscope/DeviceOrientation matches in
         # frontend/app/src, verified by grep this run), and the
         # middleware value already contains gyroscope=().
+        # The tenth, magnetometer, is safe to lock here: the SPA has no
+        # compass flow (zero Magnetometer/magnetometer matches in
+        # frontend/app/src, verified by grep this run), and the
+        # middleware value already contains magnetometer=().
         permissions_policy = response.headers["permissions-policy"]
         assert "camera=()" in permissions_policy
         assert "microphone=()" in permissions_policy
@@ -644,6 +648,7 @@ async def test_list_of_roles_paginated_in_host(client: AsyncClient):
         assert "fullscreen=()" in permissions_policy
         assert "accelerometer=()" in permissions_policy
         assert "gyroscope=()" in permissions_policy
+        assert "magnetometer=()" in permissions_policy
     # Create a single user and return the response
 
     # Verify the user was created by listing users again
