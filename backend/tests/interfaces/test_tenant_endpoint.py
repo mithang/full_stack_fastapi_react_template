@@ -245,7 +245,7 @@ async def test_search_tenant_by_subdomain_as_host(client: AsyncClient, mock_post
     assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
     assert "permissions-policy" in response.headers
     # Presence alone would not catch the value being weakened: lock
-    # the seven most sensitive directives as disabled, mirroring the
+    # the eight most sensitive directives as disabled, mirroring the
     # tenant-list GET lock (iteration 1870) on this search route,
     # using substring checks so later additions to the list do not
     # break this test. The full value lives in _SECURITY_HEADERS.
@@ -260,6 +260,11 @@ async def test_search_tenant_by_subdomain_as_host(client: AsyncClient, mock_post
     # (verified by grep this run), so no fullscreen flow exists to
     # break, and a compromised script could otherwise fullscreen-
     # spoof the app UI on the app origin.
+    # The eighth, accelerometer, is safe to lock here: the SPA has
+    # no motion-sensor flow (zero DeviceMotion/DeviceOrientation/
+    # Accelerometer/Gyroscope/Magnetometer uses in frontend/app/src,
+    # verified by grep this run), and the middleware value already
+    # contains accelerometer=().
     permissions_policy = response.headers["permissions-policy"]
     assert "camera=()" in permissions_policy
     assert "microphone=()" in permissions_policy
@@ -268,6 +273,7 @@ async def test_search_tenant_by_subdomain_as_host(client: AsyncClient, mock_post
     assert "clipboard-read=()" in permissions_policy
     assert "display-capture=()" in permissions_policy
     assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
     # The search routes return the public shape since iteration 1780:
     # validating against the full TenantDto would fail, because it
     # requires subscription_id, which the public shape deliberately
