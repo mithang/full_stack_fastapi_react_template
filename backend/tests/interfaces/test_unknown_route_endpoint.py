@@ -195,13 +195,16 @@ async def test_no_build_404_returns_no_store_headers(client: AsyncClient, monkey
     assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
     assert "permissions-policy" in response.headers
     # Presence alone would not catch the value being weakened: lock
-    # the six most sensitive directives as disabled, mirroring the
+    # the seven most sensitive directives as disabled, mirroring the
     # bare /api 404 lock above, using substring checks so later
     # additions to the list do not break this test. The full value
     # lives in _SECURITY_HEADERS. The fifth, clipboard-read, is safe
     # to lock: the SPA only writes to the clipboard, never reads it.
     # The sixth, display-capture, is safe to lock here: the SPA has
     # no screen-sharing flow (no getDisplayMedia calls in the app).
+    # The seventh, fullscreen, is safe to lock here: the SPA has no
+    # fullscreen flow (no requestFullscreen calls and no video or
+    # audio elements in the app).
     permissions_policy = response.headers["permissions-policy"]
     assert "camera=()" in permissions_policy
     assert "microphone=()" in permissions_policy
@@ -209,3 +212,4 @@ async def test_no_build_404_returns_no_store_headers(client: AsyncClient, monkey
     assert "payment=()" in permissions_policy
     assert "clipboard-read=()" in permissions_policy
     assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
