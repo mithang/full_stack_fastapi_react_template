@@ -876,7 +876,7 @@ async def test_list_of_roles_paginated_in_host(client: AsyncClient):
     assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
     assert "permissions-policy" in response.headers
     # Presence alone would not catch the value being weakened: lock
-    # the eleven most sensitive directives as disabled, mirroring the
+    # the twelve most sensitive directives as disabled, mirroring the
     # paginated page 1 lock (iteration 1885), using substring checks
     # so later additions to the list do not break this test. The
     # full value lives in _SECURITY_HEADERS. The fifth,
@@ -908,6 +908,11 @@ async def test_list_of_roles_paginated_in_host(client: AsyncClient):
     # frontend/app/src, verified by grep this run, and no webxr/
     # three dependency in package.json), and the middleware value
     # already contains xr-spatial-tracking=().
+    # The twelfth, idle-detection, is safe to lock here: the SPA has
+    # no idle-detection flow (zero IdleDetector/idle matches in
+    # frontend/app/src, verified by grep this run), and the
+    # middleware value already contains idle-detection=()
+    # immediately after xr-spatial-tracking=().
     permissions_policy = response.headers["permissions-policy"]
     assert "camera=()" in permissions_policy
     assert "microphone=()" in permissions_policy
@@ -920,6 +925,7 @@ async def test_list_of_roles_paginated_in_host(client: AsyncClient):
     assert "gyroscope=()" in permissions_policy
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
     data = RoleListDto.model_validate(response.json())
     assert data.total == 3
     assert len(data.roles) == 1
