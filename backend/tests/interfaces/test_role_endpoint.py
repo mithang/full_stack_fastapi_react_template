@@ -99,7 +99,7 @@ async def test_list_roles_from_host(client: AsyncClient):
     assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
     assert "permissions-policy" in response.headers
     # Presence alone would not catch the value being weakened: lock
-    # the ten most sensitive directives as disabled, mirroring the
+    # the eleven most sensitive directives as disabled, mirroring the
     # tenant-list GET lock (iteration 1870), using substring checks
     # so later additions to the list do not break this test. The
     # full value lives in _SECURITY_HEADERS. The fifth, clipboard-read,
@@ -120,7 +120,13 @@ async def test_list_roles_from_host(client: AsyncClient):
     # magnetometer, is safe to lock here: the SPA has no compass
     # flow (zero Magnetometer matches, verified by grep this run),
     # so no sensor flow exists to break, and the middleware value
-    # already contains magnetometer=().
+    # already contains magnetometer=(). The eleventh,
+    # xr-spatial-tracking, is safe to lock here: the SPA has no XR
+    # flow (zero navigator.xr/XRSession/XRSystem/immersive-ar/
+    # immersive-vr/requestSession matches, verified by grep this
+    # run, and no webxr/three dependency in package.json), so no
+    # XR flow exists to break, and the middleware value already
+    # contains xr-spatial-tracking=().
     permissions_policy = response.headers["permissions-policy"]
     assert "camera=()" in permissions_policy
     assert "microphone=()" in permissions_policy
@@ -132,6 +138,7 @@ async def test_list_roles_from_host(client: AsyncClient):
     assert "accelerometer=()" in permissions_policy
     assert "gyroscope=()" in permissions_policy
     assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
 
     data = RoleListDto.model_validate(response.json())
 
