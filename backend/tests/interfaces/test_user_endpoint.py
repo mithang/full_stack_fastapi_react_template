@@ -156,7 +156,7 @@ async def test_create_user_in_host(client: AsyncClient):
     assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
     assert "permissions-policy" in response.headers
     # Presence alone would not catch the value being weakened: lock
-    # the eight most sensitive directives as disabled, mirroring the
+    # the nine most sensitive directives as disabled, mirroring the
     # user-list GET lock in this file (iteration 1895), using
     # substring checks so later additions to the list do not break
     # this test. The full value lives in _SECURITY_HEADERS.
@@ -171,7 +171,9 @@ async def test_create_user_in_host(client: AsyncClient):
     # The eighth, accelerometer, is safe to lock here: the SPA has
     # no motion-sensor flow (zero DeviceMotion/DeviceOrientation/
     # Accelerometer/Gyroscope/Magnetometer matches, verified by
-    # grep this run).
+    # grep this run). The ninth, gyroscope, is safe to lock here
+    # for the same reason: the SPA has no gyroscope flow (zero
+    # Gyroscope/DeviceOrientation matches, verified by grep this run).
     permissions_policy = response.headers["permissions-policy"]
     assert "camera=()" in permissions_policy
     assert "microphone=()" in permissions_policy
@@ -181,6 +183,7 @@ async def test_create_user_in_host(client: AsyncClient):
     assert "display-capture=()" in permissions_policy
     assert "fullscreen=()" in permissions_policy
     assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
     data = UserListDto.model_validate(response.json())
     assert data.total == 1
     assert data.users[0].id == new_user_response.id
