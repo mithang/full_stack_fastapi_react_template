@@ -451,7 +451,7 @@ async def test_get_nonexistent_tenant_by_name_as_host(client: AsyncClient,  mock
     assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
     assert "permissions-policy" in response.headers
     # Presence alone would not catch the value being weakened: lock
-    # the six most sensitive directives as disabled, mirroring the
+    # the seven most sensitive directives as disabled, mirroring the
     # tenant post-delete re-GET lock (iteration 1875) on this 404
     # response, using substring checks so later additions to the list
     # do not break this test. The full value lives in _SECURITY_HEADERS.
@@ -459,6 +459,11 @@ async def test_get_nonexistent_tenant_by_name_as_host(client: AsyncClient,  mock
     # reads the clipboard (only writeText calls in ai-chat/copy-text).
     # The sixth, display-capture, is safe to lock here: the SPA has
     # no screen-sharing flow (zero getDisplayMedia calls in src).
+    # The seventh, fullscreen, is safe to lock here: the SPA never
+    # calls requestFullscreen and renders no <video>/<audio> elements
+    # (verified by grep this run), so no fullscreen flow exists to
+    # break, and a compromised script could otherwise fullscreen-
+    # spoof the app UI on the app origin.
     permissions_policy = response.headers["permissions-policy"]
     assert "camera=()" in permissions_policy
     assert "microphone=()" in permissions_policy
@@ -466,6 +471,7 @@ async def test_get_nonexistent_tenant_by_name_as_host(client: AsyncClient,  mock
     assert "payment=()" in permissions_policy
     assert "clipboard-read=()" in permissions_policy
     assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
     assert response.json()["error"] == "Tenant with identifier nonexistent-tenant not found."
 
 
