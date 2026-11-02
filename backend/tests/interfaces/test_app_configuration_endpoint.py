@@ -53,7 +53,7 @@ async def create_tenant(client: AsyncClient, mock_post_tenant_service) -> Create
     assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
     assert "permissions-policy" in response.headers
     # Presence alone would not catch the value being weakened: lock
-    # the ten most sensitive directives as disabled, mirroring the
+    # the eleven most sensitive directives as disabled, mirroring the
     # app-config GET lock in this file and the nonexistent-role 404
     # lock (iteration 1893), using substring checks so later additions
     # to the list do not break this test. The full value lives in
@@ -76,7 +76,11 @@ async def create_tenant(client: AsyncClient, mock_post_tenant_service) -> Create
     # this run), so no sensor flow exists to break. The tenth,
     # magnetometer, is safe to lock here: the SPA has no compass
     # flow (zero Magnetometer uses, verified by grep this run),
-    # so no sensor flow exists to break.
+    # so no sensor flow exists to break. The eleventh,
+    # xr-spatial-tracking, is safe to lock here: the SPA has no
+    # XR flow (zero navigator.xr/XRSession/requestSession uses,
+    # verified by grep this run, and no webxr/three dependency),
+    # so no XR flow exists to break.
     permissions_policy = response.headers["permissions-policy"]
     assert "camera=()" in permissions_policy
     assert "microphone=()" in permissions_policy
@@ -88,6 +92,7 @@ async def create_tenant(client: AsyncClient, mock_post_tenant_service) -> Create
     assert "accelerometer=()" in permissions_policy
     assert "gyroscope=()" in permissions_policy
     assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
     mock_post_tenant_service.assert_awaited()
 
     return CreateUserResponseDto.model_validate(response.json())
