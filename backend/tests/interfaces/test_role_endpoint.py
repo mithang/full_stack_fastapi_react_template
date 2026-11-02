@@ -826,7 +826,7 @@ async def test_create_role_with_default_permissions_in_host(client: AsyncClient)
     assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
     assert "permissions-policy" in response.headers
     # Presence alone would not catch the value being weakened: lock
-    # the eight most sensitive directives as disabled, mirroring the
+    # the nine most sensitive directives as disabled, mirroring the
     # paginated role-list page 3 lock (iteration 1887), using
     # substring checks so later additions to the list do not break
     # this test. The full value lives in _SECURITY_HEADERS. The fifth,
@@ -843,7 +843,11 @@ async def test_create_role_with_default_permissions_in_host(client: AsyncClient)
     # DeviceMotion/DeviceOrientation/Accelerometer/Gyroscope/
     # Magnetometer matches in frontend/app/src, verified by grep
     # this run), and the middleware value already contains
-    # accelerometer=().
+    # accelerometer=(). The ninth, gyroscope, is safe to lock here:
+    # the SPA has no gyroscope flow (zero Gyroscope/
+    # DeviceOrientation matches in frontend/app/src, verified by
+    # grep this run), and the middleware value already contains
+    # gyroscope=().
     permissions_policy = response.headers["permissions-policy"]
     assert "camera=()" in permissions_policy
     assert "microphone=()" in permissions_policy
@@ -853,5 +857,6 @@ async def test_create_role_with_default_permissions_in_host(client: AsyncClient)
     assert "display-capture=()" in permissions_policy
     assert "fullscreen=()" in permissions_policy
     assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
     data = RoleDto.model_validate(response.json())
     assert data.permissions == [Permission.USER_VIEW_ONLY, Permission.ROLE_VIEW_ONLY]
