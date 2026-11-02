@@ -407,7 +407,7 @@ async def test_search_tenant_by_name_as_host(client: AsyncClient, mock_post_tena
     assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
     assert "permissions-policy" in response.headers
     # Presence alone would not catch the value being weakened: lock
-    # the eleven most sensitive directives as disabled, mirroring the
+    # the twelve most sensitive directives as disabled, mirroring the
     # search_by_subdomain GET lock (iteration 1872) on this search
     # route, using substring checks so later additions to the list do
     # not break this test. The full value lives in _SECURITY_HEADERS.
@@ -441,6 +441,11 @@ async def test_search_tenant_by_name_as_host(client: AsyncClient, mock_post_tena
     # frontend/app/src and no webxr/three dependency, verified by
     # grep this run), and the middleware value already contains
     # xr-spatial-tracking=() immediately after magnetometer=().
+    # The twelfth, idle-detection, is safe to lock here: the SPA has
+    # no idle-detection flow (zero IdleDetector/idle matches in
+    # frontend/app/src, verified by grep this run), and the
+    # middleware value already contains idle-detection=()
+    # immediately after xr-spatial-tracking=().
     permissions_policy = response.headers["permissions-policy"]
     assert "camera=()" in permissions_policy
     assert "microphone=()" in permissions_policy
@@ -453,6 +458,7 @@ async def test_search_tenant_by_name_as_host(client: AsyncClient, mock_post_tena
     assert "gyroscope=()" in permissions_policy
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
     # Mirror of the search_by_subdomain test (iteration 1782): the
     # search routes return the public shape since iteration 1780,
     # but only the subdomain route had a success test locking that
