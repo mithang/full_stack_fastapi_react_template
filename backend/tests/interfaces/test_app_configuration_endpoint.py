@@ -139,7 +139,7 @@ async def test_app_configuration_as_logged_out_visitor(client: AsyncClient, mock
     assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
     assert "permissions-policy" in response.headers
     # Presence alone would not catch the value being weakened: lock
-    # the eight most sensitive directives as disabled, mirroring the
+    # the nine most sensitive directives as disabled, mirroring the
     # permissions GET lock (iteration 1865) and the user/role/tenant
     # create locks (iterations 1866-1868), using substring checks so
     # later additions to the list do not break this test. The full
@@ -156,7 +156,10 @@ async def test_app_configuration_as_logged_out_visitor(client: AsyncClient, mock
     # fullscreen-spoof the app UI. The eighth, accelerometer, is
     # safe to lock here: the SPA has no motion-sensor flow (zero
     # DeviceMotion/DeviceOrientation/Accelerometer/Gyroscope/
-    # Magnetometer matches, verified by grep this run).
+    # Magnetometer matches, verified by grep this run). The ninth,
+    # gyroscope, is safe to lock here: the SPA has no gyroscope
+    # flow (zero Gyroscope/DeviceOrientation uses, verified by grep
+    # this run), so no sensor flow exists to break.
     permissions_policy = response.headers["permissions-policy"]
     assert "camera=()" in permissions_policy
     assert "microphone=()" in permissions_policy
@@ -166,3 +169,4 @@ async def test_app_configuration_as_logged_out_visitor(client: AsyncClient, mock
     assert "display-capture=()" in permissions_policy
     assert "fullscreen=()" in permissions_policy
     assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
