@@ -804,7 +804,7 @@ async def test_validate_password_when_tenant_creation(client: AsyncClient, mock_
     assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
     assert "permissions-policy" in response.headers
     # Presence alone would not catch the value being weakened: lock
-    # the seven most sensitive directives as disabled, as on the
+    # the eight most sensitive directives as disabled, as on the
     # tenant responses in iterations 1865-1879, using substring
     # checks so later additions to the list do not break this test.
     # The full value lives in _SECURITY_HEADERS. The fifth,
@@ -817,6 +817,11 @@ async def test_validate_password_when_tenant_creation(client: AsyncClient, mock_
     # never calls requestFullscreen and has no video/audio
     # element (verified by grep this run), so no fullscreen
     # flow exists to break.
+    # The eighth, accelerometer, is safe to lock here: the SPA
+    # has no motion-sensor flow (zero DeviceMotion/
+    # DeviceOrientation/Accelerometer/Gyroscope/Magnetometer
+    # matches in frontend/app/src, verified by grep this run),
+    # and the middleware value already contains accelerometer=().
     permissions_policy = response.headers["permissions-policy"]
     assert "camera=()" in permissions_policy
     assert "microphone=()" in permissions_policy
@@ -825,4 +830,5 @@ async def test_validate_password_when_tenant_creation(client: AsyncClient, mock_
     assert "clipboard-read=()" in permissions_policy
     assert "display-capture=()" in permissions_policy
     assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
     assert response.json()["error"] == "Password must be at least 8 characters long, include uppercase and lowercase letters, a number, and a special character."
