@@ -398,7 +398,7 @@ async def test_delete_tenant_by_id_from_host(client: AsyncClient, mock_post_tena
     assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
     assert "permissions-policy" in response.headers
     # Presence alone would not catch the value being weakened: lock
-    # the six most sensitive directives as disabled, mirroring the
+    # the seven most sensitive directives as disabled, mirroring the
     # tenant DELETE lock (iteration 1874) on this post-delete re-GET
     # response, using substring checks so later additions to the list
     # do not break this test. The full value lives in _SECURITY_HEADERS.
@@ -408,6 +408,11 @@ async def test_delete_tenant_by_id_from_host(client: AsyncClient, mock_post_tena
     # never calls getDisplayMedia (verified by grep this run), so
     # no screen-sharing flow exists to break, and a compromised
     # script could otherwise capture the screen on the app origin.
+    # The seventh, fullscreen, is safe to lock here: the SPA never
+    # calls requestFullscreen and renders no <video>/<audio> elements
+    # (verified by grep this run), so no fullscreen flow exists to
+    # break, and a compromised script could otherwise fullscreen-
+    # spoof the app UI on the app origin.
     permissions_policy = response.headers["permissions-policy"]
     assert "camera=()" in permissions_policy
     assert "microphone=()" in permissions_policy
@@ -415,6 +420,7 @@ async def test_delete_tenant_by_id_from_host(client: AsyncClient, mock_post_tena
     assert "payment=()" in permissions_policy
     assert "clipboard-read=()" in permissions_policy
     assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
 
 
 
