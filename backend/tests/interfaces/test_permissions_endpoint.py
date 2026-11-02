@@ -42,7 +42,7 @@ async def test_list_permissions_from_host(client: AsyncClient):
     # middleware's permissions-policy is a long fixed list, and a
     # regression that dropped a directive (or replaced the value with
     # an empty one) would still pass the presence check above. The
-    # seven directives below are the ones whose absence would matter
+    # eight directives below are the ones whose absence would matter
     # most on this origin — the SPA uses no camera, microphone,
     # geolocation (verified by grep in the middleware's own comment),
     # and no Payment Request API, and it never reads the clipboard
@@ -54,7 +54,10 @@ async def test_list_permissions_from_host(client: AsyncClient):
     # calls, verified by grep this run). The seventh, fullscreen,
     # is safe to lock here: the SPA has no fullscreen flow (zero
     # requestFullscreen calls and zero <video>/<audio> elements,
-    # verified by grep this run).
+    # verified by grep this run). The eighth, accelerometer, is safe
+    # to lock here: the SPA has no motion-sensor flow (zero
+    # DeviceMotion/DeviceOrientation/Accelerometer/Gyroscope/
+    # Magnetometer matches, verified by grep this run).
     permissions_policy = response.headers["permissions-policy"]
     assert "camera=()" in permissions_policy
     assert "microphone=()" in permissions_policy
@@ -63,6 +66,7 @@ async def test_list_permissions_from_host(client: AsyncClient):
     assert "clipboard-read=()" in permissions_policy
     assert "display-capture=()" in permissions_policy
     assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
 
     data = [PermissionDto.model_validate(item) for item in response.json()]
 
