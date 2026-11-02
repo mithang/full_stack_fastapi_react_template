@@ -167,7 +167,7 @@ async def test_create_role_in_host(client: AsyncClient):
     assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
     assert "permissions-policy" in response.headers
     # Presence alone would not catch the value being weakened: lock
-    # the nine most sensitive directives as disabled, mirroring the
+    # the ten most sensitive directives as disabled, mirroring the
     # role-list GET lock (iteration 1882), using substring checks
     # so later additions to the list do not break this test. The
     # full value lives in _SECURITY_HEADERS. The fifth, clipboard-read,
@@ -185,7 +185,10 @@ async def test_create_role_in_host(client: AsyncClient):
     # gyroscope, is safe to lock here: the SPA has no gyroscope
     # flow (zero Gyroscope/DeviceOrientation matches, verified by
     # grep this run), and the middleware value already contains
-    # gyroscope=().
+    # gyroscope=(). The tenth, magnetometer, is safe to lock here:
+    # the SPA has no compass flow (zero Magnetometer matches,
+    # verified by grep this run), and the middleware value already
+    # contains magnetometer=().
     permissions_policy = response.headers["permissions-policy"]
     assert "camera=()" in permissions_policy
     assert "microphone=()" in permissions_policy
@@ -196,6 +199,7 @@ async def test_create_role_in_host(client: AsyncClient):
     assert "fullscreen=()" in permissions_policy
     assert "accelerometer=()" in permissions_policy
     assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
 
     data = RoleListDto.model_validate(response.json())
     assert data.total == 1
