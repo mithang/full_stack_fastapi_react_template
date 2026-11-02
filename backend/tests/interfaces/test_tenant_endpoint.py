@@ -193,7 +193,7 @@ async def test_create_tenant_as_host(client: AsyncClient, mock_post_tenant_servi
     assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
     assert "permissions-policy" in response.headers
     # Presence alone would not catch the value being weakened: lock
-    # the eight most sensitive directives as disabled, mirroring the
+    # the nine most sensitive directives as disabled, mirroring the
     # tenant-list GET lock (iteration 1870) on this same list route,
     # using substring checks so later additions to the list do not
     # break this test. The full value lives in _SECURITY_HEADERS.
@@ -213,6 +213,10 @@ async def test_create_tenant_as_host(client: AsyncClient, mock_post_tenant_servi
     # Accelerometer API uses in frontend/app/src, verified by grep
     # this run), and the middleware value already contains
     # accelerometer=().
+    # The ninth, gyroscope, is safe to lock here: the SPA has
+    # no gyroscope flow (zero Gyroscope/DeviceOrientation matches
+    # in frontend/app/src, verified by grep this run), and the
+    # middleware value already contains gyroscope=().
     permissions_policy = response.headers["permissions-policy"]
     assert "camera=()" in permissions_policy
     assert "microphone=()" in permissions_policy
@@ -222,6 +226,7 @@ async def test_create_tenant_as_host(client: AsyncClient, mock_post_tenant_servi
     assert "display-capture=()" in permissions_policy
     assert "fullscreen=()" in permissions_policy
     assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
     data = TenantListDto.model_validate(response.json())
     assert data.total == 1
     assert data.tenants[0].id == new_tenant_response.id
