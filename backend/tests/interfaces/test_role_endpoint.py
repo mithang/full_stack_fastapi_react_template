@@ -387,8 +387,8 @@ async def test_update_role_by_id_from_host(client: AsyncClient):
     assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
     assert "permissions-policy" in response.headers
     # Presence alone would not catch the value being weakened: lock
-    # the ten most sensitive directives as disabled, mirroring the
-    # role pre-update GET lock (iteration 1889), using substring
+    # the eleven most sensitive directives as disabled, mirroring
+    # the role pre-update GET lock (iteration 1889), using substring
     # checks so later additions to the list do not break this test.
     # The full value lives in _SECURITY_HEADERS. The fifth,
     # clipboard-read, is safe to lock here: the SPA never reads the
@@ -410,7 +410,11 @@ async def test_update_role_by_id_from_host(client: AsyncClient):
     # magnetometer, is safe to lock here: the SPA has no compass
     # flow (zero Magnetometer/magnetometer matches, verified by
     # grep this run), and the middleware value already contains
-    # magnetometer=().
+    # magnetometer=(). The eleventh, xr-spatial-tracking, is safe to
+    # lock here: the SPA has no XR flow (zero navigator.xr/XRSession/
+    # XRSystem/immersive-ar/immersive-vr/requestSession matches and
+    # no webxr/three dependency, verified by grep this run), and the
+    # middleware value already contains xr-spatial-tracking=().
     permissions_policy = response.headers["permissions-policy"]
     assert "camera=()" in permissions_policy
     assert "microphone=()" in permissions_policy
@@ -422,6 +426,7 @@ async def test_update_role_by_id_from_host(client: AsyncClient):
     assert "accelerometer=()" in permissions_policy
     assert "gyroscope=()" in permissions_policy
     assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
     new_role_updated_data = RoleDto.model_validate(response.json())
     assert new_role_updated_data.name == "Test Role Updated"
     assert data.name != new_role_updated_data.name
