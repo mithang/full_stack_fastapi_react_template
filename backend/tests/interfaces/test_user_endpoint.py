@@ -27,7 +27,7 @@ async def create_user(client: AsyncClient) -> CreateUserResponseDto:
     assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
     assert "permissions-policy" in response.headers
     # Presence alone would not catch the value being weakened: lock
-    # the ten most sensitive directives as disabled, as on the
+    # the eleven most sensitive directives as disabled, as on the
     # permissions GET in iteration 1865, using substring checks so
     # later additions to the list do not break this test. The full
     # value lives in _SECURITY_HEADERS. The fifth, clipboard-read,
@@ -48,6 +48,11 @@ async def create_user(client: AsyncClient) -> CreateUserResponseDto:
     # The tenth, magnetometer, is safe to lock here for the same
     # reason: the SPA has no compass flow (zero Magnetometer/
     # magnetometer matches, verified by grep this run).
+    # The eleventh, xr-spatial-tracking, is safe to lock here for
+    # the same reason: the SPA has no XR flow (zero navigator.xr/
+    # XRSession/XRSystem/immersive-ar/immersive-vr/requestSession
+    # matches and no webxr/three entry in package.json, verified by
+    # grep this run).
     permissions_policy = response.headers["permissions-policy"]
     assert "camera=()" in permissions_policy
     assert "microphone=()" in permissions_policy
@@ -59,6 +64,7 @@ async def create_user(client: AsyncClient) -> CreateUserResponseDto:
     assert "accelerometer=()" in permissions_policy
     assert "gyroscope=()" in permissions_policy
     assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
     return CreateUserResponseDto.model_validate(response.json())
 
 
