@@ -284,7 +284,7 @@ async def test_update_role_by_id_from_host(client: AsyncClient):
     assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
     assert "permissions-policy" in response.headers
     # Presence alone would not catch the value being weakened: lock
-    # the six most sensitive directives as disabled, mirroring the
+    # the seven most sensitive directives as disabled, mirroring the
     # role pre-update GET lock (iteration 1889), using substring
     # checks so later additions to the list do not break this test.
     # The full value lives in _SECURITY_HEADERS. The fifth,
@@ -292,7 +292,10 @@ async def test_update_role_by_id_from_host(client: AsyncClient):
     # clipboard (only writeText calls, verified by grep this run).
     # The sixth, display-capture, is safe to lock here: the SPA has
     # no screen-sharing flow (zero getDisplayMedia calls, verified
-    # by grep this run), and the middleware already emits it.
+    # by grep this run), and the middleware already emits it. The
+    # seventh, fullscreen, is safe to lock here: the SPA has no
+    # fullscreen flow (zero requestFullscreen calls and zero
+    # <video>/<audio> elements, verified by grep this run).
     permissions_policy = response.headers["permissions-policy"]
     assert "camera=()" in permissions_policy
     assert "microphone=()" in permissions_policy
@@ -300,6 +303,7 @@ async def test_update_role_by_id_from_host(client: AsyncClient):
     assert "payment=()" in permissions_policy
     assert "clipboard-read=()" in permissions_policy
     assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
     new_role_updated_data = RoleDto.model_validate(response.json())
     assert new_role_updated_data.name == "Test Role Updated"
     assert data.name != new_role_updated_data.name
