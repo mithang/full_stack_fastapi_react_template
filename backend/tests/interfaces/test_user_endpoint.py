@@ -413,7 +413,7 @@ async def test_update_user_by_id_from_host(client: AsyncClient):
     assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
     assert "permissions-policy" in response.headers
     # Presence alone would not catch the value being weakened: lock
-    # the eleven most sensitive directives as disabled, mirroring the
+    # the twelve most sensitive directives as disabled, mirroring the
     # pre-fetch GET lock in this test (iteration 1898), using
     # substring checks so later additions to the list do not break
     # this test. The full value lives in _SECURITY_HEADERS.
@@ -439,6 +439,11 @@ async def test_update_user_by_id_from_host(client: AsyncClient):
     # the same reason: the SPA has no XR flow (zero navigator.xr/
     # XRSession/XRSystem/immersive-ar/immersive-vr/requestSession
     # matches, verified by grep this run).
+    # The twelfth, idle-detection, is safe to lock here for the
+    # same reason: the SPA has no idle-detection flow (zero
+    # IdleDetector matches, zero case-insensitive idle matches,
+    # and zero requestIdleCallback matches, verified by grep
+    # this run).
     permissions_policy = response.headers["permissions-policy"]
     assert "camera=()" in permissions_policy
     assert "microphone=()" in permissions_policy
@@ -451,6 +456,7 @@ async def test_update_user_by_id_from_host(client: AsyncClient):
     assert "gyroscope=()" in permissions_policy
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
     new_user_updated_data = UserDto.model_validate(response.json())
     assert new_user_updated_data.gender == Gender.MALE
 
