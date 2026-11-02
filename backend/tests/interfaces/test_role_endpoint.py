@@ -561,7 +561,7 @@ async def test_delete_role_by_id_from_host(client: AsyncClient):
     assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
     assert "permissions-policy" in response.headers
     # Presence alone would not catch the value being weakened: lock
-    # the eleven most sensitive directives as disabled, mirroring the
+    # the twelve most sensitive directives as disabled, mirroring the
     # role-delete DELETE lock (iteration 1937), using substring checks
     # so later additions to the list do not break this test. The
     # full value lives in _SECURITY_HEADERS. The fifth,
@@ -592,6 +592,10 @@ async def test_delete_role_by_id_from_host(client: AsyncClient):
     # dependency in package.json), so no XR flow exists to break,
     # and the middleware value already contains
     # xr-spatial-tracking=().
+    # The twelfth, idle-detection, is safe to lock here: the SPA has
+    # no idle-detection flow (zero IdleDetector/idle matches in
+    # frontend/app/src, verified by grep this run), and the
+    # middleware value already contains idle-detection=()
     permissions_policy = response.headers["permissions-policy"]
     assert "camera=()" in permissions_policy
     assert "microphone=()" in permissions_policy
@@ -604,6 +608,7 @@ async def test_delete_role_by_id_from_host(client: AsyncClient):
     assert "gyroscope=()" in permissions_policy
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
 
 
 @pytest.mark.asyncio
