@@ -42,7 +42,7 @@ async def test_list_permissions_from_host(client: AsyncClient):
     # middleware's permissions-policy is a long fixed list, and a
     # regression that dropped a directive (or replaced the value with
     # an empty one) would still pass the presence check above. The
-    # eight directives below are the ones whose absence would matter
+    # nine directives below are the ones whose absence would matter
     # most on this origin — the SPA uses no camera, microphone,
     # geolocation (verified by grep in the middleware's own comment),
     # and no Payment Request API, and it never reads the clipboard
@@ -57,7 +57,11 @@ async def test_list_permissions_from_host(client: AsyncClient):
     # verified by grep this run). The eighth, accelerometer, is safe
     # to lock here: the SPA has no motion-sensor flow (zero
     # DeviceMotion/DeviceOrientation/Accelerometer/Gyroscope/
-    # Magnetometer matches, verified by grep this run).
+    # Magnetometer matches, verified by grep this run). The ninth,
+    # gyroscope, is safe to lock here: the SPA has no gyroscope
+    # flow (zero Gyroscope/DeviceOrientation matches, verified by
+    # grep this run), and the middleware value already contains
+    # gyroscope=().
     permissions_policy = response.headers["permissions-policy"]
     assert "camera=()" in permissions_policy
     assert "microphone=()" in permissions_policy
@@ -67,6 +71,7 @@ async def test_list_permissions_from_host(client: AsyncClient):
     assert "display-capture=()" in permissions_policy
     assert "fullscreen=()" in permissions_policy
     assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
 
     data = [PermissionDto.model_validate(item) for item in response.json()]
 
