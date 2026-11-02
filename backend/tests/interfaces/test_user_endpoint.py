@@ -413,7 +413,7 @@ async def test_delete_user_by_id_from_host(client: AsyncClient):
     assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
     assert "permissions-policy" in response.headers
     # Presence alone would not catch the value being weakened: lock
-    # the nine most sensitive directives as disabled, mirroring the
+    # the ten most sensitive directives as disabled, mirroring the
     # user update PUT lock in this file (iteration 1899), using
     # substring checks so later additions to the list do not break
     # this test. The full value lives in _SECURITY_HEADERS. The
@@ -432,6 +432,9 @@ async def test_delete_user_by_id_from_host(client: AsyncClient):
     # grep this run). The ninth, gyroscope, is safe to lock here
     # for the same reason: the SPA has no gyroscope flow (zero
     # Gyroscope/DeviceOrientation matches, verified by grep this run).
+    # The tenth, magnetometer, is safe to lock here for the same
+    # reason: the SPA has no compass flow (zero Magnetometer/
+    # magnetometer matches, verified by grep this run).
     permissions_policy = response.headers["permissions-policy"]
     assert "camera=()" in permissions_policy
     assert "microphone=()" in permissions_policy
@@ -442,6 +445,7 @@ async def test_delete_user_by_id_from_host(client: AsyncClient):
     assert "fullscreen=()" in permissions_policy
     assert "accelerometer=()" in permissions_policy
     assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
 
     # Verify the user was deleted by attempting to get the user again
     response = await client.get(f"/users/{new_user_response.id}")
