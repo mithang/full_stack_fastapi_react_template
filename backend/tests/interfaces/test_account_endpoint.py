@@ -1500,3 +1500,89 @@ async def test_account_refresh_expired_cookie_returns_401_with_cache_and_securit
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+@pytest.mark.asyncio
+async def test_account_refresh_wrong_type_token_returns_401_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The account refresh POST with a live access token presented
+        as the refresh cookie:
+    """
+    # The refresh route's wrong-type-token branch had no header lock,
+    # and it is lockable without any seeded row, live service, or
+    # sent email, verified fresh this run, not assumed. The handler
+    # only checks cookie presence (the missing-cookie 403 lock
+    # covers absence), then passes the raw value to
+    # AuthService.refresh_token, which decodes it FIRST, before
+    # any user or role lookup (auth_service.py lines 351-360).
+    # The token is minted inside the test as a genuine access
+    # token, with the app's own access signing constants
+    # (imported, never hardcoded): sub is the conftest mocked
+    # user id, email is admin@example.com, is_active is True,
+    # no "type" claim (get_access_token adds none), and exp is
+    # one hour in the future. Access tokens are signed HS256
+    # (settings.algorithm default) while the refresh decode
+    # branch only accepts HS512 (settings.refresh_algorithm
+    # default), so PyJWT rejects the algorithm before any
+    # signature or type check, and decode_token returns None
+    # (jwt_token_service.py lines 92-112) — so this branch is
+    # deterministic even if the two secrets ever coincided, and
+    # it is distinct from the invalid-cookie lock (signature
+    # failure) and the expired-cookie lock (expiry failure):
+    # the service raises UnauthorizedException("Invalid refresh
+    # token") with no DB lookup, no token minting, and no new
+    # cookie. The central ApiBaseException handler maps
+    # UnauthorizedException to 401 with body {"error": ...,
+    # "code": 401} and Cache-Control: no-store plus Pragma:
+    # no-cache (api/__init__.py lines 84-132), and the pure-ASGI
+    # security-headers middleware stamps every HTTP response
+    # with no path exclusions. Deliberately NOT locked: the 200
+    # success path (needs a live, unexpired refresh token plus
+    # seeded user and role rows after decode).
+    import jwt
+    from datetime import datetime, timedelta, timezone
+
+    from api.common.security import ALGORITHM, JWT_SECRET
+
+    token = jwt.encode(
+        {
+            "sub": "68c302ef6bf7a039b7e9b385",
+            "email": "admin@example.com",
+            "is_active": True,
+            "exp": datetime.now(timezone.utc) + timedelta(hours=1),
+        },
+        JWT_SECRET,
+        algorithm=ALGORITHM,
+    )
+    response = await client.post(
+        "/account/refresh",
+        cookies={"refresh_token": token},
+    )
+    assert response.status_code == 401
+    assert response.json()["code"] == 401
+    assert response.json()["error"] == "Invalid refresh token"
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the refresh-expired-cookie lock, using substring
+    # checks so later additions to the list do not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
