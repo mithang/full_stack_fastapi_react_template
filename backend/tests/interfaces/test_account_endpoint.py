@@ -1069,3 +1069,70 @@ async def test_account_change_email_request_same_email_returns_406_with_cache_an
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+@pytest.mark.asyncio
+async def test_account_change_email_confirmation_invalid_token_returns_400_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The account change-email-confirmation PATCH with a token
+        that is not a valid JWT:
+    """
+    # The change-email-confirmation route had no header lock, and
+    # its invalid-token branch is lockable without any seeded row,
+    # live service, or sent email, verified fresh this run, not
+    # assumed. The endpoint carries no permission dependency and
+    # no FrontendHost dependency; it takes CurrentUser, which
+    # conftest overrides to the mocked user admin@example.com,
+    # and a ChangeEmailConfirmRequestDto whose only field is the
+    # token string (trimmed by its model validator, so a plain
+    # garbage token still reaches verification). The service
+    # verifies the JWT first — verify_change_email_token raises
+    # InvalidOperationException("Invalid change email token") for
+    # a non-JWT before any user lookup, email-existence check,
+    # email update, or notification email — and the endpoint
+    # catches InvalidOperationException and re-raises
+    # HTTPException 400 with the generic detail "Email change
+    # confirmation failed.", so the failure reveals nothing about
+    # the token's shape or any account. The Starlette
+    # HTTPException handler returns body {"detail": ...} with
+    # Cache-Control: no-store plus Pragma: no-cache
+    # (api/__init__.py), and the pure-ASGI security-headers
+    # middleware stamps every HTTP response with no path
+    # exclusions. Deliberately NOT locked: a valid token for
+    # another user (needs a minted JWT, assessed separately)
+    # and the success path (needs a minted token plus a seeded
+    # user row). Note the body shape differs from the central
+    # ApiBaseException error shape: this endpoint converts the
+    # service error to a plain HTTPException, so the lock asserts
+    # "detail", not "error"/"code".
+    response = await client.patch(
+        "/account/change_email_confirmation",
+        json={"token": "not-a-jwt"},
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Email change confirmation failed."
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the change-email-request lock, using substring
+    # checks so later additions to the list do not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
