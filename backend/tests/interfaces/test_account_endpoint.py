@@ -1287,3 +1287,74 @@ async def test_account_change_email_confirmation_other_user_token_returns_400_wi
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+@pytest.mark.asyncio
+async def test_account_register_missing_guest_role_returns_404_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The account register POST when the GUEST role is absent:
+    """
+    # The register route had no header lock, and its missing-role
+    # branch is lockable without any seeded row, live service, or
+    # sent email, verified fresh this run, not assumed. The handler
+    # first resolves the GUEST role (RoleType.GUEST, "guest") via
+    # role_service.find_by_name, before assigning role_id, before
+    # any tenant branching, and before AuthService.register runs
+    # (password validation, user creation, and the post-tenant
+    # worker payload all happen after this lookup). The shared
+    # conftest client seeds no role and Role is in the conftest
+    # model set, so the lookup on the fresh test database raises
+    # RoleNotFoundException before any creation or email send — no
+    # side effect. The DTO body passes validation (non-blank names,
+    # a valid email, a gender value, and a password string), so no
+    # 422 can mask the 404, and no X-Tenant-ID header is sent, so
+    # the tenant-context branch cannot run first. The central
+    # ApiBaseException handler maps the NotFound subclass to 404
+    # with body {"error": ..., "code": 404} and Cache-Control:
+    # no-store plus Pragma: no-cache (api/__init__.py), and the
+    # pure-ASGI security-headers middleware stamps every HTTP
+    # response with no path exclusions. Deliberately NOT locked:
+    # the 201 success path (needs a seeded GUEST role plus tenant
+    # creation or a direct user creation and an activation email)
+    # and the taken-subdomain branch. The error assertion uses a
+    # substring check for "Role", mirroring the
+    # resend-activation-email lock, rather than the full
+    # constructed message.
+    response = await client.post(
+        "/account/register",
+        json={
+            "first_name": "New",
+            "last_name": "User",
+            "email": "newuser@example.com",
+            "gender": "other",
+            "password": "Register123!",
+        },
+    )
+    assert response.status_code == 404
+    assert response.json()["code"] == 404
+    assert "Role" in response.json()["error"]
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the change-email-confirmation lock, using substring
+    # checks so later additions to the list do not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
