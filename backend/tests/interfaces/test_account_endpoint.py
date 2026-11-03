@@ -6879,3 +6879,76 @@ async def test_account_register_null_password_returns_422_with_security_headers(
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+@pytest.mark.asyncio
+async def test_account_register_empty_password_returns_404_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The account register POST with an empty password:
+    """
+    # The next register branch after the null-password 422 lock,
+    # verified fresh this run, not assumed. CreateUserDto carries
+    # password as a plain required str field (user_dto.py line 44)
+    # with no min_length, no default, and no trim: unlike a null,
+    # an empty string passes FastAPI request validation, so the
+    # handler body runs. Its first step is the GUEST role lookup
+    # (account_endpoint.py register), before any tenant branching
+    # and before AuthService.register runs — and the password
+    # policy (validate_password, common/utils.py) only runs later,
+    # inside the process_user_creation callback, so it cannot mask
+    # the role outcome here. The shared conftest client seeds no
+    # role and Role is in the conftest model set, so the lookup on
+    # the fresh test database raises RoleNotFoundException before
+    # any creation, password-policy check, or email send. No
+    # X-Tenant-ID header is sent, so the tenant-context branch
+    # cannot run first. The remaining body fields are all valid
+    # (non-blank first and last names, a valid email, gender
+    # "other"), so no 422 can mask the 404. This locks the
+    # ordering, not acceptance of an empty password: with a seeded
+    # GUEST role the same request would reach the password policy
+    # and fail there. Deliberately NOT locked: the 201 success
+    # path and the weak-password branch, which both need a seeded
+    # GUEST role. The central ApiBaseException handler maps the
+    # NotFound subclass to 404 with body {"error": ..., "code":
+    # 404} and Cache-Control: no-store plus Pragma: no-cache, and
+    # the pure-ASGI security-headers middleware stamps every HTTP
+    # response with no path exclusions. The error assertion uses
+    # a substring check for "Role", mirroring the missing-guest
+    # role 404 lock.
+    response = await client.post(
+        "/account/register",
+        json={
+            "first_name": "New",
+            "last_name": "User",
+            "email": "newuser@example.com",
+            "gender": "other",
+            "password": "",
+        },
+    )
+    assert response.status_code == 404
+    assert response.json()["code"] == 404
+    assert "Role" in response.json()["error"]
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the missing-guest role 404 lock, using substring
+    # checks so later additions to the list do not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
