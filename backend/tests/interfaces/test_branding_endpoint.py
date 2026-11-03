@@ -151,3 +151,82 @@ async def test_patch_branding_with_missing_role_returns_404_with_cache_and_secur
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+@pytest.mark.asyncio
+async def test_put_branding_logo_with_missing_role_returns_404_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The branding PUT /logo (third-path lock, completing the
+        branding route set: POST, PATCH, PUT /logo):
+    """
+    # The PATCH test noted PUT /logo was not chosen then because
+    # it takes a multipart file, not a JSON body — but that is
+    # not a blocker once the file is valid: the request below
+    # carries a real (tiny) PNG part, so multipart parsing cannot
+    # 422-mask the error whichever order FastAPI resolves the
+    # file param versus the router dependency. Either way the
+    # outcome is the same 404: the router-level FULL_ACCESS
+    # dependency raises RoleNotFoundException (the mocked host
+    # user's role_id points at no row in the fresh test database;
+    # Role is in the conftest model set) before the handler runs,
+    # so no file reaches storage, no branding record is created
+    # or updated, and no scope guard is ever evaluated. That
+    # matters here because the handler's branding and file
+    # services use documents outside the conftest model set and
+    # would fail non-deterministically if reached. That 404 must
+    # still carry the error-response headers: branding carries
+    # contact info (PII), so a cached error response could
+    # otherwise be served to a different admin after an account
+    # switch on a shared machine.
+    png_1x1 = (
+        b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
+        b"\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00\x00"
+        b"\x00\x0cIDATx\x9cc\xf8\x0f\x00\x00\x01\x01\x00\x05"
+        b"\x18\xd8N\x00\x00\x00\x00IEND\xaeB`\x82"
+    )
+    response = await client.put(
+        "/brandings/logo",
+        files={"file": ("logo.png", png_1x1, "image/png")},
+    )
+    assert response.status_code == 404
+    body = response.json()
+    assert body["code"] == 404
+    assert "Role" in body["error"]
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+
+    # Same security-headers lock as the POST/PATCH tests: the
+    # pure-ASGI middleware stamps every HTTP response with no
+    # path exclusions, so the branding PUT 404 must carry the
+    # same headers as the POST/PATCH 404s, including the
+    # exception-handler responses.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Presence alone would not catch the value being weakened: lock
+    # the twelve most sensitive directives as disabled, mirroring
+    # the POST/PATCH locks, using substring checks so later
+    # additions to the list do not break this test. Each directive
+    # is safe to lock here for the same reasons as on the other
+    # branding routes: the SPA has no camera, microphone,
+    # geolocation, payment, clipboard-read, display-capture,
+    # fullscreen, motion-sensor, compass, XR, or idle-detection
+    # flow (re-verified fresh this run: zero case-insensitive
+    # idle matches and zero IdleDetector/requestIdleCallback
+    # matches across frontend/app/src).
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
