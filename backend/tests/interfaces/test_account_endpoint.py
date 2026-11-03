@@ -877,3 +877,65 @@ async def test_account_login_unknown_email_returns_401_with_cache_and_security_h
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+@pytest.mark.asyncio
+async def test_account_sso_login_unknown_provider_returns_422_with_security_headers(client: AsyncClient):
+    """
+        The account SSO login GET for an unknown provider name:
+    """
+    # The next account route after login whose error path needs
+    # no authenticated user, no seeded row, and no live service.
+    # It carries no permission dependency and no CurrentUser
+    # dependency, so the mocked host user's role_id pointing at
+    # no row cannot interfere here — and, crucially, no service
+    # call runs at all. provider_name is typed SSOProvider, a
+    # Literal of the ten supported providers (sso_settings.py
+    # line 8: google, github, discord, microsoft, linkedin, x,
+    # notion, gitlab, bitbucket, facebook), so FastAPI validates
+    # the path parameter before any dependency resolves and a
+    # name outside that Literal 422s. That ordering is what makes
+    # this lock deterministic where the valid-provider path is
+    # not: a valid provider would reach SSOAuthProvider.login,
+    # which lists SSOSettings rows — but SSOSettings is NOT in
+    # the conftest model set (User, Tenant, Role,
+    # UserPasswordReset, UserPreference only), so that lookup's
+    # outcome on the uninitialized collection is not reasoned
+    # here, and a live provider redirect is not asserted either.
+    # Deliberately no Cache-Control/Pragma assertion: a 422 is
+    # FastAPI validation, not an ApiBaseException, so the central
+    # handler's no-store headers do not apply to it, and locking
+    # cache headers here would assert behaviour no code promises.
+    # The security headers ARE locked: the pure-ASGI middleware
+    # stamps every HTTP response, including validation errors,
+    # with no path exclusions.
+    response = await client.get("/account/sso/not-a-provider/login")
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert any(
+        "provider_name" in [str(part) for part in err.get("loc", [])]
+        for err in detail
+    )
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the login lock, using substring checks so later
+    # additions to the list do not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
