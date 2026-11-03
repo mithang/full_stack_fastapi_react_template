@@ -6362,3 +6362,89 @@ async def test_account_register_integer_tenant_id_returns_422_with_security_head
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+@pytest.mark.asyncio
+async def test_account_register_integer_role_id_returns_422_with_security_headers(client: AsyncClient):
+    """
+        The account register POST with an integer-valued role_id:
+    """
+    # The next register validation branch after the integer-valued
+    # tenant_id 422 lock, verified fresh this run, not assumed.
+    # CreateUserDto inherits role_id as a PydanticObjectId | None
+    # field defaulting to None from BaseUserDto (user_dto.py): a
+    # beanie ObjectId is built from a 24-hex string or 12 bytes,
+    # so a JSON integer fails FastAPI request validation before
+    # the handler body runs: the GUEST role lookup, the tenant
+    # branching, AuthService.register, and the activation email
+    # never execute, and no token is minted and no refresh cookie
+    # is set. No validator masks it: the only field_serializer
+    # covers tenant_id/role_id for output only, and the
+    # mode="after" normalize_names validator only touches
+    # first/last names and runs only after field validation
+    # passes. It is distinct from the malformed-string role_id
+    # lock, which used a non-ObjectId string, from the
+    # boolean-valued role_id lock, which used a boolean value,
+    # and from the list- and dict-valued role_id locks: a
+    # different JSON type, and all must be rejected. The
+    # register handler takes a required `data: CreateUserDto`
+    # body parameter with no default (account_endpoint.py), and
+    # its dependencies cannot mask the 422:
+    # get_auth_service/get_role_service only resolve container
+    # objects and get_tenant_id only reads request state, with no
+    # database lookup. The remaining body fields are all valid
+    # (non-blank first and last names, a valid email, gender
+    # "other", a valid password), so no other 422 can mask the
+    # role_id error. Deliberately no exact error-type assertion,
+    # mirroring the integer-valued tenant_id 422 lock.
+    # Deliberately no Cache-Control/Pragma assertion: a 422 is
+    # FastAPI request validation, not an ApiBaseException, so the
+    # central handler's no-store headers do not apply to it,
+    # mirroring the integer-valued tenant_id 422 lock. The
+    # security headers ARE locked: the pure-ASGI middleware
+    # stamps every HTTP response, including validation errors,
+    # with no path exclusions. This lock adds no new
+    # route-specific contradiction (a validation 422 precedes
+    # the role lookup, so it contradicts no existing role
+    # expectation).
+    response = await client.post(
+        "/account/register",
+        json={
+            "first_name": "New",
+            "last_name": "User",
+            "email": "newuser@example.com",
+            "gender": "other",
+            "password": "Register123!",
+            "role_id": 12345,
+        },
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert any(
+        "role_id" in [str(part) for part in err.get("loc", [])]
+        for err in detail
+    )
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the integer-valued tenant_id 422 lock,
+    # using substring checks so later additions to the list do
+    # not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
