@@ -976,3 +976,85 @@ async def test_list_of_users_paginated_in_host(client: AsyncClient):
     assert data.hasPrevious == True
     assert data.skip == 2
     assert data.limit == 1
+
+
+@pytest.mark.asyncio
+async def test_patch_user_assign_role_with_missing_role_returns_404_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The user assign_role PATCH (one of the last user paths with no
+        test: list, create, get, update, delete, and the nonexistent-id
+        404 were already locked, and the list GET carries the same
+        missing-role shape as the role list GET): PATCH
+        /users/{user_id}/assign_role had no test, so deleting the
+        route — or dropping the central ApiBaseException no-store
+        lines or the security-headers middleware registration —
+        would previously have gone uncaught on the role-assignment
+        path. The success path is not asserted here: the PATCH is
+        permission-gated (USER_ROLE_ASSIGN_OR_REMOVE_ONLY via a
+        parameter dependency, evaluated before the handler body and
+        before its tenant-scope guard and before the self-assignment
+        check), so it needs a DB role lookup, and the shared
+        conftest client seeds no role. The error path below is
+        deterministic instead: the mocked host user's role_id points
+        at no row in the fresh test database (Role is in the
+        conftest model set), so the permission dependency raises
+        RoleNotFoundException before the handler runs — which
+        matters here because the handler would otherwise read the
+        target user and then assign a role. The service factories
+        ahead of it only resolve singletons and get_tenant_id
+        resolves request state without a lookup, and the path
+        user_id is never read on this path, so there is no side
+        effect and no unseeded-model lookup beyond the role. The
+        body is valid on purpose: role_id has min_length=1 and the
+        value below satisfies it, so body validation passes and
+        cannot mask the 404. That 404 must still carry the
+        error-response headers: a cached error response could
+        otherwise be served to a different admin after an account
+        switch on a shared machine, and role assignment is a
+        privilege change, so its errors are credential-adjacent.
+    """
+    response = await client.patch("/users/68c302ef6bf7a039b7e9b385/assign_role", json={"role_id": "68c302ef6bf7a039b7e9b386"})
+    assert response.status_code == 404
+    body = response.json()
+    assert body["code"] == 404
+    assert "Role" in body["error"]
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+
+    # Same security-headers lock as the other user-route tests:
+    # the pure-ASGI middleware stamps every HTTP response with no
+    # path exclusions, so the assign_role PATCH 404 must carry the
+    # same headers as the authenticated user GETs, including the
+    # exception-handler responses.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Presence alone would not catch the value being weakened: lock
+    # the twelve most sensitive directives as disabled, mirroring
+    # the other user-route locks, using substring checks so later
+    # additions to the list do not break this test. The full value
+    # lives in _SECURITY_HEADERS. Each directive is safe to lock
+    # here for the same reasons as on the other routes: the SPA
+    # has no camera, microphone, geolocation, payment,
+    # clipboard-read, display-capture, fullscreen, motion-sensor,
+    # compass, XR, or idle-detection flow (verified by grep in the
+    # earlier sweeps and re-verified fresh this run: zero
+    # IdleDetector/requestIdleCallback matches and zero
+    # case-insensitive idle matches across frontend/app/src,
+    # and the remaining flows verified absent).
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
