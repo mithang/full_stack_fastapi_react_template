@@ -1358,3 +1358,63 @@ async def test_account_register_missing_guest_role_returns_404_with_cache_and_se
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+@pytest.mark.asyncio
+async def test_account_refresh_invalid_cookie_returns_401_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The account refresh POST with an invalid refresh cookie:
+    """
+    # The refresh route's invalid-token branch had no header lock, and
+    # it is lockable without any seeded row, live service, or valid
+    # secret, verified fresh this run, not assumed. The handler only
+    # checks that a cookie is present (the missing-cookie 403 lock
+    # covers the absent case), then passes the raw cookie value
+    # through the plain-str TokenRefreshRequestDto to
+    # AuthService.refresh_token, which decodes it first, before any
+    # user or role lookup (auth_service.py lines 351-360). A
+    # non-JWT string fails decoding under any secret — decode_token
+    # catches InvalidTokenError and returns None (jwt_token_service.py
+    # lines 107-112) — so the service raises
+    # UnauthorizedException("Invalid refresh token") with no DB
+    # lookup, no token minting, and no new cookie. The central
+    # ApiBaseException handler maps UnauthorizedException to 401 with
+    # body {"error": ..., "code": 401} and Cache-Control: no-store
+    # plus Pragma: no-cache (api/__init__.py lines 84-132), and the
+    # pure-ASGI security-headers middleware stamps every HTTP response
+    # with no path exclusions. Deliberately NOT locked: an expired but
+    # otherwise well-formed refresh token (same 401 via the expired
+    # branch, but minting one needs the refresh secret) and the 200
+    # success path (needs a minted token plus a seeded user and role).
+    response = await client.post(
+        "/account/refresh",
+        cookies={"refresh_token": "not-a-jwt"},
+    )
+    assert response.status_code == 401
+    assert response.json()["code"] == 401
+    assert response.json()["error"] == "Invalid refresh token"
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the register lock, using substring checks so later
+    # additions to the list do not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
