@@ -34,12 +34,13 @@ async def test_stripe_webhook_without_signature_returns_bad_request_with_securit
     # Same security-headers lock as the other interface tests: the
     # pure-ASGI middleware stamps every HTTP response with no path
     # exclusions, so this unauthenticated webhook 400 must carry the
-    # same headers as the authenticated GETs. No Cache-Control:
-    # no-store assert here, by design: unlike ApiBaseException
-    # responses, FastAPI's HTTPException responses do not pass
-    # through the central handler that stamps no-store, so this 400
-    # currently carries no cache headers — a gap to close
-    # separately, not something this lock may silently assert.
+    # same headers as the authenticated GETs. Cache-Control:
+    # no-store is now asserted too: the central HTTPException
+    # handler in api/__init__.py stamps it (mirroring the
+    # ApiBaseException handler), closing the gap this test
+    # previously recorded — HTTPException responses used to carry
+    # no cache headers at all.
+    assert response.headers["cache-control"] == "no-store"
     assert response.headers["x-content-type-options"] == "nosniff"
     assert response.headers["x-frame-options"] == "DENY"
     assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"

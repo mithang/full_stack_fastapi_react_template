@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from api.common.exceptions import ApiBaseException, AuthenticationFailedException, AwsException, AzureException, ConflictException, ForbiddenException, InvalidOperationException, NotFoundException, UnauthorizedException
 from api.common.utils import get_logger, is_production_environment, is_tenancy_enabled
 from api.core.container import container
@@ -129,6 +130,32 @@ async def api_exception_handler(req: Request, ex: ApiBaseException) -> JSONRespo
         status_code=status_code,
         content={"error": ex.message, "code": status_code},
         headers={"Cache-Control": "no-store", "Pragma": "no-cache"},
+    )
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(req: Request, ex: StarletteHTTPException) -> JSONResponse:
+    # FastAPI's HTTPException responses previously bypassed the central
+    # ApiBaseException handler above, so they carried no cache headers
+    # at all — a cached 400/500 (e.g. the Stripe webhook's unsigned
+    # "Invalid signature" 400) could then be served to a different
+    # caller after an account switch on a shared machine, the same
+    # class as the ApiBaseException hardening. Registered against
+    # Starlette's HTTPException, not FastAPI's subclass, so Starlette
+    # routing errors (404/405) are covered as well as the handlers'
+    # own raises (Stripe webhook, storage, account email-change —
+    # all string details, no custom headers in this codebase).
+    # The body is FastAPI's default shape exactly, {"detail":
+    # ex.detail}, so clients parsing detail (including the frontend's
+    # error extractor) see no change; only the cache headers are new,
+    # plus any headers the raised exception itself carried.
+    headers = dict(ex.headers) if ex.headers else {}
+    headers["Cache-Control"] = "no-store"
+    headers["Pragma"] = "no-cache"
+    return JSONResponse(
+        status_code=ex.status_code,
+        content={"detail": ex.detail},
+        headers=headers,
     )
 
 # Audit logging must run before the Redis cache: Starlette runs
