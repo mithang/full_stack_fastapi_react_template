@@ -2787,3 +2787,74 @@ async def test_account_register_empty_first_name_returns_422_with_security_heade
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+async def test_account_register_empty_last_name_returns_422_with_security_headers(client: AsyncClient):
+    """
+        The account register POST with an empty-string last_name:
+    """
+    # The mirror of the empty-first_name 422 lock, verified fresh
+    # this run, not assumed. BaseUserDto.last_name is a str with
+    # min_length=1 (user_dto.py), so "" fails FIELD validation
+    # (pydantic v2 string_too_short, loc ["body", "last_name"])
+    # before the mode="after" normalize_names validator ever runs
+    # — the blank validator would also reject it, but it is never
+    # reached, and its error is located at the body rather than at
+    # the field. This is still FastAPI request validation, so it
+    # fails before the handler body runs: the GUEST role lookup,
+    # the tenant branching, AuthService.register, and the
+    # activation email never execute, and no token is minted and
+    # no refresh cookie is set. The endpoint's dependencies
+    # cannot mask the 422 either: get_auth_service/
+    # get_role_service only resolve container objects and
+    # get_tenant_id only reads request state, with no database
+    # lookup. The remaining body fields are all valid (a non-blank
+    # first name, a valid email, gender "other", a password
+    # string), so no other 422 can mask the last_name error.
+    # Deliberately no Cache-Control/Pragma assertion: a 422 is
+    # FastAPI request validation, not an ApiBaseException, so the
+    # central handler's no-store headers do not apply to it,
+    # mirroring the register empty-first_name 422 lock. The
+    # security headers ARE locked: the pure-ASGI middleware
+    # stamps every HTTP response, including validation errors,
+    # with no path exclusions.
+    response = await client.post(
+        "/account/register",
+        json={
+            "first_name": "New",
+            "last_name": "",
+            "email": "newuser@example.com",
+            "gender": "other",
+            "password": "Register123!",
+        },
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert any(
+        "last_name" in [str(part) for part in err.get("loc", [])]
+        and err.get("type") == "string_too_short"
+        for err in detail
+    )
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the register empty-first_name 422 lock, using substring
+    # checks so later additions to the list do not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
