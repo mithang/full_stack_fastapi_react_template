@@ -722,3 +722,84 @@ async def test_account_password_reset_confirmation_no_reset_record_returns_406_w
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+@pytest.mark.asyncio
+async def test_account_activate_invalid_token_returns_406_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The account activation POST for a garbage token:
+    """
+    # The next account route after password_reset_confirmation whose
+    # error path needs no authenticated user, no seeded row, and
+    # no live service. It carries no permission dependency and no
+    # CurrentUser dependency, so the mocked host user's role_id
+    # pointing at no row cannot interfere here — no role lookup
+    # runs at all, and the handler takes only the AuthService
+    # dependency (account_endpoint.py lines 276-284). The
+    # deterministic ordering is the key: activate_account
+    # (auth_service.py lines 458-482) first calls
+    # verify_activation_token, which raises
+    # InvalidOperationException ("Invalid activation token") for
+    # a garbage token (jwt_token_service.py lines 121-147)
+    # BEFORE any user lookup, activation write, or email — so
+    # the test depends on neither the JWT secret nor any seeded
+    # record, and a garbage token suffices regardless of the
+    # secret. The central ApiBaseException handler maps
+    # InvalidOperationException to 406 with body {"error": ...,
+    # "code": 406} plus no-store headers (api/__init__.py lines
+    # 84-132). No refresh cookie is set on this path: the
+    # handler returns a bare 200 only on success, and this path
+    # raises before any token minting. The DTO takes a plain
+    # string token (user_dto.py line 125), trimmed by its
+    # validator, so the garbage token must ride the JSON body,
+    # not the query string, or FastAPI 422s and masks the 406.
+    # Deliberately no resend-activation lock here: that route
+    # carries a permission dependency (account_endpoint.py lines
+    # 263-274), so under the conftest user its role lookup is
+    # non-deterministic in the same way /me is — assess
+    # separately with a seeded role.
+    response = await client.post(
+        "/account/activate",
+        json={"token": "not-a-valid-jwt"},
+    )
+    assert response.status_code == 406
+    assert response.json()["code"] == 406
+    assert "Invalid activation token" in response.json()["error"]
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    # Error responses must not be cached either: a cached 406
+    # could be served to a different user after an account switch
+    # on a shared machine, and a cached success on this flow
+    # would replay a consumed activation link's effect.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    # Same security-headers lock as the other account tests: the
+    # pure-ASGI middleware stamps every HTTP response with no path
+    # exclusions, so this 406 must carry the same headers.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Presence alone would not catch the value being weakened: lock
+    # the twelve most sensitive directives as disabled, mirroring
+    # the reset-confirmation lock, using substring checks so later
+    # additions to the list do not break this test. Each directive
+    # is safe to lock here for the same reasons as on the other
+    # routes: the SPA has no camera, microphone, geolocation,
+    # payment, clipboard-read, display-capture, fullscreen,
+    # motion-sensor, compass, XR, or idle-detection flow (verified
+    # by grep in the earlier sweeps).
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
