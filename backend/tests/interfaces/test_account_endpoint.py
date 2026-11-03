@@ -568,3 +568,77 @@ async def test_account_email_magic_link_validate_invalid_link_returns_403_with_c
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+@pytest.mark.asyncio
+async def test_account_password_reset_request_unknown_email_returns_generic_200_with_security_headers(client: AsyncClient):
+    """
+        The account password reset request POST for an unknown email:
+    """
+    # The next account route after the magic-link set whose error
+    # path needs no authenticated user, no seeded row, and no live
+    # service. It carries no permission dependency and no
+    # CurrentUser dependency, so the mocked host user (whose
+    # role_id points at no row) cannot interfere here — no role
+    # lookup runs at all, and the FrontendHost dependency only
+    # reads request state (tenant_middleware.py), with no DB
+    # lookup. The handler wraps initate_password_reset in a
+    # blanket try/except with a finally that always returns the
+    # same generic 200 message ("If the email exists, a password
+    # reset link has been sent."), so unknown and known emails
+    # are indistinguishable and no account enumeration leaks.
+    # Because the lookup fails first — request_password_reset
+    # raises InvalidOperationException when find_by_email finds
+    # no user, before any reset record is written, any token is
+    # minted, or any email is sent — no reset email goes out for
+    # an unknown address, and the fact that the handler swallows
+    # the exception means the failure cannot surface as an error
+    # status either. The endpoint takes a PasswordResetRequestDto
+    # body, so the request is the JSON object {"email": ...} —
+    # unlike the magic-link login's bare-string Body param, a
+    # bare string here would 422 and mask the generic 200. No
+    # refresh cookie is set on this path: the handler returns a
+    # plain DTO. No Cache-Control assertion here, deliberately:
+    # unlike the error paths (central handler), this 200 sets no
+    # cache headers, and POST responses are not cached by
+    # default, so there is no header to lock — the lock is the
+    # generic body plus the security headers the pure-ASGI
+    # middleware stamps on every response.
+    response = await client.post(
+        "/account/password_reset_request",
+        json={"email": "unknown@example.com"},
+    )
+    assert response.status_code == 200
+    assert response.json()["message"] == "If the email exists, a password reset link has been sent."
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    # Same security-headers lock as the magic-link tests: the
+    # pure-ASGI middleware stamps every HTTP response with no path
+    # exclusions, so this generic 200 must carry the same headers.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Presence alone would not catch the value being weakened: lock
+    # the twelve most sensitive directives as disabled, mirroring
+    # the magic-link locks, using substring checks so later additions
+    # to the list do not break this test. Each directive is safe
+    # to lock here for the same reasons as on the other routes:
+    # the SPA has no camera, microphone, geolocation, payment,
+    # clipboard-read, display-capture, fullscreen, motion-sensor,
+    # compass, XR, or idle-detection flow (verified by grep in the
+    # earlier sweeps).
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
