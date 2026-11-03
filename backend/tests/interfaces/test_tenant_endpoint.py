@@ -1566,3 +1566,59 @@ async def test_check_tenant_dns_with_missing_role_returns_404_with_cache_and_sec
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+@pytest.mark.asyncio
+async def test_check_subdomain_availability_returns_200_with_cache_and_security_headers(client: AsyncClient):
+    """
+        GET /tenants/check_subdomain/{subdomain} was the last
+        tenant route with no lock: the tenant test file locked
+        list, create, search-by-subdomain, search-by-name,
+        delete, re-GET-after-delete, validation, the
+        trial-activation PATCH, the features GET, the
+        update_feature PATCH, the update PUT, the DNS-update
+        POST, and the DNS-check GET, but never this
+        availability GET, so dropping the two no-store header
+        lines in its handler — or dropping the
+        security-headers middleware registration — would
+        previously have gone uncaught on this route. The
+        success path here is deterministic: this GET is
+        public (no permission dependency), so unlike the
+        gated tenant routes it needs no seeded role; the
+        subdomain "available.fsrapp.com" is valid under the
+        default host main domain (fsrapp.com), and the fresh
+        test database holds no tenant with it, so the
+        service raises TenantNotFoundException and the
+        handler returns is_available True — a read-only
+        lookup with no side effect, and the GET takes no
+        body or query params, so no 422 can mask the 200.
+        That 200 must still carry the no-store headers: a
+        cached answer could report a subdomain as available
+        after it was just registered (or as taken after it
+        was freed), and the registration dialog trusts this
+        answer before creating the tenant.
+    """
+    response = await client.get("/tenants/check_subdomain/available.fsrapp.com")
+    assert response.status_code == 200
+    assert response.json()["is_available"] is True
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
