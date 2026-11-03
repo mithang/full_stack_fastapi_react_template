@@ -1204,3 +1204,86 @@ async def test_account_resend_activation_email_missing_role_returns_404_with_cac
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+@pytest.mark.asyncio
+async def test_account_change_email_confirmation_other_user_token_returns_400_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The account change-email-confirmation PATCH for a token
+        issued to another user:
+    """
+    # The valid-token-for-another-user branch was deliberately NOT
+    # locked in iteration 2363 (it needs a minted JWT) and is locked
+    # here, verified fresh this run, not assumed. The token is
+    # minted inside the test with the app's own signing constants
+    # (imported, never hardcoded): payload user_id differs from the
+    # conftest mocked user (admin@example.com, id
+    # 68c302ef6bf7a039b7e9b385), type is
+    # "change_email_confirmation", and exp is one hour in the
+    # future, so verify_change_email_token accepts it. The service
+    # then compares payload.user_id against the authenticated
+    # caller's id BEFORE any user lookup, email-existence check,
+    # email update, or notification email, and raises
+    # InvalidOperationException on the mismatch — so no seeded row
+    # and no live service is needed, and no side effect occurs.
+    # The endpoint catches InvalidOperationException and re-raises
+    # HTTPException 400 with the generic detail "Email change
+    # confirmation failed.", so the failure reveals nothing about
+    # the token's owner or any account. The Starlette HTTPException
+    # handler returns body {"detail": ...} with Cache-Control:
+    # no-store plus Pragma: no-cache (api/__init__.py), and the
+    # pure-ASGI security-headers middleware stamps every HTTP
+    # response with no path exclusions. Deliberately NOT locked:
+    # the success path (needs a token for the caller plus a seeded
+    # user row and an SMTP send) and the already-in-use branch
+    # (needs the same seeding). Note the body shape differs from
+    # the central ApiBaseException error shape: this endpoint
+    # converts the service error to a plain HTTPException, so the
+    # lock asserts "detail", not "error"/"code", mirroring the
+    # invalid-token lock.
+    import jwt
+    from datetime import datetime, timedelta, timezone
+
+    from api.common.security import ALGORITHM, JWT_SECRET
+
+    token = jwt.encode(
+        {
+            "user_id": "68c302ef6bf7a039b7e9b387",
+            "email": "new@example.com",
+            "type": "change_email_confirmation",
+            "exp": datetime.now(timezone.utc) + timedelta(hours=1),
+        },
+        JWT_SECRET,
+        algorithm=ALGORITHM,
+    )
+    response = await client.patch(
+        "/account/change_email_confirmation",
+        json={"token": token},
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Email change confirmation failed."
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the resend-activation-email lock, using substring
+    # checks so later additions to the list do not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
