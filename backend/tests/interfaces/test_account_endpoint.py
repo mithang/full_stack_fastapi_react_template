@@ -128,3 +128,68 @@ async def test_account_refresh_without_cookie_returns_forbidden_with_cache_and_s
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+@pytest.mark.asyncio
+async def test_account_passkey_register_options_unknown_email_returns_404_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The account passkey register-options POST for an unknown email:
+    """
+    # The passkey register-options route had no header lock: it is the
+    # first account route after logout/refresh whose error path needs
+    # no authenticated user and no seeded row. It carries no permission
+    # dependency and no CurrentUser dependency, so the mocked host user
+    # (whose role_id points at no row) cannot interfere here — unlike
+    # the permission-gated routes, no role lookup runs at all. The
+    # handler resolves the auth service from the container (no lookup),
+    # then calls user_service.find_by_email before the try block — the
+    # comment on the handler says so explicitly, so an unknown email
+    # keeps its 404 instead of being wrapped into the 406
+    # PassKeyException. Against the fresh test DB the lookup finds no
+    # User row and raises UserNotFoundException (core/exceptions.py),
+    # a NotFoundException subclass, which the central ApiBaseException
+    # handler maps to 404 with Cache-Control: no-store and Pragma:
+    # no-cache (api/__init__.py). No passkey record is created, no
+    # webauthn options are generated, and no email is sent on this
+    # path: the failure happens before passkey_service is ever called.
+    # The body is a bare JSON string because the endpoint declares
+    # email as EmailStr = Body(...), not a DTO object.
+    response = await client.post(
+        "/account/passkey/register_options", json="unknown@example.com"
+    )
+    assert response.status_code == 404
+    assert response.json()["code"] == 404
+    assert "User" in response.json()["error"]
+    assert "unknown@example.com" in response.json()["error"]
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    # Same security-headers lock as the logout/refresh tests: the
+    # pure-ASGI middleware stamps every HTTP response with no path
+    # exclusions, so the 404 must carry the same headers.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Presence alone would not catch the value being weakened: lock
+    # the twelve most sensitive directives as disabled, mirroring
+    # the logout lock, using substring checks so later additions
+    # to the list do not break this test. Each directive is safe to
+    # lock here for the same reasons as on the other routes: the SPA
+    # has no camera, microphone, geolocation, payment, clipboard-read,
+    # display-capture, fullscreen, motion-sensor, compass, XR, or
+    # idle-detection flow (verified by grep in the earlier sweeps).
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
