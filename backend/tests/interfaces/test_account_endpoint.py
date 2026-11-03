@@ -1586,3 +1586,66 @@ async def test_account_refresh_wrong_type_token_returns_401_with_cache_and_secur
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+@pytest.mark.asyncio
+async def test_account_login_missing_password_returns_422_with_security_headers(client: AsyncClient):
+    """
+        The account login POST with the password form field omitted:
+    """
+    # The next account route after the refresh wrong-type lock
+    # whose error path needs no seeded row, no live service, and
+    # no authenticated user, verified fresh this run, not
+    # assumed. The handler takes OAuth2PasswordRequestForm
+    # (account_endpoint.py lines 51-60), whose username and
+    # password fields are both required form fields, so FastAPI
+    # validates the form BEFORE the handler body runs: the
+    # LoginRequestDto construction and the AuthService.login
+    # call (which would do the find_by_email lookup) never
+    # execute, and no token is minted and no refresh cookie is
+    # set. This is distinct from the login unknown-email 401
+    # lock (a valid form reaching the service) and from a
+    # malformed-email submission, which is deliberately NOT
+    # locked here: a malformed username passes form validation
+    # and only fails later inside the handler's LoginRequestDto
+    # construction, whose error handling is not reasoned here.
+    # Deliberately no Cache-Control/Pragma assertion: a 422 is
+    # FastAPI validation, not an ApiBaseException, so the
+    # central handler's no-store headers do not apply to it,
+    # mirroring the SSO unknown-provider 422 locks. The
+    # security headers ARE locked: the pure-ASGI middleware
+    # stamps every HTTP response, including validation errors,
+    # with no path exclusions.
+    response = await client.post(
+        "/account/login",
+        data={"username": "admin@example.com"},
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert any(
+        "password" in [str(part) for part in err.get("loc", [])]
+        for err in detail
+    )
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the refresh wrong-type lock, using substring
+    # checks so later additions to the list do not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
