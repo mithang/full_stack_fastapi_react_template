@@ -803,3 +803,77 @@ async def test_account_activate_invalid_token_returns_406_with_cache_and_securit
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+@pytest.mark.asyncio
+async def test_account_login_unknown_email_returns_401_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The account login POST for an unknown email:
+    """
+    # The next account route after activate whose error path needs
+    # no authenticated user, no seeded row, and no live service. It
+    # carries no permission dependency and no CurrentUser dependency,
+    # so the mocked host user's role_id pointing at no row cannot
+    # interfere here — no role lookup runs at all, and the handler
+    # takes only the AuthService dependency plus the optional
+    # X-Tenant-ID (account_endpoint.py lines 51-60). The
+    # deterministic ordering is the key: login (auth_service.py
+    # lines 176-194) first calls find_by_email, which raises
+    # UserNotFoundException on the empty fresh test DB (User is in
+    # the conftest model set), runs one dummy pbkdf2 verify so the
+    # path takes about as long as a wrong-password attempt, and
+    # raises UnauthorizedException ("Authentication failed. Please
+    # check your credentials.") — the exact same generic 401 as a
+    # wrong password, so unknown and wrong-password attempts are
+    # indistinguishable and no account enumeration leaks. The
+    # central ApiBaseException handler maps UnauthorizedException
+    # to 401 with body {"error": ..., "code": 401} plus no-store
+    # headers (api/__init__.py lines 84-132). The endpoint takes
+    # an OAuth2PasswordRequestForm, so the credentials must ride
+    # form fields (username/password), not a JSON body, or FastAPI
+    # 422s and masks the 401. No refresh cookie is set on this
+    # path: the handler raises before minting any token set.
+    response = await client.post(
+        "/account/login",
+        data={"username": "unknown@example.com", "password": "WrongPassword123!"},
+    )
+    assert response.status_code == 401
+    assert response.json()["code"] == 401
+    assert "Authentication failed. Please check your credentials." in response.json()["error"]
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    # Error responses must not be cached either: a cached 401
+    # could be served to a different user after an account switch
+    # on a shared machine.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    # Same security-headers lock as the other account tests: the
+    # pure-ASGI middleware stamps every HTTP response with no path
+    # exclusions, so this 401 must carry the same headers.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Presence alone would not catch the value being weakened: lock
+    # the twelve most sensitive directives as disabled, mirroring
+    # the activate lock, using substring checks so later additions
+    # to the list do not break this test. Each directive is safe to
+    # lock here for the same reasons as on the other routes: the
+    # SPA has no camera, microphone, geolocation, payment,
+    # clipboard-read, display-capture, fullscreen, motion-sensor,
+    # compass, XR, or idle-detection flow (verified by grep in the
+    # earlier sweeps).
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
