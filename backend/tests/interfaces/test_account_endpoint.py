@@ -1418,3 +1418,85 @@ async def test_account_refresh_invalid_cookie_returns_401_with_cache_and_securit
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+@pytest.mark.asyncio
+async def test_account_refresh_expired_cookie_returns_401_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The account refresh POST with an expired refresh cookie:
+    """
+    # The refresh route's expired-token branch had no header lock,
+    # and it is lockable without any seeded row, live service, or
+    # sent email, verified fresh this run, not assumed. The handler
+    # only checks cookie presence (the missing-cookie 403 lock
+    # covers absence), then passes the raw value to
+    # AuthService.refresh_token, which decodes it FIRST, before
+    # any user or role lookup (auth_service.py lines 351-360).
+    # The token is minted inside the test with the app's own
+    # refresh signing constants (imported, never hardcoded):
+    # payload sub is a valid ObjectId, tenant_id is None, type
+    # is "refresh" matching get_refresh_token, and exp is one
+    # hour in the past, so decode_token's refresh branch raises
+    # ExpiredSignatureError and returns None (jwt_token_service.py
+    # lines 107-112) — a different decode branch from the
+    # invalid-cookie lock's InvalidTokenError, but the same
+    # downstream outcome — so the service raises
+    # UnauthorizedException("Invalid refresh token") with no DB
+    # lookup, no token minting, and no new cookie. The central
+    # ApiBaseException handler maps UnauthorizedException to 401
+    # with body {"error": ..., "code": 401} and Cache-Control:
+    # no-store plus Pragma: no-cache (api/__init__.py lines
+    # 84-132), and the pure-ASGI security-headers middleware
+    # stamps every HTTP response with no path exclusions.
+    # Deliberately NOT locked: the 200 success path (needs a
+    # live, unexpired token plus seeded user and role rows after
+    # decode) and the wrong-type token branch (an access token
+    # presented as a refresh token, which needs a minted access
+    # token and shares the same 401 outcome).
+    import jwt
+    from datetime import datetime, timedelta, timezone
+
+    from api.common.security import REFRESH_ALGORITHM, REFRESH_TOKEN_SECRET
+
+    token = jwt.encode(
+        {
+            "sub": "68c302ef6bf7a039b7e9b385",
+            "tenant_id": None,
+            "type": "refresh",
+            "exp": datetime.now(timezone.utc) - timedelta(hours=1),
+        },
+        REFRESH_TOKEN_SECRET,
+        algorithm=REFRESH_ALGORITHM,
+    )
+    response = await client.post(
+        "/account/refresh",
+        cookies={"refresh_token": token},
+    )
+    assert response.status_code == 401
+    assert response.json()["code"] == 401
+    assert response.json()["error"] == "Invalid refresh token"
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the refresh-invalid-cookie lock, using substring
+    # checks so later additions to the list do not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
