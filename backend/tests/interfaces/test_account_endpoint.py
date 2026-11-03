@@ -339,3 +339,82 @@ async def test_account_passkey_register_without_challenge_returns_406_with_cache
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+@pytest.mark.asyncio
+async def test_account_passkey_login_without_challenge_returns_406_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The account passkey login POST with no live challenge:
+    """
+    # The passkey login route is the next account route after
+    # register whose error path needs no authenticated user, no
+    # seeded row, and no live service. It carries no permission
+    # dependency and no CurrentUser dependency, so the mocked host
+    # user (whose role_id points at no row) cannot interfere here —
+    # no role lookup runs at all. The handler wraps the whole
+    # service call in a blanket except that re-raises any failure as
+    # PassKeyException("Passkey authentication failed."). Against a
+    # fresh test DB there is no authentication challenge for the
+    # email, so complete_auth_login raises PassKeyException("No
+    # expected challenge found or challenge expired.") before any
+    # credential is verified, any sign-in count is updated, or any
+    # token is issued; and even the conftest wrinkle that
+    # Challenges is not in the conftest model set (conftest.py
+    # models are User, Tenant, Role, UserPasswordReset,
+    # UserPreference only) converges to the same outcome, since a
+    # lookup failure on the uninitialized collection is also caught
+    # by that blanket except and re-raised as the identical 406.
+    # No webauthn verification runs, no token is issued, and no
+    # refresh cookie is set on this path. The endpoint declares
+    # two Body params (email: EmailStr, credential: dict), so
+    # FastAPI expects a single JSON object keyed by both names; a
+    # bare dict credential passes Body validation, so no 422 can
+    # mask the 406. PassKeyException is an
+    # InvalidOperationException, so the central ApiBaseException
+    # handler maps it to 406 with body {"error": ..., "code": 406}
+    # and Cache-Control: no-store plus Pragma: no-cache
+    # (api/__init__.py). The error assertion uses a substring
+    # check because PassKeyException prefixes its message with
+    # "PassKey Error: " — the same reason the register lock uses
+    # a substring check.
+    response = await client.post(
+        "/account/passkey/login",
+        json={"email": "unknown@example.com", "credential": {"id": "not-a-credential"}},
+    )
+    assert response.status_code == 406
+    assert response.json()["code"] == 406
+    assert "Passkey authentication failed." in response.json()["error"]
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    # Same security-headers lock as the logout/refresh and
+    # register-options tests: the pure-ASGI middleware stamps every
+    # HTTP response with no path exclusions, so the 406 must carry
+    # the same headers.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Presence alone would not catch the value being weakened: lock
+    # the twelve most sensitive directives as disabled, mirroring
+    # the register lock, using substring checks so later
+    # additions to the list do not break this test. Each directive
+    # is safe to lock here for the same reasons as on the other
+    # routes: the SPA has no camera, microphone, geolocation,
+    # payment, clipboard-read, display-capture, fullscreen,
+    # motion-sensor, compass, XR, or idle-detection flow (verified
+    # by grep in the earlier sweeps).
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
