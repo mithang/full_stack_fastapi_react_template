@@ -1649,3 +1649,61 @@ async def test_account_login_missing_password_returns_422_with_security_headers(
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+@pytest.mark.asyncio
+async def test_account_login_malformed_email_returns_422_with_security_headers(client: AsyncClient):
+    """
+        The account login POST with a malformed username (not an email):
+    """
+    # The follow-up to the missing-password 422 lock (iteration 2370):
+    # a malformed username passes OAuth2PasswordRequestForm validation
+    # (username is a free-form string) and only fails inside the
+    # handler's LoginRequestDto construction, whose EmailStr field
+    # raises a pydantic ValidationError. No exception handler in
+    # api/__init__.py covers ValidationError (only ApiBaseException
+    # and StarletteHTTPException), so before this run's fix the
+    # caller got a bare 500 and no AuthService.login lookup ever ran
+    # — the unknown-email 401 lock does not cover this path, because
+    # that lock's valid email reaches the service. The fix maps the
+    # ValidationError to HTTPException 422, so the central
+    # StarletteHTTPException handler stamps Cache-Control no-store
+    # and Pragma no-cache on the error response, unlike the FastAPI
+    # request-validation 422s (missing password, unknown SSO
+    # provider), which carry no cache headers. The security headers
+    # ARE locked: the pure-ASGI middleware stamps every HTTP
+    # response, including error responses, with no path exclusions.
+    # Deliberately NOT locked: the login wrong-password 401 (needs
+    # a seeded user row) and any token minting — no token is minted
+    # and no refresh cookie is set on this path.
+    response = await client.post(
+        "/account/login",
+        data={"username": "not-an-email", "password": "whatever123"},
+    )
+    assert response.status_code == 422
+    assert "Invalid email format" in str(response.json()["detail"])
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the missing-password 422 lock, using substring
+    # checks so later additions to the list do not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy

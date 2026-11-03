@@ -4,7 +4,7 @@ from fastapi import APIRouter, Body, Cookie, Depends, HTTPException, Request, Re
 from fastapi.params import Query
 from fastapi.responses import RedirectResponse
 from fastapi.security import OAuth2PasswordRequestForm
-from pydantic import EmailStr
+from pydantic import EmailStr, ValidationError
 from api.common.dtos.passkey_rep_dto import HasPasskeysDto
 from api.common.dtos.token_dto import TokenRefreshRequestDto, TokenSetDto
 from api.common.dtos.worker_dto import WorkerPayloadDto
@@ -56,10 +56,27 @@ async def login(
     x_tenant_id: str | None = Depends(get_tenant_id)
 ):
     logger.info(f"Login attempt for user: {_safe_log_value(login_request.username)} x_tenant_id: {x_tenant_id}")
-    token_set: TokenSetDto = await auth_service.login(LoginRequestDto(
-        email=login_request.username,
-        password=login_request.password
-    ))
+    # OAuth2PasswordRequestForm's username is a free-form string, so a
+    # malformed username passes form validation and only fails here,
+    # inside LoginRequestDto's EmailStr validation. Previously that
+    # pydantic ValidationError escaped the handler uncaught — neither
+    # the ApiBaseException handler nor the StarletteHTTPException
+    # handler covers it — so the caller got a bare 500 instead of a
+    # usable client error, and no AuthService.login lookup ever ran.
+    # Map it to 422, matching the missing-password form 422: the
+    # frontend's error extractor reads body.detail, and the
+    # StarletteHTTPException handler stamps the no-store headers.
+    try:
+        login_dto = LoginRequestDto(
+            email=login_request.username,
+            password=login_request.password
+        )
+    except ValidationError:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Invalid email format."
+        )
+    token_set: TokenSetDto = await auth_service.login(login_dto)
     # Token response (access token in the body, rotated refresh token
     # in Set-Cookie): POST responses are not cached by default, but
     # make that explicit so no browser/proxy cache can ever store a
