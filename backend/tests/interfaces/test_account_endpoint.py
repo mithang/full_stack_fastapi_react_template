@@ -2007,3 +2007,103 @@ async def test_account_change_email_confirmation_success_returns_200_with_securi
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+@pytest.mark.asyncio
+async def test_account_resend_activation_email_already_active_returns_406_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The account resend-activation-email POST for an already-active user:
+    """
+    # The already-active branch was deliberately NOT locked in the
+    # permission-gate lock (it needs a seeded role plus a seeded
+    # active user row) and is locked here, verified fresh this run,
+    # not assumed. The endpoint is permission-gated with
+    # required_permissions=[USER_READ_AND_WRITE_ONLY, FULL_ACCESS]
+    # through the factory's defaults any_permission=False and
+    # allow_self_access=False, so the mocked caller's role must
+    # carry BOTH permissions, not just one: the factory passes
+    # any_permission=False into UserAccessManagement, whose
+    # has_permission then requires all required permissions. The
+    # role row is therefore seeded with the mocked user's exact
+    # role_id (68c302ef6bf7a039b7e9b386) and both permissions, so
+    # get_role_by_id succeeds and the gate passes — the opposite
+    # of the missing-role 404 lock, which seeds no role. The
+    # service then calls find_by_email on the DTO email, which
+    # returns the seeded active row, and raises
+    # InvalidOperationException("User is already active.") BEFORE
+    # any token minting or email send, so the raise_on_failure=True
+    # SMTP send on the 202 success path can never run here and no
+    # live mail server is needed — unlike the 202 success branch,
+    # which stays deliberately NOT locked because it needs that
+    # send to succeed. The central ApiBaseException handler maps
+    # InvalidOperationException to 406 with body {"error": ...,
+    # "code": 406} and Cache-Control: no-store plus Pragma:
+    # no-cache (api/__init__.py), and the pure-ASGI
+    # security-headers middleware stamps every HTTP response with
+    # no path exclusions. Seeding is done directly through the
+    # Role and User documents (doc.insert(), the same call
+    # BaseRepository.create uses), not through POST endpoints,
+    # whose own permission dependencies 404 on the fresh test DB
+    # (the standing role-list tension); no X-Tenant-ID header is
+    # sent, so the seeds and the service reads all use the host
+    # test DB, and the conftest fixture drops the test DB after
+    # the test, so the rows cannot leak into other tests.
+    from beanie import PydanticObjectId
+
+    from api.common.enums.gender import Gender
+    from api.common.security import hash_it
+    from api.domain.entities.role import Role
+    from api.domain.entities.user import User
+    from api.domain.enum.permission import Permission
+
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b386"),
+        name="Admin",
+        description="Administrator role for the mocked caller",
+        permissions=[Permission.USER_READ_AND_WRITE_ONLY, Permission.FULL_ACCESS],
+    ).insert()
+    await User(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b390"),
+        first_name="Active",
+        last_name="User",
+        email="active@example.com",
+        gender=Gender.OTHER,
+        is_active=True,
+        password=hash_it("Password123!"),
+    ).insert()
+    response = await client.post(
+        "/account/resend_activation_email",
+        json={
+            "email": "active@example.com",
+            "id": "68c302ef6bf7a039b7e9b390",
+            "first_name": "Active",
+        },
+    )
+    assert response.status_code == 406
+    assert response.json()["code"] == 406
+    assert response.json()["error"] == "User is already active."
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the change-email-confirmation lock, using substring
+    # checks so later additions to the list do not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
