@@ -42,7 +42,7 @@ async def test_list_permissions_from_host(client: AsyncClient):
     # middleware's permissions-policy is a long fixed list, and a
     # regression that dropped a directive (or replaced the value with
     # an empty one) would still pass the presence check above. The
-    # eleven directives below are the ones whose absence would matter
+    # twelve directives below are the ones whose absence would matter
     # most on this origin — the SPA uses no camera, microphone,
     # geolocation (verified by grep in the middleware's own comment),
     # and no Payment Request API, and it never reads the clipboard
@@ -69,6 +69,10 @@ async def test_list_permissions_from_host(client: AsyncClient):
     # navigator.xr / XRSession / immersive-ar / immersive-vr /
     # requestSession matches, verified by grep this run), and the
     # middleware value already contains xr-spatial-tracking=().
+    # The twelfth, idle-detection, is safe to lock here: the SPA has
+    # no idle-detection flow (zero IdleDetector/requestIdleCallback
+    # matches, verified by grep this run), and the middleware value
+    # already contains idle-detection=().
     permissions_policy = response.headers["permissions-policy"]
     assert "camera=()" in permissions_policy
     assert "microphone=()" in permissions_policy
@@ -81,6 +85,7 @@ async def test_list_permissions_from_host(client: AsyncClient):
     assert "gyroscope=()" in permissions_policy
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
 
     data = [PermissionDto.model_validate(item) for item in response.json()]
 
