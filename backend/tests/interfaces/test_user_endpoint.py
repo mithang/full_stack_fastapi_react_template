@@ -1221,3 +1221,97 @@ async def test_get_user_profile_image_with_missing_role_returns_404_with_cache_a
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+@pytest.mark.asyncio
+async def test_put_user_update_profile_picture_with_missing_role_returns_404_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The user update_profile_picture PUT (the last user path with
+        no test: list, create, get, update, delete, the
+        nonexistent-id 404, assign_role PATCH, remove_role PATCH,
+        and profile-image GET were already locked): PUT
+        /users/{user_id}/update_profile_picture had no test, so
+        deleting the route — or dropping the central
+        ApiBaseException no-store lines or the security-headers
+        middleware registration — would previously have gone
+        uncaught on the avatar-upload path. The success path is
+        not asserted here: the PUT is permission-gated (a
+        parameter dependency requiring USER_READ_AND_WRITE_ONLY
+        or USER_SELF_READ_AND_WRITE_ONLY with allow_self_access,
+        evaluated before the handler body, before its
+        tenant-scope guard, before its image content-type, size,
+        and emptiness validation, before the user lookup, and
+        before any storage upload), so it needs a DB role lookup,
+        and the shared conftest client seeds no role. The error
+        path below is deterministic instead: UserAccessManagement
+        looks the role up (get_role_detail -> role_service
+        .get_role_by_id) before any self-access or permission
+        branching, so allow_self_access cannot rescue the call
+        even for the caller's own id, and the mocked host user's
+        role_id points at no row in the fresh test database (Role
+        is in the conftest model set), so the dependency raises
+        RoleNotFoundException before the handler runs. The request
+        below carries a real (tiny) PNG part, mirroring the
+        branding PUT /logo lock, so multipart parsing cannot
+        422-mask the error whichever order FastAPI resolves the
+        file param versus the router dependency. Either way the
+        outcome is the same 404: no file reaches storage, no user
+        record is updated, and no scope guard is ever evaluated.
+        That 404 must still carry the error-response headers: a
+        cached error response could otherwise be served to a
+        different user after an account switch on a shared
+        machine, and a profile picture is personal data.
+    """
+    png_1x1 = (
+        b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
+        b"\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00\x00"
+        b"\x00\x0cIDATx\x9cc\xf8\x0f\x00\x00\x01\x01\x00\x05"
+        b"\x18\xd8N\x00\x00\x00\x00IEND\xaeB`\x82"
+    )
+    response = await client.put(
+        "/users/68c302ef6bf7a039b7e9b387/update_profile_picture",
+        files={"file": ("avatar.png", png_1x1, "image/png")},
+    )
+    assert response.status_code == 404
+    body = response.json()
+    assert body["code"] == 404
+    assert "Role" in body["error"]
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+
+    # Same security-headers lock as the other user-route tests:
+    # the pure-ASGI middleware stamps every HTTP response with no
+    # path exclusions, so the update_profile_picture PUT 404 must
+    # carry the same headers as the authenticated user GETs,
+    # including the exception-handler responses.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Presence alone would not catch the value being weakened: lock
+    # the twelve most sensitive directives as disabled, mirroring
+    # the other user-route locks, using substring checks so later
+    # additions to the list do not break this test. The full value
+    # lives in _SECURITY_HEADERS. Each directive is safe to lock
+    # here for the same reasons as on the other routes: the SPA
+    # has no camera, microphone, geolocation, payment,
+    # clipboard-read, display-capture, fullscreen, motion-sensor,
+    # compass, XR, or idle-detection flow (verified by grep in the
+    # earlier sweeps and re-verified fresh this run: zero
+    # case-insensitive idle matches across frontend/app/src,
+    # and the remaining flows verified absent).
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
