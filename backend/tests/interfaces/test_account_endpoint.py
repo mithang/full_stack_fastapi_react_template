@@ -74,3 +74,57 @@ async def test_account_logout_returns_ok_with_cache_and_security_headers(client:
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+@pytest.mark.asyncio
+async def test_account_refresh_without_cookie_returns_forbidden_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The account refresh POST without a refresh cookie:
+    """
+    # The refresh route's missing-cookie branch had no header lock:
+    # it raises before any service call, so no fixture, DB row, or
+    # live service is needed — the httpx client sends no cookies by
+    # default, the Cookies model defaults refresh_token to None, and
+    # the handler raises ForbiddenException("Refresh token missing!")
+    # before touching the auth service. The central ApiBaseException
+    # handler maps ForbiddenException to 403 (api/__init__.py) and
+    # stamps Cache-Control: no-store plus Pragma: no-cache on every
+    # such error response, so a cached 403 could otherwise be served
+    # to a different user after an account switch on a shared machine
+    # — the same class as the tenant-create 406 lock. The pure-ASGI
+    # security-headers middleware stamps every HTTP response with no
+    # path exclusions, so the 403 must carry the same headers as the
+    # logout 200 above.
+    response = await client.post("/account/refresh")
+    assert response.status_code == 403
+    assert response.json()["error"] == "Refresh token missing!"
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Presence alone would not catch the value being weakened: lock
+    # the twelve most sensitive directives as disabled, mirroring
+    # the logout lock, using substring checks so later additions
+    # to the list do not break this test. The full value lives in
+    # _SECURITY_HEADERS. Each directive is safe to lock here for the
+    # same reasons as on the other routes: the SPA has no camera,
+    # microphone, geolocation, payment, clipboard-read,
+    # display-capture, fullscreen, motion-sensor, compass, XR, or
+    # idle-detection flow (verified by grep in the earlier sweeps).
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
