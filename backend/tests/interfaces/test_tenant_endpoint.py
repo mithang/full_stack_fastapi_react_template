@@ -1504,3 +1504,65 @@ async def test_update_tenant_dns_with_missing_role_returns_404_with_cache_and_se
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+@pytest.mark.asyncio
+async def test_check_tenant_dns_with_missing_role_returns_404_with_cache_and_security_headers(client: AsyncClient):
+    """
+        GET /tenants/{tenant_id}/check_dns was the one tenant
+        read with no lock: the tenant test file locked list,
+        create, search-by-subdomain, search-by-name,
+        delete, re-GET-after-delete, validation, the
+        trial-activation PATCH, the features GET, the
+        update_feature PATCH, the update PUT, and the
+        DNS-update POST, but never this DNS-status GET,
+        so dropping that route — or dropping the central
+        ApiBaseException no-store lines or the
+        security-headers middleware registration — would
+        previously have gone uncaught on this route. The
+        success path is not asserted here: the GET is
+        permission-gated (HOST_MANAGE_TENANTS or
+        MANAGE_TENANT_SETTINGS), so it needs a DB role
+        lookup, and the shared conftest client seeds no
+        role. The error path below is deterministic
+        instead: the mocked host user's role_id points at
+        no row in the fresh test database (Role is in the
+        conftest model set), so the permission dependency
+        raises RoleNotFoundException before the scope
+        guard, any tenant lookup, or any DNS-update job
+        enqueue — no side effect, and the path tenant_id
+        is never read. The GET takes no body or query
+        params, so no 422 can mask the 404. That 404 must
+        still carry the error-response headers: a cached
+        404 could otherwise be served to a different admin
+        after an account switch, and the success path is a
+        side-effect GET that enqueues a DNS-update job
+        and returns a status message that changes as
+        activation proceeds.
+    """
+    response = await client.get("/tenants/68c302ef6bf7a039b7e9b385/check_dns")
+    assert response.status_code == 404
+    body = response.json()
+    assert body["code"] == 404
+    assert "Role" in body["error"]
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
