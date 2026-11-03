@@ -1130,4 +1130,12 @@ async def test_validate_password_when_tenant_creation(client: AsyncClient, mock_
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+    # Same no-store lock as the post-delete re-GET 404 above: this 406
+    # goes through the central api_exception_handler, which sets
+    # Cache-Control: no-store and Pragma: no-cache on every
+    # ApiBaseException error response — but this test locked only the
+    # security headers, so deleting those cache headers would have
+    # gone uncaught on this error response.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
     assert response.json()["error"] == "Password must be at least 8 characters long, include uppercase and lowercase letters, a number, and a special character."
