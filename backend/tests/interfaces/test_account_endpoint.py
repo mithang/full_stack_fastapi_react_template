@@ -10878,3 +10878,120 @@ async def test_account_register_lowercase_first_uppercase_stem_prefer_not_to_say
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+async def test_account_register_lowercase_first_uppercase_middle_lowercase_suffix_prefer_not_to_say_gender_returns_422_with_security_headers(client: AsyncClient):
+    """
+        The account register POST with a lowercase-first-letter, uppercase-middle, lowercase-suffix
+        prefer-not-to-say gender value:
+    """
+    # The next register validation branch after the lowercase-first-uppercase-stem
+    # prefer_not_to_say gender 422 lock, verified fresh this run, not assumed.
+    # BaseUserDto.gender is a required Gender field with no default
+    # (user_dto.py), and Gender admits only "male", "female",
+    # "other", and "prefer_not_to_say" (gender.py) — a
+    # case-sensitive str Enum, so "pREFER_NOT_to_say" is not a
+    # member even though it matches "prefer_not_to_say"
+    # case-insensitively. No validator touches gender: the
+    # mode="after" normalize_names validator only trims
+    # first/last names and runs only after field validation
+    # passes, and the only field_serializer covers tenant_id/
+    # role_id for output only. Enum parsing is case-sensitive,
+    # so "pREFER_NOT_to_say" fails FastAPI request validation
+    # before the handler body runs: the GUEST role lookup, the
+    # tenant branching, AuthService.register, and the activation
+    # email never execute, and no token is minted and no refresh
+    # cookie is set. Distinct from the lowercase-first-uppercase-stem
+    # prefer_not_to_say lock ("pREFER_not_to_say", lowercase
+    # first letter "p", uppercase stem "REFER", lowercase
+    # remainder "_not_to_say"), the mixed-case
+    # prefer_not_to_say lock ("pREFER_NOT_TO_SAY", lowercase
+    # first letter, uppercase remainder), the
+    # lowercase-uppercase-middle prefer_not_to_say lock
+    # ("prefer_NOT_to_say", lowercase stem "prefer", uppercase
+    # middle "_NOT", lowercase suffix "_to_say"), the
+    # capitalized-uppercase-middle-lowercase-suffix
+    # prefer_not_to_say lock ("Prefer_NOT_TO_say"), the
+    # uppercase-prefix-lowercase-suffix prefer_not_to_say lock
+    # ("PREFER_NOT_TO_say"), the uppercase-middle-lowercase-middle
+    # prefer_not_to_say lock ("PREFER_not_TO_SAY"), the
+    # capitalized-uppercase-middle prefer_not_to_say lock
+    # ("Prefer_NOT_to_say"), the uppercase-suffix
+    # prefer_not_to_say lock ("prefer_not_TO_SAY"), the
+    # uppercase-prefix prefer_not_to_say lock
+    # ("PREFER_NOT_to_say"), the uppercase-stem
+    # prefer_not_to_say lock ("PREFER_not_to_say"), the
+    # partial-caps prefer_not_to_say lock
+    # ("prefer_NOT_TO_SAY"), the all-caps prefer_not_to_say
+    # lock ("PREFER_NOT_TO_SAY") and the capitalized
+    # prefer_not_to_say lock ("Prefer_not_to_say"), the
+    # capitalized male gender lock ("Male"), the capitalized
+    # female gender lock ("Female"), the all-caps female gender
+    # lock ("FEMALE"), the all-caps male gender lock ("MALE"),
+    # the all-caps gender lock ("OTHER"), the case-variant
+    # gender lock ("Other", mixed case of a different member),
+    # the padded gender lock (" other ", valid content
+    # surrounded by spaces), from the whitespace-only gender
+    # lock (no enum content), from the invalid-gender lock (a
+    # value outside the enum, "unknown"), and from the
+    # missing-gender lock (field omitted): this lock pins a
+    # partial-caps variant (lowercase first letter "p",
+    # uppercase middle "_NOT", lowercase suffix "_to_say")
+    # for the prefer_not_to_say member, which a
+    # case-insensitive parser WOULD accept, so it locks strict
+    # case-sensitive enum parsing for the fourth member rather
+    # than merely rejecting a value with no valid content.
+    # The endpoint's dependencies cannot mask the 422 either:
+    # get_auth_service/get_role_service only resolve container
+    # objects and get_tenant_id only reads request state, with
+    # no database lookup. The remaining body fields are all
+    # valid (non-blank first and last names, a valid email, a
+    # password string), so no other 422 can mask the gender
+    # error. Deliberately no Cache-Control/Pragma assertion: a
+    # 422 is FastAPI request validation, not an ApiBaseException,
+    # so the central handler's no-store headers do not apply to
+    # it, mirroring the register lowercase-first-uppercase-stem
+    # prefer_not_to_say gender 422 lock. The security headers
+    # ARE locked: the pure-ASGI middleware stamps every HTTP
+    # response, including validation errors, with no path
+    # exclusions.
+    response = await client.post(
+        "/account/register",
+        json={
+            "first_name": "New",
+            "last_name": "User",
+            "email": "new.user@example.com",
+            "gender": "pREFER_NOT_to_say",
+            "password": "Register123!",
+        },
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert any(
+        "gender" in [str(part) for part in err.get("loc", [])]
+        for err in detail
+    )
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the register lowercase-first-uppercase-stem prefer_not_to_say gender 422 lock,
+    # using substring checks so later additions to the list do
+    # not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
