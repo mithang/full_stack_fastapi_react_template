@@ -622,3 +622,113 @@ async def test_put_ai_set_model_preference_with_feature_disabled_returns_403_wit
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+@pytest.mark.asyncio
+async def test_post_ai_ask_with_feature_disabled_returns_403_with_cache_and_security_headers(client: AsyncClient):
+    """
+        Seventh and last AI route lock, mirroring the /ai/models,
+        /ai/history, /ai/new_session, single-session,
+        delete-session, and set-model-preference locks in this
+        file: POST /ai/ask was the only untested AI route.
+        The AI router is feature-gated at the router level
+        (Feature.CHAT), in front of every handler, and it is
+        included unconditionally in api/__init__.py, so the
+        gate runs before the handler, its CurrentUser
+        dependency, its LocalAIService/get_tenant_id
+        dependencies, its create-scope guard, and the
+        OllamaChat construction — no LLM call is made, no
+        streaming response is produced, and no chat history
+        or session record is written (no side effect). The
+        body below is fully valid under AIAskRequestDto
+        (a short non-empty question within the 2000-char cap
+        and a non-empty model_name), so no 422 can mask the
+        403 even if body validation runs before the gate.
+        The per-test MeResponseDto override (role with no
+        permissions, no tenant) is reused because the shared
+        conftest mock is a plain UserDto with no role
+        attribute and would 500 under the gate; the
+        host-scope branch of check_feature_access then
+        raises FeatureNotEnabledException("chat") before
+        the handler runs. The original override is restored
+        in finally. That 403 must still carry the
+        error-response headers: a cached 403 could
+        otherwise be served to a different user after an
+        account switch, and the success path writes
+        per-user chat history, so any caching around this
+        route would leak one user's conversation state to
+        another.
+    """
+    async def override_get_current_user_with_role():
+        return MeResponseDto(
+            first_name="Admin",
+            last_name="User",
+            id="68c302ef6bf7a039b7e9b385",
+            email="admin@example.com",
+            gender=Gender.OTHER,
+            is_active=True,
+            role_id="68c302ef6bf7a039b7e9b386",
+            created_at="2024-10-01T00:00:00Z",
+            updated_at="2024-10-01T00:00:00Z",
+            role=RoleDto(
+                id="68c302ef6bf7a039b7e9b386",
+                name="No permissions",
+                created_at="2024-10-01T00:00:00Z",
+                updated_at="2024-10-01T00:00:00Z",
+                permissions=[],
+            ),
+            subscription=None,
+        )
+
+    original_override = app.dependency_overrides.get(get_current_user)
+    app.dependency_overrides[get_current_user] = override_get_current_user_with_role
+    try:
+        response = await client.post(
+            "/ai/ask",
+            json={"question": "Hello", "model_name": "llama3"},
+        )
+    finally:
+        if original_override is None:
+            app.dependency_overrides.pop(get_current_user, None)
+        else:
+            app.dependency_overrides[get_current_user] = original_override
+    assert response.status_code == 403
+    body = response.json()
+    assert body["code"] == 403
+    assert "chat" in body["error"]
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+
+    # Same security-headers lock as the /ai/models,
+    # /ai/history, /ai/new_session, single-session,
+    # delete-session, and set-model-preference tests: the
+    # pure-ASGI middleware stamps every HTTP response with
+    # no path exclusions, so the AI 403 must carry the same
+    # headers as the authenticated GETs, including the
+    # exception-handler responses.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the /ai/models lock, using substring checks
+    # so later additions to the list do not break this
+    # test. The idle-detection justification was re-verified
+    # fresh this run: zero case-insensitive idle matches and
+    # zero IdleDetector/requestIdleCallback matches across
+    # frontend/app/src.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
