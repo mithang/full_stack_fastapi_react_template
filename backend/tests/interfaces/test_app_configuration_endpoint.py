@@ -155,7 +155,7 @@ async def test_app_configuration_as_logged_out_visitor(client: AsyncClient, mock
     assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
     assert "permissions-policy" in response.headers
     # Presence alone would not catch the value being weakened: lock
-    # the eleven most sensitive directives as disabled, mirroring the
+    # the twelve most sensitive directives as disabled, mirroring the
     # permissions GET lock (iteration 1865) and the user/role/tenant
     # create locks (iterations 1866-1868), using substring checks so
     # later additions to the list do not break this test. The full
@@ -181,7 +181,13 @@ async def test_app_configuration_as_logged_out_visitor(client: AsyncClient, mock
     # so no sensor flow exists to break. The eleventh,
     # xr-spatial-tracking, is safe to lock here: the SPA has no XR
     # flow (zero navigator.xr/XRSession/requestSession uses,
-    # verified by grep this run), so no XR flow exists to break.
+    # verified by grep this run), so no XR flow exists to break. The twelfth,
+    # idle-detection, is safe to lock here: the SPA has no
+    # idle-detection flow (zero IdleDetector matches, zero
+    # case-insensitive idle matches, and zero requestIdleCallback
+    # matches, verified by grep this run), so no idle-presence
+    # flow exists to break, and a compromised script could
+    # otherwise learn when the user is away from the keyboard.
     permissions_policy = response.headers["permissions-policy"]
     assert "camera=()" in permissions_policy
     assert "microphone=()" in permissions_policy
@@ -194,3 +200,4 @@ async def test_app_configuration_as_logged_out_visitor(client: AsyncClient, mock
     assert "gyroscope=()" in permissions_policy
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
