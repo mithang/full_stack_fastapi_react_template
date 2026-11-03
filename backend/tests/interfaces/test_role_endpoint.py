@@ -1097,3 +1097,75 @@ async def test_create_role_with_default_permissions_in_host(client: AsyncClient)
     assert "idle-detection=()" in permissions_policy
     data = RoleDto.model_validate(response.json())
     assert data.permissions == [Permission.USER_VIEW_ONLY, Permission.ROLE_VIEW_ONLY]
+
+
+@pytest.mark.asyncio
+async def test_list_roles_with_missing_role_returns_404_with_cache_and_security_headers(client: AsyncClient):
+    """
+        GET /roles/ was the one role route with no error-path lock:
+        the role test file locked the list success path (no-store,
+        Pragma, and the security headers), the create/get/update/
+        delete success paths, and the post-delete and nonexistent-id
+        404s, but never the permission-gate failure on the list
+        itself, so dropping the ROLE_VIEW_ONLY dependency — or
+        dropping the central ApiBaseException no-store lines or the
+        security-headers middleware registration — would previously
+        have gone uncaught on this route. The success path is not
+        asserted here: the list is permission-gated
+        (ROLE_VIEW_ONLY), so it needs a DB role lookup, and the
+        shared conftest client seeds no role. The error path below
+        is deterministic instead: the mocked host user's role_id
+        points at no row in the fresh test database (Role is in
+        the conftest model set), so the permission dependency's
+        get_role_by_id raises RoleNotFoundException before the
+        scope guard, any role listing, or any write — no side
+        effect, and the default skip/limit query values pass
+        validation, so no 422 can mask the 404. That 404 must
+        still carry the error-response headers: a cached 404
+        could otherwise be served to a different admin after an
+        account switch on a shared machine, and the success path
+        lists roles with their permissions.
+    """
+    response = await client.get("/roles/")
+    assert response.status_code == 404
+    body = response.json()
+    assert body["code"] == 404
+    assert "Role" in body["error"]
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+
+    # Same security-headers lock as the role success-path tests:
+    # the pure-ASGI middleware stamps every HTTP response with no
+    # path exclusions, so the role-list 404 must carry the same
+    # headers as the list 200, including the exception-handler
+    # responses.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Presence alone would not catch the value being weakened: lock
+    # the twelve most sensitive directives as disabled, mirroring
+    # the role success-path locks, using substring checks so later
+    # additions to the list do not break this test. Each directive
+    # is safe to lock here for the same reasons as on the other
+    # role routes: the SPA has no camera, microphone, geolocation,
+    # payment, clipboard-read, display-capture, fullscreen,
+    # motion-sensor, compass, XR, or idle-detection flow
+    # (re-verified fresh this run: zero case-insensitive idle
+    # matches and zero IdleDetector/requestIdleCallback matches
+    # across frontend/app/src).
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
