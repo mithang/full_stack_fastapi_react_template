@@ -193,3 +193,72 @@ async def test_account_passkey_register_options_unknown_email_returns_404_with_c
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+@pytest.mark.asyncio
+async def test_account_passkey_login_options_unknown_email_returns_406_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The account passkey login-options POST for an unknown email:
+    """
+    # The passkey login-options route had no header lock: it is the
+    # next account route after register-options whose error path needs
+    # no authenticated user, no seeded row, and no live service. It
+    # carries no permission dependency and no CurrentUser dependency,
+    # so the mocked host user (whose role_id points at no row) cannot
+    # interfere here — no role lookup runs at all. The handler calls
+    # user_service.find_by_email inside a try that catches only
+    # UserNotFoundException and re-raises it as PassKeyException("No
+    # credentials found for the user. Please register first.") — the
+    # handler comment says so explicitly, closing the same
+    # account-enumeration leak as password login: an unknown email
+    # otherwise escapes as 404 "User with identifier <email> not
+    # found.", while a known account without passkeys gets the
+    # identical 406. Against the fresh test DB the lookup finds no
+    # User row, so the 406 fires before passkey_service is ever
+    # called: no webauthn options are generated, no credential is
+    # decoded, and no email is sent on this path. PassKeyException
+    # is an InvalidOperationException, so the central ApiBaseException
+    # handler maps it to 406 with body {"error": ..., "code": 406}
+    # and Cache-Control: no-store plus Pragma: no-cache
+    # (api/__init__.py). The body is a bare JSON string because the
+    # endpoint declares email as EmailStr = Body(...), not a DTO.
+    response = await client.post(
+        "/account/passkey/login_options", json="unknown@example.com"
+    )
+    assert response.status_code == 406
+    assert response.json()["code"] == 406
+    assert response.json()["error"] == "No credentials found for the user. Please register first."
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    # Same security-headers lock as the logout/refresh and
+    # register-options tests: the pure-ASGI middleware stamps every
+    # HTTP response with no path exclusions, so the 406 must carry
+    # the same headers.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Presence alone would not catch the value being weakened: lock
+    # the twelve most sensitive directives as disabled, mirroring
+    # the register-options lock, using substring checks so later
+    # additions to the list do not break this test. Each directive
+    # is safe to lock here for the same reasons as on the other
+    # routes: the SPA has no camera, microphone, geolocation,
+    # payment, clipboard-read, display-capture, fullscreen,
+    # motion-sensor, compass, XR, or idle-detection flow (verified
+    # by grep in the earlier sweeps).
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
