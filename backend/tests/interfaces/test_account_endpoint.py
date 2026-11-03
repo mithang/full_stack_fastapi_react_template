@@ -13560,3 +13560,94 @@ async def test_account_register_lowercase_first_two_uppercase_third_lowercase_re
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+async def test_account_register_lowercase_first_three_uppercase_last_male_gender_returns_422_with_security_headers(client: AsyncClient):
+    """
+        The account register POST with a lowercase-first-three,
+        uppercase-last male gender value:
+    """
+    # The next register validation branch after the lowercase-first-two
+    # uppercase-third lowercase-rest male gender 422 lock,
+    # verified fresh this run, not assumed: payload grep count 0 for
+    # '"gender": "malE"' in backend/tests/interfaces/test_account_endpoint.py
+    # before appending (raw quoted hits for malE in older comments are
+    # false positives, so only the payload grep counts; '"gender": "MAle"'
+    # also verified absent as a payload this run). BaseUserDto.gender is a
+    # required Gender field with no default (user_dto.py), and Gender admits
+    # only "male", "female", "other", and "prefer_not_to_say" (gender.py) -- a
+    # case-sensitive str Enum, so "malE" is not a member even
+    # though it matches "male" case-insensitively. No validator
+    # touches gender: the mode="after" normalize_names validator
+    # only trims first/last names and runs only after field
+    # validation passes, and the only field_serializer covers
+    # tenant_id/role_id for output only. Enum parsing is
+    # case-sensitive, so "malE" fails FastAPI request validation
+    # before the handler body runs: the GUEST role lookup, the
+    # tenant branching, AuthService.register, and the activation
+    # email never execute, and no token is minted and no refresh
+    # cookie is set. Distinct from the capitalized male gender
+    # lock ("Male"), the all-caps male gender lock ("MALE"), and
+    # from the lowercase-first uppercase-second male lock ("mAle")
+    # and the lowercase-first-two uppercase-third lock ("maLe")
+    # and the female-member locks of the same shape (e.g.
+    # "femaLe"): this lock pins the lowercase-first-three /
+    # uppercase-last variant for the male member, which a
+    # case-insensitive parser WOULD accept, so it locks strict
+    # case-sensitive enum parsing for a new member/casing
+    # combination rather than merely rejecting a value with no valid
+    # content. The endpoint's dependencies cannot mask the 422 either:
+    # get_auth_service/get_role_service only resolve container objects
+    # and get_tenant_id only reads request state, with no database lookup.
+    # The remaining body fields are all valid (non-blank first and last
+    # names, a valid email, a password string), so no other 422 can mask
+    # the gender error. A validation 422 precedes the role lookup, so it
+    # contradicts no existing role expectation (standing
+    # role-list 200-vs-404 caveat noted, unchanged).
+    # Deliberately no Cache-Control/Pragma assertion: a 422 is
+    # FastAPI request validation, not an ApiBaseException, so the
+    # central handler's no-store headers do not apply to it,
+    # mirroring the register lowercase-first-two uppercase-third
+    # lowercase-rest male gender 422 lock. The security headers ARE
+    # locked: the pure-ASGI middleware stamps every HTTP response,
+    # including validation errors, with no path exclusions.
+    response = await client.post(
+        "/account/register",
+        json={
+            "first_name": "New",
+            "last_name": "User",
+            "email": "new.user@example.com",
+            "gender": "malE",
+            "password": "Register123!",
+        },
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert any(
+        "gender" in [str(part) for part in err.get("loc", [])]
+        for err in detail
+    )
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the register lowercase-first-two uppercase-third
+    # lowercase-rest male gender 422 lock, using substring checks so later
+    # additions to the list do not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
