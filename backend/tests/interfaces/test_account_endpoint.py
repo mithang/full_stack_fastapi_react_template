@@ -3923,3 +3923,75 @@ async def test_account_register_scalar_body_returns_422_with_security_headers(cl
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+@pytest.mark.asyncio
+async def test_account_register_numeric_body_returns_422_with_security_headers(client: AsyncClient):
+    """
+        The account register POST with a JSON numeric body:
+    """
+    # The next register validation branch after the scalar
+    # (string) body 422 lock, verified fresh this run, not
+    # assumed. The register handler takes a required `data:
+    # CreateUserDto` body parameter with no default
+    # (account_endpoint.py), so a bare JSON number body cannot
+    # be coerced to the CreateUserDto model and fails FastAPI
+    # request validation before the handler body runs: the
+    # GUEST role lookup, the tenant branching,
+    # AuthService.register, and the activation email never
+    # execute, and no token is minted and no refresh cookie
+    # is set. This is distinct from the missing-body lock (no
+    # body at all), from the array-body lock (a JSON
+    # collection of the wrong type), and from the string-scalar
+    # lock (a JSON string of the wrong type): here the whole
+    # body is a number, so the detail loc is ["body"] rather
+    # than a field name, mirroring all three earlier locks.
+    # The mode="after" normalize_names validator cannot mask it
+    # either, since it runs only after field validation
+    # passes. The endpoint's dependencies cannot mask the
+    # 422 either: get_auth_service/get_role_service only
+    # resolve container objects and get_tenant_id only reads
+    # request state, with no database lookup. Deliberately
+    # no exact error-type assertion, mirroring the
+    # scalar-body lock. Deliberately no
+    # Cache-Control/Pragma assertion: a 422 is FastAPI
+    # request validation, not an ApiBaseException, so the
+    # central handler's no-store headers do not apply to it,
+    # mirroring the register scalar-body 422 lock. The
+    # security headers ARE locked: the pure-ASGI middleware
+    # stamps every HTTP response, including validation errors,
+    # with no path exclusions.
+    response = await client.post(
+        "/account/register",
+        json=42,
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert any(
+        "body" in [str(part) for part in err.get("loc", [])]
+        for err in detail
+    )
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the register scalar-body 422 lock, using
+    # substring checks so later additions to the list do not
+    # break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
