@@ -4306,3 +4306,80 @@ async def test_account_register_object_first_name_returns_422_with_security_head
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+async def test_account_register_object_last_name_returns_422_with_security_headers(client: AsyncClient):
+    """
+        The account register POST with an object-valued last_name:
+    """
+    # The next register validation branch after the object-valued
+    # first_name 422 lock, verified fresh this run, not assumed.
+    # CreateUserDto.last_name is a required str field with
+    # min_length=1 inherited from BaseUserDto (user_dto.py), so a
+    # JSON object value cannot be coerced to a str and fails
+    # FastAPI request validation before the handler body runs:
+    # the GUEST role lookup, the tenant branching,
+    # AuthService.register, and the activation email never
+    # execute, and no token is minted and no refresh cookie is
+    # set. It is distinct from the object-valued first_name
+    # lock: a different required str field, and both must be
+    # rejected. The mode="after" normalize_names validator
+    # cannot mask the error either, since it runs only after
+    # field validation passes. The endpoint's dependencies
+    # cannot mask the 422 either: get_auth_service/
+    # get_role_service only resolve container objects and
+    # get_tenant_id only reads request state, with no database
+    # lookup. The remaining body fields are all valid (a
+    # non-blank first name, a valid email, gender "other", a
+    # string password), so no other 422 can mask the last_name
+    # error. Deliberately no exact error-type assertion: like
+    # the object-valued first_name lock, a last_name-type error
+    # type has no precedent in this file, so the lock asserts
+    # only the 422 status and a detail entry located at
+    # last_name. Deliberately no Cache-Control/Pragma
+    # assertion: a 422 is FastAPI request validation, not an
+    # ApiBaseException, so the central handler's no-store
+    # headers do not apply to it, mirroring the object-valued
+    # first_name 422 lock. The security headers ARE locked:
+    # the pure-ASGI middleware stamps every HTTP response,
+    # including validation errors, with no path exclusions.
+    response = await client.post(
+        "/account/register",
+        json={
+            "first_name": "New",
+            "last_name": {"nested": "User"},
+            "email": "newuser@example.com",
+            "gender": "other",
+            "password": "Register123!",
+        },
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert any(
+        "last_name" in [str(part) for part in err.get("loc", [])]
+        for err in detail
+    )
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the object-valued first_name 422 lock, using
+    # substring checks so later additions to the list do not break
+    # this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
