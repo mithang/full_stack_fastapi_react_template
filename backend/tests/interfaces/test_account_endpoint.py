@@ -1786,3 +1786,118 @@ async def test_account_login_wrong_password_returns_401_with_cache_and_security_
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+@pytest.mark.asyncio
+async def test_account_change_email_confirmation_email_in_use_returns_400_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The account change-email-confirmation PATCH when the new
+        email is already in use by another account:
+    """
+    # The already-in-use branch was deliberately NOT locked in
+    # iteration 2365 (it needs a caller-owned token plus seeded
+    # rows) and is locked here, verified fresh this run, not
+    # assumed. The token is minted inside the test with the app's
+    # own signing constants (imported, never hardcoded): payload
+    # user_id IS the conftest mocked user (admin@example.com, id
+    # 68c302ef6bf7a039b7e9b385), type is
+    # "change_email_confirmation", and exp is one hour in the
+    # future, so verify_change_email_token accepts it and the
+    # service's caller-ownership check passes. The service then
+    # looks the caller up by id (auth_service.py
+    # change_email_confirmation): the caller row is seeded with
+    # that exact id via Beanie's explicit-id document insert, so
+    # the lookup succeeds instead of 404ing, and
+    # check_email_exists finds the second seeded row whose email
+    # equals the token's new email, so the service raises
+    # InvalidOperationException BEFORE any email update or
+    # notification email — no side effect occurs. The endpoint
+    # catches InvalidOperationException and re-raises HTTPException
+    # 400 with the generic detail "Email change confirmation
+    # failed.", so the failure reveals neither which account owns
+    # the taken email nor the caller's current email. Seeding is
+    # done directly through the User document (doc.insert(), the
+    # same call BaseRepository.create uses), not through POST
+    # /users, whose permission dependency 404s on the fresh test
+    # DB (the standing role-list tension); no role row is needed
+    # on this path because no role lookup runs before the raise,
+    # and the conftest fixture drops the test DB after the test,
+    # so the rows cannot leak into other tests. No X-Tenant-ID
+    # header is sent, so the seeds and the service reads all use
+    # the host test DB, and the service's get_user_by_id call
+    # passes no tenant id, so the host caller may access any
+    # record. Deliberately NOT locked: the success path (the
+    # same seeding plus an SMTP send, which the test environment
+    # does not stub), and any assertion about the caller's email
+    # staying unchanged (that would need a post-request read of a
+    # row the endpoint never returns). Note the body shape: this
+    # endpoint converts the service error to a plain
+    # HTTPException, so the lock asserts "detail", not
+    # "error"/"code", mirroring the other-user-token lock.
+    import jwt
+    from datetime import datetime, timedelta, timezone
+
+    from beanie import PydanticObjectId
+
+    from api.common.enums.gender import Gender
+    from api.common.security import ALGORITHM, JWT_SECRET, hash_it
+    from api.domain.entities.user import User
+
+    await User(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b385"),
+        first_name="Admin",
+        last_name="User",
+        email="admin@example.com",
+        gender=Gender.OTHER,
+        is_active=True,
+        password=hash_it("SeededPassword123!"),
+    ).insert()
+    await User(
+        first_name="Taken",
+        last_name="Email",
+        email="taken@example.com",
+        gender=Gender.OTHER,
+        is_active=True,
+        password=hash_it("SeededPassword123!"),
+    ).insert()
+    token = jwt.encode(
+        {
+            "user_id": "68c302ef6bf7a039b7e9b385",
+            "email": "taken@example.com",
+            "type": "change_email_confirmation",
+            "exp": datetime.now(timezone.utc) + timedelta(hours=1),
+        },
+        JWT_SECRET,
+        algorithm=ALGORITHM,
+    )
+    response = await client.patch(
+        "/account/change_email_confirmation",
+        json={"token": token},
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Email change confirmation failed."
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the other-user-token lock, using substring
+    # checks so later additions to the list do not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
