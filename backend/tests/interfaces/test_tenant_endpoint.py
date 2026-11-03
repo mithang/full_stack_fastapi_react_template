@@ -1322,3 +1322,62 @@ async def test_get_tenant_features_with_missing_role_returns_404_with_cache_and_
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+async def test_update_tenant_feature_with_missing_role_returns_404_with_cache_and_security_headers(client: AsyncClient):
+    """
+        PATCH /tenants/{tenant_id}/update_feature was the one
+        tenant mutation with no lock: the tenant test file
+        locked list, create, search-by-subdomain,
+        search-by-name, delete, re-GET-after-delete,
+        validation, the trial-activation PATCH, and the
+        features GET, but never this feature-toggle PATCH,
+        so dropping that route — or dropping the central
+        ApiBaseException no-store lines or the
+        security-headers middleware registration — would
+        previously have gone uncaught on this route. The
+        success path is not asserted here: the PATCH is
+        permission-gated (HOST_MANAGE_TENANTS), so it
+        needs a DB role lookup, and the shared conftest
+        client seeds no role. The error path below is
+        deterministic instead: the mocked host user's
+        role_id points at no row in the fresh test
+        database (Role is in the conftest model set), so
+        the permission dependency raises
+        RoleNotFoundException before the scope guard, any
+        tenant lookup, or any feature write — no side
+        effect, and the path tenant_id is never read. The
+        body is a valid FeatureDto (name "stripe",
+        enabled true), so no 422 can mask the 404.
+        That 404 must still carry the error-response
+        headers: a cached 404 could otherwise be served
+        to a different admin after an account switch,
+        and the success path toggles a tenant's paid
+        features.
+    """
+    response = await client.patch("/tenants/68c302ef6bf7a039b7e9b385/update_feature", json={"name": "stripe", "enabled": True})
+    assert response.status_code == 404
+    body = response.json()
+    assert body["code"] == 404
+    assert "Role" in body["error"]
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
