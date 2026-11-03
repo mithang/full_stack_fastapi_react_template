@@ -1007,3 +1007,65 @@ async def test_account_sso_callback_unknown_provider_returns_422_with_security_h
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+@pytest.mark.asyncio
+async def test_account_change_email_request_same_email_returns_406_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The account change-email-request PATCH for the caller's own
+        current email address:
+    """
+    # The change-email-request route had no header lock, and its
+    # same-email branch is lockable without any seeded row, live
+    # service, or sent email, verified fresh this run, not assumed.
+    # The handler takes CurrentUser, which conftest overrides to
+    # the mocked user admin@example.com (conftest.py), so PATCHing
+    # with new_email equal to that address hits the service's
+    # first check — current_email == new_email — and raises
+    # InvalidOperationException("The new email address must be
+    # different from the current email address.") before
+    # check_email_exists, find_by_email, or any email send runs,
+    # so no DB row and no SMTP call can affect the outcome. The
+    # central ApiBaseException handler maps
+    # InvalidOperationException to 406 with body {"error": ...,
+    # "code": 406} and Cache-Control: no-store plus Pragma:
+    # no-cache (api/__init__.py lines 84-132), and the pure-ASGI
+    # security-headers middleware stamps every HTTP response
+    # with no path exclusions. Deliberately NOT locked: a
+    # different new_email, which would reach the user lookup and
+    # the email send, and change_email_confirmation, whose token
+    # lookup needs its own fresh verification.
+    response = await client.patch(
+        "/account/change_email_request",
+        json={"new_email": "admin@example.com"},
+    )
+    assert response.status_code == 406
+    assert response.json()["code"] == 406
+    assert (
+        response.json()["error"]
+        == "The new email address must be different from the current email address."
+    )
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the SSO callback lock, using substring checks so
+    # later additions to the list do not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
