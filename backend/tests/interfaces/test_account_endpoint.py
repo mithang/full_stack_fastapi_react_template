@@ -491,3 +491,80 @@ async def test_account_email_magic_link_login_unknown_email_returns_generic_200_
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+@pytest.mark.asyncio
+async def test_account_email_magic_link_validate_invalid_link_returns_403_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The account magic-link validate GET with an invalid link:
+    """
+    # This GET carries no permission or CurrentUser dependency (the
+    # router itself has none, account_endpoint.py line 49), so the
+    # mocked host user's role_id pointing at no row cannot interfere
+    # — no role lookup runs at all, and the service factories ahead
+    # of the handler only resolve singletons. validate_magic_link
+    # then looks up the (user_id, token) record: on the fresh test
+    # DB there is no such record, and UserMagicLink is not even in
+    # the conftest model set, so the lookup either finds nothing or
+    # raises — and the service catches Exception broadly and returns
+    # False either way. The handler therefore raises
+    # ForbiddenException("Invalid or expired magic link.") before
+    # login_with_magic_link runs, so no token set is issued and no
+    # refresh cookie is set: an invalid or already-consumed link
+    # must not mint a session. The central ApiBaseException handler
+    # maps ForbiddenException to 403 with body {"error": ..., "code":
+    # 403} plus Cache-Control: no-store and Pragma: no-cache, and
+    # the pure-ASGI middleware stamps every response with the
+    # security headers. The user_id is a well-formed ObjectId hex
+    # (the mocked user's id) so the 403 comes from the record
+    # lookup, not from a malformed-id shortcut, and the token is a
+    # value no record could carry.
+    response = await client.get(
+        "/account/email_magic_link_validate",
+        params={
+            "token": "bogus-token-that-matches-no-record",
+            "user_id": "68c302ef6bf7a039b7e9b385",
+        },
+    )
+    assert response.status_code == 403
+    assert response.json()["code"] == 403
+    assert "Invalid or expired magic link" in response.json()["error"]
+    # An invalid link must not mint a session: no refresh cookie.
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    # Error responses must not be cached either: a cached 403 could
+    # be served to a different user after an account switch on a
+    # shared machine, and a cached success on this single-use flow
+    # would replay a consumed link's token set.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    # Same security-headers lock as the other account tests: the
+    # pure-ASGI middleware stamps every HTTP response with no path
+    # exclusions, so this 403 must carry the same headers.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Presence alone would not catch the value being weakened: lock
+    # the twelve most sensitive directives as disabled, mirroring
+    # the passkey and magic-link-login locks, using substring checks
+    # so later additions to the list do not break this test. Each
+    # directive is safe to lock here for the same reasons as on the
+    # other routes: the SPA has no camera, microphone, geolocation,
+    # payment, clipboard-read, display-capture, fullscreen,
+    # motion-sensor, compass, XR, or idle-detection flow (verified
+    # by grep in the earlier sweeps).
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
