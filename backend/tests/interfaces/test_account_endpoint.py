@@ -38710,3 +38710,113 @@ async def test_account_password_reset_confirmation_overlong_tenant_id_with_empty
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+async def test_account_password_reset_confirmation_overlong_tenant_id_with_whitespace_user_id_returns_406_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The account password reset confirmation POST with an
+        overlong tenant_id query param (5000 characters)
+        combined with a whitespace-only user_id query param,
+        for a token that is never verified:
+    """
+    # The next password-reset-confirmation query-param branch
+    # after the overlong-tenant_id-with-empty-user_id 406
+    # lock, verified fresh this run, not assumed.
+    # Function-name grep count 0 for
+    # password_reset_confirmation_overlong_tenant_id_with_whitespace_user_id
+    # before appending; the existing confirmation locks cover
+    # the no-record 406, the invalid/wrong-user/wrong-type/
+    # expired token 406s, the weak new password 406, the
+    # success 200, the missing-token and missing-user_id
+    # 422s, the missing-body 422, the missing new_password
+    # 422, the non-string new_password 422, the non-object-
+    # body 422 (a JSON array), the scalar-body 422 (a JSON
+    # string), the numeric-body 422 (a JSON number), the
+    # boolean-body 422 (a JSON boolean), the null-body 422
+    # (an explicit JSON null), the malformed-JSON 422, the
+    # extra-field-ignored 406, the empty-token 406, the
+    # whitespace-token 406, the empty-user_id 406, the
+    # whitespace-user_id 406, the malformed-user_id 406, the
+    # nonexistent-user_id 406, the overlong-token 406, the
+    # overlong-user_id 406, the overlong-tenant_id 406, the
+    # overlong-tenant_id-with-malformed-user_id 406, and the
+    # overlong-tenant_id-with-empty-user_id 406, not an
+    # overlong tenant_id combined with a whitespace-only
+    # user_id. Verified fresh from account_endpoint.py:
+    # password_reset_confirm takes tenant_id: str | None =
+    # Query(None) with no max_length and user_id: str =
+    # Query(...) with no min_length, so both query values
+    # pass FastAPI request validation - unlike the
+    # missing-user_id 422, where the param is omitted - and
+    # the handler never passes tenant_id to change_password
+    # (auth_service.py) at all - it is only logged via
+    # _safe_log_value, which merely flattens carriage
+    # returns and newlines and imposes no length limit - so
+    # an overlong tenant_id cannot change the outcome. The
+    # handler strips the user_id, so a whitespace-only
+    # value becomes empty, and change_password first calls
+    # retrieve_password_reset_data_by_user_id, which returns
+    # None for an empty id because PydanticObjectId("")
+    # raises and the helper catches it as "no reset data"
+    # (documented as deliberate in user_service.py, so the
+    # value cannot escape as a 500), and change_password
+    # then raises InvalidOperationException ("Invalid or
+    # expired password reset token.") BEFORE any JWT
+    # verification, password update, or notification email -
+    # so the token is never verified, never decoded, and
+    # the test depends on neither the JWT secret nor any
+    # seeded record. The 406 (rather than a 422 or 413) is
+    # itself the lock: had either query value been rejected
+    # by validation, FastAPI would have returned 422 before
+    # the handler ran. No refresh cookie is set on this
+    # path: the handler returns a plain DTO only on success,
+    # and this path raises before any token minting. The
+    # endpoint has no permission gate and no CurrentUser
+    # dependency, and its dependency (get_auth_service)
+    # merely resolves a container object, so nothing can
+    # mask the 406. The token/user_id/tenant_id must ride
+    # the query string, not the JSON body, or FastAPI 422s
+    # and masks the 406. The whitespace user_id is sent
+    # percent-encoded (%20), matching the standalone
+    # whitespace-user_id 406 lock.
+    overlong_tenant_id = "a" * 5000
+    response = await client.post(
+        f"/account/password_reset_confirmation?token=some-invalid-token&user_id=%20%20%20&tenant_id={overlong_tenant_id}",
+        json={"new_password": "NewPassword123!"},
+    )
+    assert response.status_code == 406
+    assert response.json()["code"] == 406
+    assert "Invalid or expired password reset token" in response.json()["error"]
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    # Error responses must not be cached either: a cached 406
+    # could be served to a different user after an account switch
+    # on a shared machine, and a cached success on this flow
+    # would replay a consumed reset link's token set.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    # Same security-headers lock as the other account tests: the
+    # pure-ASGI middleware stamps every HTTP response with no path
+    # exclusions, so this 406 must carry the same headers.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the password-reset-confirmation no-record 406
+    # lock, using substring checks so later additions to the
+    # list do not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
