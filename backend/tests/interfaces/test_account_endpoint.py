@@ -40653,3 +40653,146 @@ async def test_account_password_reset_confirmation_overlong_tenant_id_with_white
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+async def test_account_password_reset_confirmation_overlong_tenant_id_with_unicode_whitespace_only_new_password_returns_406_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The account password reset confirmation POST with an
+        overlong tenant_id query param (5000 characters)
+        combined with a unicode-whitespace-only new password,
+        for a user id with no seeded reset record:
+    """
+    # The next password-reset-confirmation branch after the
+    # overlong-tenant_id-with-whitespace-only-new-password
+    # 406 lock, verified fresh this run, not assumed.
+    # Function-name grep count 0 for
+    # password_reset_confirmation_overlong_tenant_id_with_unicode_whitespace_only_new_password
+    # before appending; the existing confirmation locks cover
+    # the no-record 406, the invalid/wrong-user/wrong-type/
+    # expired token 406s, the weak new password 406, the
+    # success 200, the missing-token and missing-user_id
+    # 422s, the missing-body 422, the missing new_password
+    # 422, the non-string new_password 422, the non-object-
+    # body 422 (a JSON array), the scalar-body 422 (a JSON
+    # string), the numeric-body 422 (a JSON number), the
+    # boolean-body 422 (a JSON boolean), the null-body 422
+    # (an explicit JSON null), the malformed-JSON 422, the
+    # extra-field-ignored 406, the empty-token 406, the
+    # whitespace-token 406, the empty-user_id 406, the
+    # whitespace-user_id 406, the malformed-user_id 406,
+    # the nonexistent-user_id 406, the overlong-token 406,
+    # the overlong-user_id 406, the overlong-tenant_id 406,
+    # the overlong-tenant_id-with-malformed-user_id 406, the
+    # overlong-tenant_id-with-empty-user_id 406, the
+    # overlong-tenant_id-with-whitespace-user_id 406, the
+    # overlong-tenant_id-with-nonexistent-user_id 406, the
+    # overlong-tenant_id-with-overlong-token 406, the
+    # overlong-tenant_id-with-weak-password 406, the
+    # overlong-tenant_id-with-missing-new_password 422, the
+    # overlong-tenant_id-with-non-string-new_password 422,
+    # the overlong-tenant_id-with-nonobject-body 422, the
+    # overlong-tenant_id-with-scalar-body 422, the
+    # overlong-tenant_id-with-numeric-body 422, the
+    # overlong-tenant_id-with-boolean-body 422, the
+    # overlong-tenant_id-with-null-body 422, the
+    # overlong-tenant_id-with-malformed-JSON-body 422, the
+    # overlong-tenant_id-with-extra-field 406, the
+    # overlong-tenant_id-with-overlong-new-password 406,
+    # the overlong-tenant_id-with-whitespace-padded-
+    # new-password 406, and the overlong-tenant_id-with-
+    # whitespace-only-new-password 406, not an overlong
+    # tenant_id combined with a unicode-whitespace-only
+    # new password. Verified fresh from account_endpoint.py:
+    # password_reset_confirm takes token: str = Query(...)
+    # with no max_length, user_id: str = Query(...) with no
+    # min_length and no ObjectId type, and tenant_id: str |
+    # None = Query(None) with no max_length, so all three
+    # query values pass FastAPI request validation, and
+    # the handler never passes tenant_id to change_password
+    # (auth_service.py) at all - it is only logged via
+    # _safe_log_value, which merely flattens carriage
+    # returns and newlines and imposes no length limit -
+    # so an overlong tenant_id cannot change the outcome.
+    # Verified fresh from account_endpoint.py: the handler
+    # strips the token and user_id but explicitly does NOT
+    # trim the new password ("The new password itself is
+    # never trimmed"), so the unicode-whitespace password
+    # reaches change_password verbatim. Verified fresh from
+    # auth_dto.py: PasswordResetConfirmRequestDto declares
+    # only new_password: str and no length limit, so a
+    # unicode-whitespace-only password passes request
+    # validation - unlike the 422 locks, this body is valid,
+    # so the handler runs. The unicode distinction matters:
+    # the ASCII whitespace-only lock does not pin down
+    # non-breaking space (U+00A0) or em space (U+2003). A
+    # future ASCII-only whitespace check would treat these
+    # as non-whitespace, while Python str.strip() treats
+    # them as whitespace; this lock pins the current 406
+    # outcome regardless, because the 406 fires before any
+    # password validation runs. Verified fresh from
+    # auth_service.py: change_password first calls
+    # retrieve_password_reset_data_by_user_id, which
+    # returns None for a fresh test DB with no
+    # UserPasswordReset document for this user id, and
+    # raises InvalidOperationException ("Invalid or
+    # expired password reset token.") BEFORE any JWT
+    # verification, password update, or notification email
+    # - so a garbage token is enough and the test depends
+    # on neither the JWT secret nor any seeded record. The
+    # central ApiBaseException handler maps
+    # InvalidOperationException to 406 with body {"error":
+    # ..., "code": 406} plus no-store headers. The 406
+    # (rather than a 422) is itself the lock: had the
+    # unicode-whitespace password been rejected, FastAPI
+    # validation would have returned 422 before the handler
+    # ran. No refresh cookie is set on this path: the
+    # handler returns a plain DTO only on success, and this
+    # path raises before any token minting. The endpoint
+    # has no permission gate and no CurrentUser dependency,
+    # and its dependency (get_auth_service) merely resolves
+    # a container object, so nothing can mask the 406. The
+    # token/user_id/tenant_id must ride the query string,
+    # not the JSON body, or FastAPI 422s for a different
+    # reason and masks this lock.
+    overlong_tenant_id = "a" * 5000
+    unicode_whitespace_only_new_password = "\u00a0\u2003"
+    response = await client.post(
+        f"/account/password_reset_confirmation?token=invalid-token&user_id=000000000000000000000000&tenant_id={overlong_tenant_id}",
+        json={"new_password": unicode_whitespace_only_new_password},
+    )
+    assert response.status_code == 406
+    assert response.json()["code"] == 406
+    assert "Invalid or expired password reset token" in response.json()["error"]
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    # Error responses must not be cached either: a cached 406
+    # could be served to a different user after an account switch
+    # on a shared machine, and a cached success on this flow
+    # would replay a consumed reset link's token set.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    # Same security-headers lock as the other account tests: the
+    # pure-ASGI middleware stamps every HTTP response with no path
+    # exclusions, so this 406 must carry the same headers.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the password-reset-confirmation extra-field
+    # 406 lock, using substring checks so later additions
+    # to the list do not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
