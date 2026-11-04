@@ -33501,3 +33501,65 @@ async def test_account_password_reset_request_invalid_email_returns_422_with_sec
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+@pytest.mark.asyncio
+async def test_account_activate_missing_token_returns_422_with_security_headers(client: AsyncClient):
+    """
+        The account activation POST with no token in the body:
+    """
+    # The activate validation branch, not yet locked: function-name
+    # grep count 0 for activate_missing before appending, and the
+    # only existing activate locks are the garbage-token 406 and
+    # the seeded success 200, both of which post a token.
+    # UserActivationRequestDto.token is a required plain str field
+    # (user_dto.py), so an empty JSON body fails FastAPI request
+    # validation before the handler body runs: activate_account
+    # never runs, no JWT verification, user lookup, activation
+    # write, or email happens, and the DTO's after-validator
+    # (which only strips a present token) never runs either. The
+    # endpoint's dependencies cannot mask the 422: get_auth_service
+    # only resolves a container object (container.py) and the
+    # optional tenant_id query param is absent, and the same
+    # dependencies already resolve cleanly on the garbage-token
+    # path. Deliberately no Cache-Control/Pragma assertion: a 422
+    # is FastAPI request validation, not an ApiBaseException, so
+    # the central handler's no-store headers do not apply to it,
+    # mirroring the password-reset-request invalid-email 422 lock.
+    # The security headers ARE locked: the pure-ASGI middleware
+    # stamps every HTTP response, including validation errors,
+    # with no path exclusions.
+    response = await client.post(
+        "/account/activate",
+        json={},
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert any(
+        "token" in [str(part) for part in err.get("loc", [])]
+        for err in detail
+    )
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the password-reset-request invalid-email 422 lock,
+    # using substring checks so later additions to the list do not
+    # break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
