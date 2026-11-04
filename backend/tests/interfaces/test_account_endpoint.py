@@ -35866,3 +35866,74 @@ async def test_account_email_magic_link_validate_missing_token_returns_422_with_
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+async def test_account_email_magic_link_validate_missing_user_id_returns_422_with_security_headers(client: AsyncClient):
+    """
+        The account magic-link validate GET with the user_id query param omitted:
+    """
+    # The magic-link validate missing-user_id branch, not yet locked:
+    # function-name grep count 0 for
+    # email_magic_link_validate_missing_user_id (verified fresh this
+    # run); the only existing validate locks cover the invalid-link
+    # 403 and the missing-token 422, not this branch. The endpoint
+    # takes two required Query params (account_endpoint.py: token:
+    # str = Query(...), user_id: str = Query(...)) plus an optional
+    # tenant_id (Query(None)), so a request with token but no
+    # user_id fails FastAPI request validation before the handler
+    # body runs, and the optional tenant_id adds no second error.
+    # This endpoint has no permission gate and no CurrentUser
+    # dependency, and its dependencies (get_auth_service,
+    # get_email_magic_link_service) merely resolve container
+    # objects, so nothing can mask the 422. Validation fails
+    # before validate_magic_link runs and before
+    # login_with_magic_link runs, so no record is looked up and
+    # no token set is issued, making this lock deterministic
+    # even though the success path needs a live, unconsumed
+    # link. The loc assertion pins ["query", "user_id"]: a
+    # missing required query param reports that loc, mirroring
+    # the missing-token lock. Deliberately no exact error-type
+    # assertion (no missing-query-param error-type precedent in
+    # this file) and no Cache-Control/Pragma assertion: a 422
+    # is FastAPI request validation, not an ApiBaseException,
+    # so the central handler's no-store headers do not apply
+    # to it. The security headers ARE locked: the pure-ASGI
+    # middleware stamps every HTTP response, including
+    # validation errors, with no path exclusions.
+    response = await client.get(
+        "/account/email_magic_link_validate",
+        params={
+            "token": "bogus-token-that-matches-no-record",
+        },
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert isinstance(detail, list) and detail
+    assert any(
+        err.get("loc") == ["query", "user_id"]
+        for err in detail
+    )
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the magic-link validate missing-token 422 lock,
+    # using substring checks so later additions to the list
+    # do not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
