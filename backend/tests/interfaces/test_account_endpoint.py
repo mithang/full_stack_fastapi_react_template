@@ -29184,3 +29184,99 @@ async def test_account_login_leading_zero_width_space_username_returns_422_with_
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+async def test_account_login_trailing_zero_width_space_username_returns_422_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The account login POST with a valid email corrupted by
+        a trailing zero-width space, and a dummy password:
+    """
+    # The second zero-width-space-username branch, verified fresh
+    # this run, not assumed: function-name grep count 0 for
+    # test_account_login_trailing_zero_width_space_username,
+    # and no login POST uses a zero-width-space-padded
+    # username value (the existing zero-width-space locks pad
+    # the password, which is a plain str and is NOT validated
+    # by EmailStr, or pad the username on the leading side
+    # only). The handler takes OAuth2PasswordRequestForm
+    # (account_endpoint.py login signature), whose username
+    # field is required but a ZWSP-padded value counts as
+    # present, so form validation PASSES and the request
+    # reaches the handler body. There it constructs
+    # LoginRequestDto(email=...) whose email is EmailStr
+    # (login_dto.py). That a trailing-ZWSP address is rejected
+    # was established empirically this run, not extrapolated
+    # from the leading lock: with the repo's locked versions
+    # (pydantic 2.14.2, email-validator 2.3.0, uv.lock),
+    # exercised in the scratch venv under /tmp left by the
+    # leading run (packages installed there only, nothing
+    # installed into the project), a trailing-ZWSP address is
+    # REJECTED with "The email address contains unsafe
+    # characters: ZERO WIDTH SPACE" -- email-validator scans
+    # the whole address, so position does not matter, and
+    # unlike NBSP, ZWSP is NOT whitespace by Python's
+    # definition (chr(0x200B).isspace() is False), so
+    # pydantic's strip() leaves it in place. So unlike the
+    # trailing-NBSP username lock (401, stripped then
+    # authenticated), this request raises ValidationError and
+    # the handler maps it to HTTPException 422 with detail
+    # "Invalid email format." (account_endpoint.py:77),
+    # exactly like the leading-ZWSP username lock.
+    # AuthService.login never runs, no token is minted, and
+    # no refresh cookie is set, so no seeding is needed. It
+    # is distinct from the leading-ZWSP username 422 lock
+    # (same rejection reason, different padding position),
+    # from the trailing-NBSP username 401 lock (same padding
+    # position, different character class: NBSP is stripped
+    # whitespace, ZWSP is a non-whitespace format character
+    # rejected as unsafe), from the trailing-carriage-return
+    # username 422 lock (same outcome, different rejection
+    # reason: CR/LF are special-cased by email-validator,
+    # ZWSP is rejected as an unsafe character), and from the
+    # ZWSP password locks (password is a plain str, so ZWSP
+    # there reaches verification and yields 401 instead of
+    # EmailStr rejection). The value below deliberately uses
+    # a single-backslash escape (verified by byte inspection
+    # and AST evaluation after appending), so it locks a
+    # genuine zero-width space, not a literal
+    # backslash-plus-u-2-0-0-b. Deliberately Cache-Control
+    # no-store and Pragma no-cache ARE asserted here, unlike
+    # the form-validation 422s: this 422 is raised as an
+    # HTTPException inside the handler, so the central
+    # StarletteHTTPException handler stamps the no-store
+    # headers on it, mirroring the leading-ZWSP username 422
+    # lock. The security headers ARE locked: the pure-ASGI
+    # middleware stamps every HTTP response, including error
+    # responses, with no path exclusions.
+    response = await client.post(
+        "/account/login",
+        data={"username": "trailingzwspuser@example.com\u200b", "password": "Whatever123!"},
+    )
+    assert response.status_code == 422
+    assert "Invalid email format" in str(response.json()["detail"])
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the leading-ZWSP username 422 lock, using
+    # substring checks so later additions to the list do not
+    # break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
