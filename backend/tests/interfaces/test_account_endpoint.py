@@ -26381,7 +26381,7 @@ async def test_account_login_trailing_carriage_return_username_returns_422_with_
     # including error responses, with no path exclusions.
     response = await client.post(
         "/account/login",
-        data={"username": "trailingcruser@example.com\\r", "password": "Whatever123!"},
+        data={"username": "trailingcruser@example.com\r", "password": "Whatever123!"},
     )
     assert response.status_code == 422
     assert "Invalid email format" in str(response.json()["detail"])
