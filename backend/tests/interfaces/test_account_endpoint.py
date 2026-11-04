@@ -33167,3 +33167,109 @@ async def test_account_register_taken_subdomain_weak_password_returns_406_with_c
     # Postcondition: the weak password failed before any user
     # row was created, so the email has no user in the test DB.
     assert await User.find_one(User.email == "takenweak@example.com") is None
+
+
+async def test_account_register_taken_subdomain_strong_password_returns_201_with_security_headers(client: AsyncClient):
+    """
+        The account register POST taken-subdomain + strong-password
+        path: a seeded GUEST role plus a seeded tenant whose
+        subdomain is taken, and a password that passes the policy.
+    """
+    # The taken-subdomain strong-password branch, verified fresh
+    # this run, not assumed: function-name grep count 0 for
+    # test_account_register_taken_subdomain_strong_password, and
+    # seed-email grep count 0 for takenstrong@example.com before
+    # appending, and no existing register lock combines a seeded
+    # tenant with a policy-passing password (the previous run's
+    # lock used the same taken-subdomain path with a weak
+    # password and stopped at 406 before any user row existed).
+    # Tenancy defaults to "header" (api/core/config.py), so
+    # register() takes the multi-tenant path: with tenant_id None
+    # it looks the normalized subdomain up, finds the seeded
+    # tenant, writes a file-based audit entry (temp file, not the
+    # test DB) and raises InvalidOperationException, which the
+    # handler catches and answers by creating the user directly
+    # (auth_service.py register, taken-subdomain branch) -- and
+    # create_user() validates the password (which passes here),
+    # checks for an existing email (none: fresh test DB), hashes
+    # it with pbkdf2_sha256, and persists the user with
+    # is_active=False and the GUEST role id stamped by the
+    # endpoint handler (user_repository_impl.py create). No
+    # Celery task is enqueued on this path (the callback only
+    # runs for a newly created tenant) and no email is sent
+    # (create_user's activation send is commented out), so no
+    # broker or SMTP server is needed. No X-Tenant-ID header is
+    # sent, so the seeds and the service reads all use the host
+    # test DB, and the conftest fixture drops the test DB after
+    # the test, so the created row cannot leak into other tests.
+    # The endpoint returns 201 (its decorator status and its
+    # returned status value agree); the pure-ASGI
+    # security-headers middleware stamps every HTTP response
+    # with no path exclusions, but no Cache-Control is asserted
+    # here because the success path sets none (no-store is an
+    # error-response header in this codebase).
+    from beanie import PydanticObjectId
+
+    from api.common.enums.gender import Gender
+    from api.domain.entities.role import Role
+    from api.domain.entities.tenant import Tenant
+    from api.domain.entities.user import User
+
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b391"),
+        name="guest",
+        description="Guest role for the register user",
+        permissions=[],
+    ).insert()
+    await Tenant(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b392"),
+        name="taken",
+        subdomain="taken.fsrapp.com",
+    ).insert()
+    response = await client.post(
+        "/account/register",
+        json={
+            "first_name": "Taken",
+            "last_name": "Strong",
+            "email": "takenstrong@example.com",
+            "gender": "other",
+            "password": "StrongPass1!",
+            "sub_domain": "taken.fsrapp.com",
+        },
+    )
+    assert response.status_code == 201
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the refresh success lock, using substring checks
+    # so later additions to the list do not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+    # Postcondition: the user row was created, inactive (activation
+    # still required), stamped with the GUEST role, and the stored
+    # password is a pbkdf2 hash, not the submitted plaintext.
+    created = await User.find_one(User.email == "takenstrong@example.com")
+    assert created is not None
+    assert created.first_name == "Taken"
+    assert created.last_name == "Strong"
+    assert created.gender == Gender.OTHER
+    assert str(created.role_id) == "68c302ef6bf7a039b7e9b391"
+    assert created.is_active is False
+    assert created.password != "StrongPass1!"
+    assert created.password.startswith("$pbkdf2-sha256$")
