@@ -24129,3 +24129,77 @@ async def test_account_login_empty_password_returns_401_with_cache_and_security_
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+async def test_account_login_whitespace_only_username_returns_422_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The account login POST with a whitespace-only username form field:
+    """
+    # The next login validation branch after the empty-username 422
+    # and empty-password 401 locks, verified fresh this run, not
+    # assumed: function-name grep count 0 for
+    # test_account_login_whitespace_only_username, payload grep
+    # count 0 for a login POST with a whitespace-only username,
+    # and no login test name contains "whitespace" (the existing
+    # whitespace tests are all register tests). The handler takes
+    # OAuth2PasswordRequestForm (account_endpoint.py login
+    # signature), whose username field is required but a string of
+    # spaces counts as present, so form validation PASSES: unlike
+    # the missing-username lock, this request reaches the handler
+    # body. There it constructs LoginRequestDto(email="   ",
+    # password="whatever123"), whose EmailStr field rejects a
+    # whitespace-only value — and the outcome is the same even if
+    # some layer stripped it first, since the stripped value is
+    # the empty string, which the empty-username lock already
+    # shows is rejected — so the handler maps the
+    # ValidationError to HTTPException 422 with detail "Invalid
+    # email format.", exactly like the empty-username and
+    # malformed-email locks. AuthService.login never runs, no
+    # token is minted, and no refresh cookie is set, so no
+    # seeding is needed. It is distinct from the empty username
+    # (zero characters) and from the malformed email (a nonempty
+    # non-email token with no spaces): a whitespace-only value
+    # is its own input class, and a future change that trimmed
+    # form values before validation in a way that accepted them,
+    # or that treated whitespace as missing, would change this
+    # branch without touching either of those locks.
+    # Deliberately Cache-Control no-store and Pragma no-cache ARE
+    # asserted here, unlike the form-validation 422s: this 422 is
+    # raised as an HTTPException inside the handler, so the
+    # central StarletteHTTPException handler stamps the no-store
+    # headers on it, mirroring the empty-username and
+    # malformed-email 422 locks. The security headers ARE locked:
+    # the pure-ASGI middleware stamps every HTTP response,
+    # including error responses, with no path exclusions.
+    response = await client.post(
+        "/account/login",
+        data={"username": "   ", "password": "whatever123"},
+    )
+    assert response.status_code == 422
+    assert "Invalid email format" in str(response.json()["detail"])
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the empty-username 422 lock, using substring
+    # checks so later additions to the list do not break this
+    # test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
