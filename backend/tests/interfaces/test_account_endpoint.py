@@ -36626,3 +36626,75 @@ async def test_account_password_reset_request_malformed_json_body_returns_422_wi
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+@pytest.mark.asyncio
+async def test_account_password_reset_request_extra_field_returns_generic_200_with_security_headers(client: AsyncClient):
+    """
+        The account password reset request POST with an unknown extra field:
+    """
+    # The next password-reset-request branch after the
+    # malformed-JSON 422 lock, verified fresh this run, not
+    # assumed. Function-name grep count 0 for
+    # password_reset_request_extra_field before appending;
+    # the existing password-reset-request locks cover the
+    # unknown-email generic 200, the invalid-email 422, the
+    # non-string-email 422, the missing-email 422, the
+    # missing-body 422, the non-object-body 422, the
+    # scalar-body 422, the numeric-body 422, the boolean-body
+    # 422, the null-body 422, and the malformed-JSON 422,
+    # not a valid body carrying an unknown extra field.
+    # PasswordResetRequestDto (auth_dto.py) declares only
+    # `email: EmailStr` and carries no model_config, so
+    # Pydantic's default extra="ignore" silently drops the
+    # unknown field and validation passes -- the same
+    # default the register extra-field candidate was
+    # rejected on, except here the "proceeds" outcome is
+    # itself deterministic: the email is unknown, so the
+    # lookup fails first (request_password_reset raises
+    # before any reset record is written, any token is
+    # minted, or any email is sent, as established by the
+    # unknown-email 200 lock), and the handler's blanket
+    # try/except/finally returns the same generic 200
+    # message either way. The endpoint has no permission
+    # gate and no CurrentUser dependency, and its
+    # dependencies (get_auth_service, FrontendHost) merely
+    # resolve a container object and read request state, so
+    # nothing can mask the 200. No refresh cookie is set on
+    # this path: the handler returns a plain DTO. No
+    # Cache-Control assertion here, deliberately: unlike
+    # the error paths (central handler), this 200 sets no
+    # cache headers, and POST responses are not cached by
+    # default, so there is no header to lock -- the lock is
+    # the generic body plus the security headers the
+    # pure-ASGI middleware stamps on every response.
+    response = await client.post(
+        "/account/password_reset_request",
+        json={"email": "unknown@example.com", "unexpected_field": "should-be-ignored"},
+    )
+    assert response.status_code == 200
+    assert response.json()["message"] == "If the email exists, a password reset link has been sent."
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the password-reset-request unknown-email 200
+    # lock, using substring checks so later additions to
+    # the list do not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
