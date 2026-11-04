@@ -26224,3 +26224,94 @@ async def test_account_login_both_sides_newline_username_returns_422_with_cache_
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+async def test_account_login_leading_carriage_return_username_returns_422_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The account login POST with a valid email corrupted by
+        a leading carriage return, and a dummy password:
+    """
+    # The first carriage-return-username branch, verified fresh
+    # this run, not assumed: function-name grep count 0 for
+    # test_account_login_leading_carriage_return_username, and
+    # grep for "carriage" in the test file returned 0, so no
+    # login POST uses a carriage-return-padded username value
+    # (the newline-username locks pad with \n, a different
+    # character). The handler takes OAuth2PasswordRequestForm
+    # (account_endpoint.py login signature), whose username
+    # field is required but a CR-padded value counts as
+    # present, so form validation PASSES and the request
+    # reaches the handler body. There it constructs
+    # LoginRequestDto(email=...) whose email is EmailStr
+    # (login_dto.py). That a leading-CR address is rejected
+    # was established empirically this run, not extrapolated
+    # from the newline locks: with the repo's locked versions
+    # (pydantic 2.14.2, email-validator 2.3.0, uv.lock),
+    # exercised in a scratch directory under /tmp (packages
+    # installed there only, nothing installed into the
+    # project), leading-CR, trailing-CR, both-sides-CR, and
+    # CRLF-padded addresses are all REJECTED with
+    # "Carriage return and line feed characters are not
+    # allowed" -- email-validator special-cases CR and LF
+    # anywhere in the address before any stripping, while
+    # space-padded addresses are stripped and normalized.
+    # So unlike the leading-space and leading-tab username
+    # locks (401, normalized then authenticated), this
+    # request raises ValidationError and the handler maps it
+    # to HTTPException 422 with detail "Invalid email
+    # format." (account_endpoint.py:77), exactly like the
+    # newline-username locks. AuthService.login never runs,
+    # no token is minted, and no refresh cookie is set, so
+    # no seeding is needed. It is distinct from the
+    # leading-newline username 422 lock (same padding
+    # position, different control character: a future change
+    # that stripped only \n would turn the newline lock into
+    # a 401 without touching this CR lock, and vice versa
+    # for a CR-only strip), from the whitespace-only
+    # username 422 (no valid content, rejected for missing
+    # an @-sign, not for CR/LF), from the malformed-email
+    # 422 (a structurally invalid token, not a valid address
+    # with one bad character), and from the newline/CR
+    # password locks (password is a plain str, so control
+    # characters there reach verification instead of
+    # EmailStr). Deliberately Cache-Control no-store and
+    # Pragma no-cache ARE asserted here, unlike the
+    # form-validation 422s: this 422 is raised as an
+    # HTTPException inside the handler, so the central
+    # StarletteHTTPException handler stamps the no-store
+    # headers on it, mirroring the newline-username 422
+    # locks. The security headers ARE locked: the pure-ASGI
+    # middleware stamps every HTTP response, including error
+    # responses, with no path exclusions.
+    response = await client.post(
+        "/account/login",
+        data={"username": "\rleadingcruser@example.com", "password": "Whatever123!"},
+    )
+    assert response.status_code == 422
+    assert "Invalid email format" in str(response.json()["detail"])
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the newline-username 422 locks, using
+    # substring checks so later additions to the list do not
+    # break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
