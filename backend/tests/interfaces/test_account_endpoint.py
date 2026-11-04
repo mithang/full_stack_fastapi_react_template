@@ -23091,3 +23091,71 @@ async def test_account_login_missing_username_returns_422_with_security_headers(
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+@pytest.mark.asyncio
+async def test_account_login_missing_username_and_password_returns_422_with_security_headers(client: AsyncClient):
+    """
+        The account login POST with both form fields omitted:
+    """
+    # The completion of the login form-validation locks, verified
+    # fresh this run, not assumed: no test named
+    # test_account_login_missing_username_and_password_returns_422_with_security_headers
+    # exists in this file, and no login POST omits both fields
+    # (the missing-password and missing-username locks each omit
+    # exactly one). The handler takes OAuth2PasswordRequestForm
+    # (account_endpoint.py login signature), whose username and
+    # password fields are both required form fields, so FastAPI
+    # validates the form BEFORE the handler body runs: the
+    # LoginRequestDto construction and the AuthService.login call
+    # (which would do the find_by_email lookup) never execute, and
+    # no token is minted and no refresh cookie is set. Submitting
+    # only the optional scope field keeps this a form submission
+    # while omitting both required fields, so the 422 detail
+    # carries one entry for each. This is distinct from the
+    # single-field locks (each proves only its own field is
+    # required) and from the malformed-email 422 lock (a
+    # present-but-malformed username failing inside the handler's
+    # LoginRequestDto construction); an omitted pair fails
+    # earlier, at form validation, so this branch is deterministic
+    # with no seeded row and no live service.
+    # Deliberately no Cache-Control/Pragma assertion: a 422 is
+    # FastAPI validation, not an ApiBaseException, so the central
+    # handler's no-store headers do not apply to it, mirroring the
+    # login missing-password and missing-username 422 locks. The
+    # security headers ARE locked: the pure-ASGI middleware stamps
+    # every HTTP response, including validation errors, with no
+    # path exclusions.
+    response = await client.post(
+        "/account/login",
+        data={"scope": ""},
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    locs = [[str(part) for part in err.get("loc", [])] for err in detail]
+    assert any("username" in loc for loc in locs)
+    assert any("password" in loc for loc in locs)
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the login missing-username 422 lock, using
+    # substring checks so later additions to the list do not break
+    # this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
