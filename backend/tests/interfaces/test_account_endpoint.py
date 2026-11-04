@@ -27056,3 +27056,114 @@ async def test_account_login_trailing_vertical_tab_username_returns_401_with_cac
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+async def test_account_login_both_sides_vertical_tab_username_returns_401_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The account login POST with the seeded email padded with a
+        vertical tab on BOTH sides and a wrong password:
+    """
+    # The third vertical-tab-username branch, verified fresh this run,
+    # not assumed: function-name grep count 0 for
+    # test_account_login_both_sides_vertical_tab_username, and no login
+    # POST uses a both-sides-vertical-tab-padded username value (the
+    # leading and trailing branches were locked in the two previous
+    # runs). The handler takes OAuth2PasswordRequestForm (account
+    # login signature), whose username is a required free-form form
+    # field, so a padded value counts as present and form validation
+    # PASSES. There LoginRequestDto(email=...) is built: email is
+    # EmailStr (login_dto.py), and the padded value normalizes rather
+    # than being rejected -- established empirically this run with the
+    # repo's locked versions (pydantic 2.14.2, email-validator 2.3.0,
+    # uv.lock) in a scratch venv outside the project: a both-sides
+    # vertical-tab address normalizes to the bare address, because
+    # pydantic's EmailStr validation strips the value first
+    # (networks.py: email = value.strip(), and Python's str.strip
+    # removes BOTH ends in the one call), while an INTERIOR vertical
+    # tab is still rejected ("invalid characters before the @-sign:
+    # U+000B") -- so the strip is positional, not a general VT purge.
+    # That is the opposite of the both-sides-carriage-return username
+    # 422 lock: email-validator special-cases CR/LF anywhere with
+    # "Carriage return and line feed characters are not allowed"
+    # BEFORE any stripping, so CR padding is rejected with 422, while
+    # vertical-tab padding is stripped and proceeds. The handler body
+    # therefore proceeds, and AuthService.login (auth_service.py)
+    # finds the seeded row and runs verify_password with the wrong
+    # password, which returns False, raising the same generic
+    # UnauthorizedException ("Authentication failed. Please check
+    # your credentials.") as the unknown-email, wrong-password, and
+    # leading/trailing-VT username paths, before _get_token_set runs
+    # -- so no role row is needed, no audit-log write happens, and no
+    # refresh cookie is set. Seeding mirrors the leading/trailing-VT
+    # username 401 locks: directly through the User document
+    # (doc.insert()), not through POST /users, whose permission
+    # dependency 404s on the fresh test DB. The seeded password is
+    # hashed with the app's own hash_it from a dummy repeated value
+    # the wrong login password can never match, never stored in
+    # plaintext, and the conftest fixture drops the test DB after the
+    # test, so the row cannot leak into other tests. No X-Tenant-ID
+    # header is sent, so both the seed and the login read the host
+    # test DB. It is distinct from the leading- and trailing-VT
+    # username locks (same character class, both positions at once;
+    # a change that stripped only one side would turn this lock into
+    # a 422 or a different lookup outcome without touching the
+    # opposite-side lock, and a change that stopped stripping
+    # entirely would break all three) and from the
+    # both-sides-carriage-return username 422 lock (same position,
+    # different character class: CR is rejected at validation, VT is
+    # stripped and normalized). The value below deliberately uses
+    # single-backslash escapes (verified by byte inspection and AST
+    # evaluation after appending), so it locks genuine vertical tabs,
+    # not literal backslash-plus-v. Deliberately Cache-Control
+    # no-store and Pragma no-cache ARE asserted here, unlike the
+    # form-validation 422s: this 401 is raised as an ApiBaseException
+    # inside the service, so the central handler stamps the no-store
+    # headers on it, mirroring the padded-username 401 locks. The
+    # security headers ARE locked: the pure-ASGI middleware stamps
+    # every HTTP response, including error responses, with no path
+    # exclusions.
+    from api.common.enums.gender import Gender
+    from api.common.security import hash_it
+    from api.domain.entities.user import User
+
+    await User(
+        first_name="BothSides",
+        last_name="VTUser",
+        email="bothsidesvtuser@example.com",
+        gender=Gender.OTHER,
+        is_active=True,
+        password=hash_it("DummyPass123!DummyPass123!"),
+    ).insert()
+    response = await client.post(
+        "/account/login",
+        data={"username": "\vbothsidesvtuser@example.com\v", "password": "WrongPass123!"},
+    )
+    assert response.status_code == 401
+    assert response.json()["code"] == 401
+    assert "Authentication failed. Please check your credentials." in response.json()["error"]
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the other padded-username 401 locks, using
+    # substring checks so later additions to the list do not
+    # break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
