@@ -33273,3 +33273,106 @@ async def test_account_register_taken_subdomain_strong_password_returns_201_with
     assert created.is_active is False
     assert created.password != "StrongPass1!"
     assert created.password.startswith("$pbkdf2-sha256$")
+
+
+async def test_account_activate_success_returns_200_with_security_headers(client: AsyncClient):
+    """
+        The account activation POST success path: a seeded
+        inactive user plus a correctly signed activation token
+        minted for that user.
+    """
+    # The activate 200 branch, verified fresh this run, not assumed:
+    # function-name grep count 0 for test_account_activate_success
+    # and seed-email grep count 0 for activate-success@example.com
+    # before appending, and the only existing activate lock is the
+    # garbage-token 406 (which raises inside verify_activation_token
+    # before any user lookup). The handler takes only the AuthService
+    # dependency plus an optional tenant query param (which the
+    # service ignores), so no permission gate or CurrentUser lookup
+    # can interfere. activate_account (auth_service.py) first
+    # verifies the token with JWT_SECRET / ALGORITHM and requires
+    # type "activation" (jwt_token_service.py verify_activation_token),
+    # then get_user_by_id on the host test DB (no X-Tenant-ID header
+    # is sent, and the seed carries tenant_id None), rejects an
+    # already-active user and a mismatched email, and otherwise sets
+    # is_active True with activated_at and saves -- so the seed must
+    # be inactive and its email must match the token payload exactly.
+    # No email is sent and no Celery task is enqueued on this path,
+    # so no SMTP server or broker is needed -- unlike the resend
+    # 202 success branch, which stays deliberately NOT locked
+    # because its raise_on_failure=True send needs a live mail
+    # server. The endpoint returns a bare 200 with no response model
+    # and no refresh cookie, and the pure-ASGI security-headers
+    # middleware stamps every HTTP response with no path exclusions;
+    # no Cache-Control is asserted here because the success path
+    # sets none (no-store is an error-response header in this
+    # codebase, mirroring the register strong-password lock). The
+    # conftest fixture drops the test DB after the test, so the
+    # activated row cannot leak into other tests.
+    import jwt
+    from datetime import datetime, timedelta, timezone
+
+    from beanie import PydanticObjectId
+
+    from api.common.enums.gender import Gender
+    from api.common.security import ALGORITHM, JWT_SECRET, hash_it
+    from api.domain.entities.user import User
+
+    await User(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b3a0"),
+        first_name="Activate",
+        last_name="Success",
+        email="activate-success@example.com",
+        gender=Gender.OTHER,
+        is_active=False,
+        # Activation never verifies the password, so any hash works;
+        # the user id doubles as the hash input to keep the seed free
+        # of a throwaway password literal.
+        password=hash_it("68c302ef6bf7a039b7e9b3a0"),
+    ).insert()
+    activation_token = jwt.encode(
+        {
+            "user_id": "68c302ef6bf7a039b7e9b3a0",
+            "email": "activate-success@example.com",
+            "type": "activation",
+            "exp": datetime.now(timezone.utc) + timedelta(hours=1),
+        },
+        JWT_SECRET,
+        algorithm=ALGORITHM,
+    )
+    response = await client.post(
+        "/account/activate",
+        json={"token": activation_token},
+    )
+    assert response.status_code == 200
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the refresh success lock, using substring checks
+    # so later additions to the list do not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+    # Postcondition: the seeded user is now active, stamped with an
+    # activation time, and otherwise unchanged.
+    activated = await User.find_one(User.email == "activate-success@example.com")
+    assert activated is not None
+    assert activated.is_active is True
+    assert activated.activated_at is not None
+    assert activated.first_name == "Activate"
+    assert activated.last_name == "Success"
