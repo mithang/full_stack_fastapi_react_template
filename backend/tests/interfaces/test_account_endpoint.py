@@ -32819,3 +32819,125 @@ async def test_account_password_reset_confirmation_weak_new_password_returns_406
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+@pytest.mark.asyncio
+async def test_account_password_reset_confirmation_success_returns_200_with_security_headers(client: AsyncClient):
+    """
+        The account password reset confirmation POST success path:
+        a seeded user plus a seeded reset record plus a VALID
+        token plus a STRONG new password.
+    """
+    # The success branch, verified fresh this run, not assumed:
+    # function-name grep count 0 for
+    # test_account_password_reset_confirmation_success, and no
+    # password_reset_confirmation POST combines a seeded reset
+    # record with a valid token and a strong new password (the
+    # six existing locks all fail earlier: no record,
+    # undecodable token, wrong user, wrong type, expired token,
+    # weak new password). The handler takes only the AuthService
+    # dependency (account_endpoint.py password_reset_confirm), so
+    # no permission gate or CurrentUser lookup can interfere, and
+    # the request DTO carries new_password as a plain str.
+    # change_password (auth_service.py) retrieves the seeded
+    # record, verifies the token (seeded secret, correct type,
+    # user id, future exp, so verification succeeds), then calls
+    # update_user_password, which finds the seeded user row and
+    # validates the strong password, saves the new hash, and only
+    # then change_password deletes the reset record -- and only
+    # AFTER both of those does it send the notification email,
+    # with the default raise_on_failure=False, whose handler
+    # swallows ApiError, ConnectionErrors, and any other
+    # exception (smtp_email.py). So an unconfigured or
+    # unreachable SMTP server in the test environment cannot
+    # turn this success into an error -- the same reasoning as
+    # the already-locked change-email-confirmation success test,
+    # whose notification send is likewise best-effort. The
+    # endpoint returns PasswordResetResponseDto with the exact
+    # success message and status 200, and sets no refresh cookie.
+    # No Cache-Control assertion here, deliberately: unlike the
+    # error paths (central HTTPException handler), this success
+    # path sets no cache headers, mirroring the change-email
+    # success lock. Postconditions are asserted directly, not
+    # just the response: the stored hash verifies against the
+    # NEW password and no longer against the old one, and the
+    # reset record is gone. No X-Tenant-ID header is sent, so
+    # the seeds and the service reads all use the host test DB,
+    # and the conftest fixture drops the test DB after the test,
+    # so the rows cannot leak into other tests.
+    import jwt
+    from datetime import datetime, timedelta, timezone
+
+    from beanie import PydanticObjectId
+
+    from api.common.enums.gender import Gender
+    from api.common.security import ALGORITHM, hash_it, verify_password
+    from api.domain.entities.user import User
+    from api.domain.entities.user_password_reset import UserPasswordReset
+
+    await User(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b385"),
+        first_name="Test",
+        last_name="User",
+        email="test@example.com",
+        gender=Gender.OTHER,
+        is_active=True,
+        password=hash_it("OldPassword123!"),
+    ).insert()
+    record_secret = "success-test-reset-secret"
+    await UserPasswordReset(
+        user_id=PydanticObjectId("68c302ef6bf7a039b7e9b385"),
+        token_secret=record_secret,
+        reset_secret_updated_at=datetime.now(timezone.utc),
+        first_name="Test",
+    ).insert()
+    token = jwt.encode(
+        {
+            "user_id": "68c302ef6bf7a039b7e9b385",
+            "email": "test@example.com",
+            "type": "password_reset_confirmation",
+            "exp": datetime.now(timezone.utc) + timedelta(hours=1),
+            "iat": datetime.now(timezone.utc),
+        },
+        record_secret,
+        algorithm=ALGORITHM,
+    )
+    response = await client.post(
+        f"/account/password_reset_confirmation?token={token}&user_id=68c302ef6bf7a039b7e9b385",
+        json={"new_password": "NewStrong1!"},
+    )
+    assert response.status_code == 200
+    assert response.json()["message"] == "Password has been reset successfully. A notification email has been sent!"
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the weak-password lock, using substring checks so
+    # later additions to the list do not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+    # Postconditions: the password really changed, and the reset
+    # record was consumed, before the best-effort email send.
+    updated_user = await User.get(PydanticObjectId("68c302ef6bf7a039b7e9b385"))
+    assert updated_user is not None
+    assert verify_password("NewStrong1!", updated_user.password)
+    assert not verify_password("OldPassword123!", updated_user.password)
+    remaining_record = await UserPasswordReset.find_one(
+        UserPasswordReset.user_id == PydanticObjectId("68c302ef6bf7a039b7e9b385")
+    )
+    assert remaining_record is None
