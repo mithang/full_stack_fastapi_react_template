@@ -34435,3 +34435,71 @@ async def test_account_resend_activation_email_nonstring_tenant_id_returns_422_w
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+async def test_account_passkey_has_passkeys_nonstring_email_returns_422_with_security_headers(client: AsyncClient):
+    """
+        The passkey has_passkeys POST with a non-string email value:
+    """
+    # The has_passkeys non-string-email branch, not yet locked:
+    # function-name grep count 0 for has_passkeys_nonstring
+    # (verified fresh this run); the existing has_passkeys lock
+    # covers only the malformed-string email 422, not a wrong-type
+    # body. The endpoint takes a bare EmailStr body param
+    # (account_endpoint.py: email: EmailStr = Body(...)), so a
+    # JSON list value is neither a string nor a valid email and
+    # cannot be coerced under any Pydantic version; it fails
+    # FastAPI request validation before the handler body runs.
+    # Unlike resend_activation_email, this endpoint has no
+    # permission gate to seed and no FrontendHost dependency, and
+    # its only dependency, get_passkey_service, merely resolves a
+    # container object, so nothing can mask the 422. Validation
+    # fails before passkey_service.has_passkeys runs, so this
+    # lock is deterministic even though the 200 path was
+    # previously deferred as non-deterministic without model
+    # initialization -- no user or passkey record is consulted
+    # here. The loc assertion pins ["body"]: a bare body param
+    # reports that loc, not ["body", "email"], mirroring the
+    # loose loc reasoning in the invalid-email lock. Deliberately
+    # no exact error-type assertion (no string-type error-type
+    # precedent in this file) and no Cache-Control/Pragma
+    # assertion: a 422 is FastAPI request validation, not an
+    # ApiBaseException, so the central handler's no-store headers
+    # do not apply to it. The security headers ARE locked: the
+    # pure-ASGI middleware stamps every HTTP response, including
+    # validation errors, with no path exclusions.
+    response = await client.post(
+        "/account/passkey/has_passkeys",
+        json=["user@example.com"],
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert isinstance(detail, list) and detail
+    assert any(
+        err.get("loc") == ["body"]
+        for err in detail
+    )
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the has_passkeys invalid-email 422 lock, using
+    # substring checks so later additions to the list do not
+    # break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
