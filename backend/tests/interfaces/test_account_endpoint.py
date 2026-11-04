@@ -33714,3 +33714,80 @@ async def test_account_resend_activation_email_invalid_email_returns_422_with_se
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+async def test_account_resend_activation_email_unknown_email_returns_404_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The account resend-activation-email POST for an email with no user row:
+    """
+    # The resend-activation-email unknown-email branch, not yet locked:
+    # function-name grep count 0 for resend_activation_email_unknown_email
+    # (verified fresh this run); the existing resend locks cover the
+    # missing-role 404, the already-active 406, and the invalid-email
+    # 422, not an unknown email. The endpoint is permission-gated
+    # (USER_READ_AND_WRITE_ONLY and FULL_ACCESS, any_permission=False),
+    # and FastAPI solves sub-dependencies before the handler body runs,
+    # so the mocked caller's role must be seeded first -- otherwise the
+    # permission gate's RoleNotFoundException 404 would mask this
+    # branch's 404, exactly as in the missing-role lock. The role is
+    # seeded with the mocked user's exact role_id (68c302ef6bf7a039b7e9b386,
+    # conftest.py) and both required permissions, mirroring the
+    # already-active 406 lock, so the gate passes. The service then
+    # calls find_by_email on the DTO email, which finds no User row on
+    # the fresh test DB and raises UserNotFoundException BEFORE the
+    # is_active check, any token minting, or the email send, so no live
+    # mail server is needed -- unlike the 202 success branch, which
+    # stays deliberately NOT locked. The central ApiBaseException
+    # handler maps NotFoundException to 404 with body {"error": ...,
+    # "code": 404} and Cache-Control: no-store plus Pragma: no-cache
+    # (api/__init__.py), and the pure-ASGI security-headers middleware
+    # stamps every HTTP response with no path exclusions. No
+    # X-Tenant-ID header is sent, so the seed and the service read use
+    # the host test DB; conftest drops the DB after the test.
+    from beanie import PydanticObjectId
+
+    from api.domain.entities.role import Role
+    from api.domain.enum.permission import Permission
+
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b386"),
+        name="Admin",
+        description="Administrator role for the mocked caller",
+        permissions=[Permission.USER_READ_AND_WRITE_ONLY, Permission.FULL_ACCESS],
+    ).insert()
+    response = await client.post(
+        "/account/resend_activation_email",
+        json={
+            "email": "unknown@example.com",
+            "id": "68c302ef6bf7a039b7e9b390",
+            "first_name": "Unknown",
+        },
+    )
+    assert response.status_code == 404
+    assert response.json()["code"] == 404
+    assert response.json()["error"] == "User with identifier unknown@example.com not found."
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the resend invalid-email 422 lock, using substring
+    # checks so later additions to the list do not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
