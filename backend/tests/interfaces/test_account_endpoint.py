@@ -32941,3 +32941,133 @@ async def test_account_password_reset_confirmation_success_returns_200_with_secu
         UserPasswordReset.user_id == PydanticObjectId("68c302ef6bf7a039b7e9b385")
     )
     assert remaining_record is None
+
+
+@pytest.mark.asyncio
+async def test_account_refresh_valid_cookie_returns_200_with_rotated_cookie_and_security_headers(client: AsyncClient):
+    """
+        The account refresh POST success path:
+        a seeded user plus a seeded role plus a VALID refresh
+        token presented as the refresh_token cookie.
+    """
+    # The refresh 200 branch, verified fresh this run, not assumed:
+    # function-name grep count 0 for
+    # test_account_refresh_valid_cookie, and the only existing
+    # refresh lock is the missing-cookie 403 (which raises before
+    # any service call). The handler takes only the AuthService
+    # dependency plus the Cookies model (account_endpoint.py
+    # refresh_token), so no permission gate or CurrentUser lookup
+    # can interfere. refresh_token (auth_service.py) decodes the
+    # cookie with REFRESH_TOKEN_SECRET / REFRESH_ALGORITHM and
+    # requires type "refresh" (jwt_token_service.py decode_token),
+    # then get_user_by_id and get_role_by_id — so the user seed
+    # must carry a role_id pointing at a seeded role, unlike the
+    # resend-activation and password-reset seeds which need no
+    # role; both seeds use tenant_id None and no X-Tenant-ID
+    # header is sent, so the host-scope reads in both services
+    # see the rows. generate_tokens then mints a fresh TokenSetDto
+    # and the handler sets the rotated refresh cookie plus
+    # Cache-Control: no-store and Pragma: no-cache, while the
+    # pure-ASGI security-headers middleware stamps every HTTP
+    # response with no path exclusions. No email is sent on this
+    # path, so no SMTP server is needed — unlike the resend
+    # 202 success branch, which stays deliberately NOT locked
+    # because its raise_on_failure=True send needs a live mail
+    # server. Deliberately no assertion that the rotated refresh
+    # token differs from the presented one: get_refresh_token
+    # encodes only {sub, tenant_id, type, exp} with no iat/jti,
+    # so a rotation minted within the same second as the test
+    # token (same 7-day exp) is byte-identical by construction;
+    # the lock instead decodes the rotated cookie and checks its
+    # sub/type, which is the rotation's real invariant. The
+    # conftest fixture drops the test DB after the test, so the
+    # rows cannot leak into other tests.
+    import jwt
+    from datetime import datetime, timedelta, timezone
+
+    from beanie import PydanticObjectId
+
+    from api.common.enums.gender import Gender
+    from api.common.security import ALGORITHM, JWT_SECRET, REFRESH_ALGORITHM, REFRESH_TOKEN_SECRET, hash_it
+    from api.domain.entities.role import Role
+    from api.domain.entities.user import User
+    from api.domain.enum.permission import Permission
+
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b386"),
+        name="Admin",
+        description="Administrator role for the refresh user",
+        permissions=[Permission.USER_READ_AND_WRITE_ONLY, Permission.FULL_ACCESS],
+    ).insert()
+    await User(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b391"),
+        first_name="Refresh",
+        last_name="User",
+        email="refresh@example.com",
+        gender=Gender.OTHER,
+        is_active=True,
+        role_id=PydanticObjectId("68c302ef6bf7a039b7e9b386"),
+        # Refresh never verifies the password, so any hash works; the
+        # user id doubles as the hash input to keep the seed free of
+        # a throwaway password literal.
+        password=hash_it("68c302ef6bf7a039b7e9b391"),
+    ).insert()
+    presented_refresh_token = jwt.encode(
+        {
+            "sub": "68c302ef6bf7a039b7e9b391",
+            "tenant_id": None,
+            "type": "refresh",
+            "exp": datetime.now(timezone.utc) + timedelta(days=7),
+            "iat": datetime.now(timezone.utc),
+        },
+        REFRESH_TOKEN_SECRET,
+        algorithm=REFRESH_ALGORITHM,
+    )
+    response = await client.post(
+        "/account/refresh",
+        cookies={"refresh_token": presented_refresh_token},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert isinstance(body["access_token"], str) and len(body["access_token"]) > 0
+    assert isinstance(body["token_type"], str) and len(body["token_type"]) > 0
+    assert isinstance(body["refresh_token"], str) and len(body["refresh_token"]) > 0
+    assert body["expires_in"] > 0
+    assert body["refresh_token_expires_in"] > 0
+    set_cookie = response.headers.get("set-cookie", "")
+    assert "refresh_token=" in set_cookie
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the password-reset-confirmation success lock,
+    # using substring checks so later additions to the list do
+    # not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+    # Postconditions: the minted access token really belongs to
+    # the seeded user, and the rotated cookie is a genuine
+    # refresh token for the same user — not just a non-empty
+    # string in the response.
+    access_payload = jwt.decode(body["access_token"], JWT_SECRET, algorithms=[ALGORITHM])
+    assert access_payload["sub"] == "68c302ef6bf7a039b7e9b391"
+    rotated_refresh_token = set_cookie.split("refresh_token=", 1)[1].split(";", 1)[0]
+    refresh_payload = jwt.decode(rotated_refresh_token, REFRESH_TOKEN_SECRET, algorithms=[REFRESH_ALGORITHM])
+    assert refresh_payload["sub"] == "68c302ef6bf7a039b7e9b391"
+    assert refresh_payload["type"] == "refresh"
