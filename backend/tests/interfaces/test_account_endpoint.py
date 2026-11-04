@@ -32118,3 +32118,89 @@ async def test_account_login_both_sides_function_application_password_returns_40
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+@pytest.mark.asyncio
+async def test_account_login_leading_crlf_username_returns_422_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The account login POST with a valid email corrupted by
+        a leading CRLF pair, and a dummy password:
+    """
+    # The leading-CRLF-username branch, verified fresh this
+    # run, not assumed: function-name grep count 0 for
+    # test_account_login_leading_crlf_username, seed-email
+    # grep count 0 for leadingcrlfuser@example.com, and no
+    # login POST uses a leading-CRLF-padded username value
+    # (the both-sides-CRLF lock pads both sides, the CR
+    # locks pad with CR alone, the newline locks with LF
+    # alone). The handler takes OAuth2PasswordRequestForm
+    # (account_endpoint.py login signature), whose username
+    # field is required but a CRLF-padded value counts as
+    # present, so form validation PASSES and the request
+    # reaches the handler body. There it constructs
+    # LoginRequestDto(email=...) whose email is EmailStr
+    # (login_dto.py). That a leading-CRLF address is
+    # rejected was established empirically this run, not
+    # extrapolated from the both-sides lock: with
+    # email-validator 2.3.0 (the version locked in uv.lock),
+    # exercised in a scratch venv under /tmp (packages
+    # installed there only, nothing installed into the
+    # project), a leading-CRLF address is REJECTED
+    # ("invalid characters before the @-sign: U+000A,
+    # U+000D"). So unlike the leading-space and leading-tab
+    # username locks (401, normalized then authenticated),
+    # this request raises ValidationError and the handler
+    # maps it to HTTPException 422 with detail "Invalid
+    # email format." (account_endpoint.py), exactly like the
+    # both-sides-CRLF username lock. AuthService.login never
+    # runs, no token is minted, and no refresh cookie is
+    # set, so no seeding is needed. It is distinct from the
+    # both-sides-CRLF username 422 lock (same padding
+    # characters, leading only vs both sides: a future
+    # change that stripped only trailing CRLF would flip
+    # the both-sides lock without touching this leading
+    # lock, and vice versa for a leading-only strip), from
+    # the leading-CR username 422 lock (same position, CR
+    # alone vs the CR+LF pair), and from the leading
+    # newline username 422 lock (same position, LF alone
+    # vs the pair). Deliberately Cache-Control no-store and
+    # Pragma no-cache ARE asserted here, unlike the
+    # form-validation 422s: this 422 is raised as an
+    # HTTPException inside the handler, so the central
+    # StarletteHTTPException handler stamps the no-store
+    # headers on it, mirroring the both-sides-CRLF lock.
+    # The security headers ARE locked: the pure-ASGI
+    # middleware stamps every HTTP response, including
+    # error responses, with no path exclusions.
+    response = await client.post(
+        "/account/login",
+        data={"username": "\r\nleadingcrlfuser@example.com", "password": "Whatever123!"},
+    )
+    assert response.status_code == 422
+    assert "Invalid email format" in str(response.json()["detail"])
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the both-sides-CRLF username 422 lock, using
+    # substring checks so later additions to the list do not
+    # break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
