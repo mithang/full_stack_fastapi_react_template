@@ -36456,3 +36456,88 @@ async def test_account_password_reset_request_boolean_body_returns_422_with_secu
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+async def test_account_password_reset_request_null_body_returns_422_with_security_headers(client: AsyncClient):
+    """
+        The account password reset request POST with an explicit JSON null body:
+    """
+    # The next password-reset-request validation branch after the
+    # boolean body 422 lock, verified fresh this run,
+    # not assumed. Function-name grep count 0 for
+    # password_reset_request_null_body before appending;
+    # the existing password-reset-request locks cover the
+    # unknown-email generic 200, the invalid-email 422, the
+    # non-string-email 422, the missing-email 422 (an empty
+    # JSON object), the missing-body 422 (no body at all),
+    # the non-object-body 422 (a JSON array), the
+    # scalar-body 422 (a JSON string), the numeric-body
+    # 422 (a JSON number), and the boolean-body 422 (a JSON
+    # boolean), not a body of explicit JSON null type, and
+    # the register null-body lock does not cover this
+    # endpoint. The endpoint takes a required
+    # `request: PasswordResetRequestDto` body parameter with
+    # no default (account_endpoint.py), so an explicit JSON
+    # null body cannot be coerced to the
+    # PasswordResetRequestDto model and fails FastAPI request
+    # validation before the handler body runs: the blanket
+    # try/except/finally that returns the generic 200 is
+    # never reached, AuthService.initate_password_reset never
+    # runs, and no reset record is written, no token is
+    # minted, and no reset email is sent. This endpoint has
+    # no permission gate and no CurrentUser dependency, and
+    # its dependencies (get_auth_service, FrontendHost) merely
+    # resolve a container object and read request state, so
+    # nothing can mask the 422. The body is sent as the
+    # literal string "null" with a JSON content type rather
+    # than via json=None, so the null is unambiguous and
+    # does not depend on how the HTTP client encodes a None
+    # json argument, mirroring the register null-body 422
+    # lock. Unlike the per-field locks, the detail loc here
+    # is for the whole body rather than a field name, so the
+    # assertion locks "body" in the loc, mirroring the
+    # password-reset-request boolean-body 422 lock.
+    # Deliberately no exact error-type assertion (no
+    # null-body error-type precedent in this file) and no
+    # Cache-Control/Pragma assertion: a 422 is FastAPI
+    # request validation, not an ApiBaseException, so the
+    # central handler's no-store headers do not apply to it.
+    # The security headers ARE locked: the pure-ASGI
+    # middleware stamps every HTTP response, including
+    # validation errors, with no path exclusions.
+    response = await client.post(
+        "/account/password_reset_request",
+        content="null",
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert isinstance(detail, list) and detail
+    assert any(
+        "body" in [str(part) for part in err.get("loc", [])]
+        for err in detail
+    )
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the password-reset-request boolean-body
+    # 422 lock, using substring checks so later additions to
+    # the list do not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
