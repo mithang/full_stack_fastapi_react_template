@@ -26520,6 +26520,100 @@ async def test_account_login_both_sides_carriage_return_username_returns_422_wit
 
 
 @pytest.mark.asyncio
+async def test_account_login_both_sides_crlf_username_returns_422_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The account login POST with a valid email corrupted by
+        a CRLF pair on both sides, and a dummy password:
+    """
+    # The CRLF-username branch, verified fresh this run, not
+    # assumed: function-name grep count 0 for
+    # test_account_login_both_sides_crlf_username, seed-email
+    # grep count 0 for crlfuser@example.com, and no login POST
+    # uses a CRLF-padded username value (the CR-username locks
+    # pad with CR alone, the newline-username locks with LF
+    # alone). The handler takes OAuth2PasswordRequestForm
+    # (account_endpoint.py login signature), whose username
+    # field is required but a CRLF-padded value counts as
+    # present, so form validation PASSES and the request
+    # reaches the handler body. There it constructs
+    # LoginRequestDto(email=...) whose email is EmailStr
+    # (login_dto.py). That a both-sides-CRLF address is
+    # rejected was established empirically this run, not
+    # extrapolated: with email-validator 2.3.0 (the version
+    # locked in uv.lock), exercised in a scratch venv under
+    # /tmp (packages installed there only, nothing installed
+    # into the project), a both-sides-CRLF address is
+    # REJECTED ("invalid characters before the @-sign:
+    # U+000A, U+000D"), as are leading-only and trailing-only
+    # CRLF addresses. So unlike the both-sides-space and
+    # both-sides-tab username locks (401, normalized then
+    # authenticated), this request raises ValidationError and
+    # the handler maps it to HTTPException 422 with detail
+    # "Invalid email format." (account_endpoint.py), exactly
+    # like the newline-username and CR-username locks.
+    # AuthService.login never runs, no token is minted, and
+    # no refresh cookie is set, so no seeding is needed. It
+    # is distinct from the both-sides-CR username 422 lock
+    # (same padding position, CR alone vs the CR+LF pair: a
+    # future change that stripped only CR would flip the CR
+    # lock without touching this CRLF lock, and vice versa
+    # for an LF-only strip), from the both-sides-newline
+    # username 422 lock (same position, LF alone vs the
+    # pair), and from the CR password locks (password is a
+    # plain str, so control characters there reach
+    # verification instead of EmailStr). NOTE, verified fresh
+    # this run by od byte dump and AST literal evaluation
+    # (both-sides, leading, and trailing CR username values
+    # all evaluate with a genuine 0x0D): the NOTE in the
+    # both-sides-CR test claiming the earlier leading and
+    # trailing CR username tests contain a double-backslash
+    # escape is incorrect -- those tests already lock real
+    # carriage returns, so no correction of them is needed
+    # and that deferred item is closed, not carried forward.
+    # Deliberately Cache-Control no-store and Pragma no-cache
+    # ARE asserted here, unlike the form-validation 422s:
+    # this 422 is raised as an HTTPException inside the
+    # handler, so the central StarletteHTTPException handler
+    # stamps the no-store headers on it, mirroring the
+    # newline-username and CR-username 422 locks. The
+    # security headers ARE locked: the pure-ASGI middleware
+    # stamps every HTTP response, including error responses,
+    # with no path exclusions.
+    response = await client.post(
+        "/account/login",
+        data={"username": "\r\ncrlfuser@example.com\r\n", "password": "Whatever123!"},
+    )
+    assert response.status_code == 422
+    assert "Invalid email format" in str(response.json()["detail"])
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the newline-username and CR-username 422
+    # locks, using substring checks so later additions to
+    # the list do not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+
+
+@pytest.mark.asyncio
 async def test_account_login_trailing_carriage_return_password_returns_401_with_cache_and_security_headers(client: AsyncClient):
     """
         The account login POST with a valid email but the correct
