@@ -28991,3 +28991,96 @@ async def test_account_login_trailing_zero_width_space_password_returns_401_with
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+async def test_account_login_both_sides_zero_width_space_password_returns_401_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The account login POST with a valid email but the correct
+        password with a zero-width space on both sides only:
+    """
+    # The third zero-width-space-password branch, verified fresh
+    # this run, not assumed: function-name grep count 0 for
+    # test_account_login_both_sides_zero_width_space_password,
+    # and the only "ZW" password literals in the file are the
+    # leading and trailing locks from the previous runs, so no
+    # login POST uses a both-sides-zero-width-space-padded
+    # password value.
+    # Reasoning mirrors the leading/trailing zero-width-space
+    # password locks: OAuth2PasswordRequestForm passes (the
+    # padded value is present), LoginRequestDto password is a
+    # plain str so no ValidationError, AuthService.login finds
+    # the seeded row and verify_password (plain
+    # pbkdf2_sha256.verify, no trimming or normalization)
+    # returns False on the both-sides-ZWSP value, raising the
+    # generic 401 before _get_token_set -- so no role row, no
+    # audit-log write, no refresh cookie. This is distinct
+    # from both one-sided locks: a one-side-only removal
+    # would flip neither this lock nor the other one-sided
+    # lock, while a format-character normalization stripping
+    # both sides would turn all three ZWSP password locks
+    # into 200s together.
+    # U+200B is a format character (category Cf), not
+    # whitespace -- Python reports its isspace() as False and
+    # str.strip() leaves it in place -- so a future fix that
+    # merely stripped the password would NOT flip this lock,
+    # while a normalization fix (e.g. stripping format
+    # characters) would turn it into a 200. Seeding mirrors
+    # the one-sided locks: directly through the User document
+    # (doc.insert()), not through POST /users, whose
+    # permission dependency 404s on the fresh test DB. The
+    # value below deliberately uses a single-backslash escape
+    # (verified by byte inspection and AST evaluation after
+    # appending), so it locks genuine zero-width spaces, not
+    # literal backslash-plus-u-2-0-0-b. Cache-Control
+    # no-store and Pragma no-cache ARE asserted here, as in
+    # the other padded-password 401 locks: this 401 is raised
+    # as an ApiBaseException inside the service, so the
+    # central handler stamps the no-store headers on it. The
+    # security headers ARE locked: the pure-ASGI middleware
+    # stamps every HTTP response, including error responses,
+    # with no path exclusions.
+    from api.common.enums.gender import Gender
+    from api.common.security import hash_it
+    from api.domain.entities.user import User
+
+    await User(
+        first_name="BothSides",
+        last_name="ZWSPPassword",
+        email="bothsideszwsppass@example.com",
+        gender=Gender.OTHER,
+        is_active=True,
+        password=hash_it("BothSidesZWSPPass123!"),
+    ).insert()
+    response = await client.post(
+        "/account/login",
+        data={"username": "bothsideszwsppass@example.com", "password": "\u200bBothSidesZWSPPass123!\u200b"},
+    )
+    assert response.status_code == 401
+    assert response.json()["code"] == 401
+    assert "Authentication failed. Please check your credentials." in response.json()["error"]
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the other padded-password 401 locks, using
+    # substring checks so later additions to the list do not
+    # break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
