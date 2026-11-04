@@ -28367,3 +28367,93 @@ async def test_account_login_trailing_non_breaking_space_username_returns_401_wi
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+async def test_account_login_both_sides_non_breaking_space_username_returns_401_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The account login POST with the seeded email padded with a
+        non-breaking space on both sides and a wrong password:
+    """
+    # The third non-breaking-space-username branch, verified fresh
+    # this run, not assumed: function-name grep count 0 for
+    # test_account_login_both_sides_non_breaking_space_username,
+    # and the only NBSP login POSTs in the file are the leading
+    # and trailing branches locked in the two previous runs. The
+    # mechanism was re-verified empirically this run with the
+    # repo's locked versions (pydantic 2.14.2, email-validator
+    # 2.3.0) in a fresh /tmp scratch venv (nothing installed into
+    # the project): raw email-validator REJECTS a both-sides-NBSP
+    # address ("The email address contains unsafe characters:
+    # NO-BREAK SPACE"), but pydantic's EmailStr validation strips
+    # the value first (networks.py: email = value.strip(), and
+    # Python's str.strip removes U+00A0 on both sides), so the
+    # stripped address validates and normalizes to the seeded
+    # email. AuthService.login then finds the seeded row and runs
+    # verify_password with the wrong password, which returns
+    # False, raising the same generic UnauthorizedException
+    # ("Authentication failed. Please check your credentials.")
+    # as the one-sided NBSP locks, before _get_token_set runs --
+    # so no role row is needed, no audit-log write happens, and
+    # no refresh cookie is set. Seeding mirrors the one-sided
+    # NBSP 401 locks: directly through the User document
+    # (doc.insert()), not through POST /users, whose permission
+    # dependency 404s on the fresh test DB. It is distinct from
+    # both one-sided locks: a change that stripped only one side
+    # (e.g. lstrip or rstrip) would turn this lock into a 422
+    # without touching either one-sided lock, and vice versa. The
+    # value below deliberately uses single-backslash escapes
+    # (verified by byte inspection and AST evaluation after
+    # appending), so it locks genuine non-breaking spaces on both
+    # sides, not literal backslash-plus-x-a-0. Cache-Control
+    # no-store and Pragma no-cache ARE asserted here, as in the
+    # one-sided NBSP locks: this 401 is raised as an
+    # ApiBaseException inside the service, so the central handler
+    # stamps the no-store headers on it. The security headers ARE
+    # locked: the pure-ASGI middleware stamps every HTTP
+    # response, including error responses, with no path
+    # exclusions.
+    from api.common.enums.gender import Gender
+    from api.common.security import hash_it
+    from api.domain.entities.user import User
+
+    await User(
+        first_name="BothSides",
+        last_name="NBSPUser",
+        email="bothsidesnbspuser@example.com",
+        gender=Gender.OTHER,
+        is_active=True,
+        password=hash_it("x" * 12),
+    ).insert()
+    response = await client.post(
+        "/account/login",
+        data={"username": "\xa0bothsidesnbspuser@example.com\xa0", "password": "WrongPass123!"},
+    )
+    assert response.status_code == 401
+    assert response.json()["code"] == 401
+    assert "Authentication failed. Please check your credentials." in response.json()["error"]
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the other padded-username 401 locks, using
+    # substring checks so later additions to the list do not
+    # break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
