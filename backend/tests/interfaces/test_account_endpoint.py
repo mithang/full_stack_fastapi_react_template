@@ -23963,3 +23963,76 @@ async def test_account_register_float_role_id_returns_422_with_security_headers(
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+@pytest.mark.asyncio
+async def test_account_login_empty_username_returns_422_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The account login POST with an empty username form field:
+    """
+    # The next login validation branch after the missing-username,
+    # missing-password, and malformed-email 422 locks, verified
+    # fresh this run, not assumed: no test named
+    # test_account_login_empty_username exists (function-name
+    # grep count 0) and no login POST uses an empty username
+    # value (payload grep count 0 for "username": "").
+    # The handler takes OAuth2PasswordRequestForm
+    # (account_endpoint.py login signature), whose username and
+    # password fields are both required form fields, but an empty
+    # string counts as present, so form validation PASSES: unlike
+    # the missing-username lock, this request reaches the handler
+    # body. There it constructs LoginRequestDto(email="",
+    # password="whatever123"), whose EmailStr field raises a
+    # pydantic ValidationError for the empty string, which the
+    # handler maps to HTTPException 422 with detail "Invalid
+    # email format.", exactly like the malformed-email lock. The
+    # AuthService.login call (which would do the find_by_email
+    # lookup) never executes, and no token is minted and no
+    # refresh cookie is set. It is distinct from the missing
+    # username (form-validation 422, detail list located at
+    # username, no cache headers) and from the malformed email
+    # (present-but-nonempty non-email value): an empty username
+    # is its own input class, and a future change that treated
+    # empty form values as missing (or that accepted empty
+    # strings as emails) would change this branch without
+    # touching either of those locks. Deliberately Cache-Control
+    # no-store and Pragma no-cache ARE asserted here, unlike the
+    # form-validation 422s: this 422 is raised as an
+    # HTTPException inside the handler, so the central
+    # StarletteHTTPException handler stamps the no-store headers
+    # on it, mirroring the malformed-email 422 lock. The security
+    # headers ARE locked: the pure-ASGI middleware stamps every
+    # HTTP response, including error responses, with no path
+    # exclusions.
+    response = await client.post(
+        "/account/login",
+        data={"username": "", "password": "whatever123"},
+    )
+    assert response.status_code == 422
+    assert "Invalid email format" in str(response.json()["detail"])
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the malformed-email 422 lock, using substring
+    # checks so later additions to the list do not break this
+    # test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
