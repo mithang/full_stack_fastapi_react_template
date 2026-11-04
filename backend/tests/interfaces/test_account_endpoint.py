@@ -33440,3 +33440,64 @@ async def test_account_logout_with_stale_cookie_returns_200_with_deletion_and_se
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+@pytest.mark.asyncio
+async def test_account_password_reset_request_invalid_email_returns_422_with_security_headers(client: AsyncClient):
+    """
+        The account password reset request POST with a malformed email value:
+    """
+    # The password-reset-request validation branch, not yet locked:
+    # the unknown-email generic 200 lock covers a valid email, and
+    # no invalid-email test exists for this route (function-name
+    # grep count 0, verified fresh this run). PasswordResetRequestDto
+    # .email is a required EmailStr field with no default
+    # (auth_dto.py), so a value with no "@" fails FastAPI request
+    # validation before the handler body runs: the blanket
+    # try/except/finally that returns the generic 200 is never
+    # reached, AuthService.initate_password_reset never runs, and
+    # no reset record is written, no token is minted, and no reset
+    # email is sent. The endpoint's dependencies cannot mask the
+    # 422 either: get_auth_service only resolves a container object
+    # and FrontendHost only reads request state (tenant_middleware
+    # .py), with no database lookup, and the same dependencies
+    # already resolve cleanly on the unknown-email path. Deliberately
+    # no Cache-Control/Pragma assertion: a 422 is FastAPI request
+    # validation, not an ApiBaseException, so the central handler's
+    # no-store headers do not apply to it, mirroring the register
+    # invalid-email 422 lock. The security headers ARE locked: the
+    # pure-ASGI middleware stamps every HTTP response, including
+    # validation errors, with no path exclusions.
+    response = await client.post(
+        "/account/password_reset_request",
+        json={"email": "not-an-email"},
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert any(
+        "email" in [str(part) for part in err.get("loc", [])]
+        for err in detail
+    )
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the register invalid-email 422 lock, using substring
+    # checks so later additions to the list do not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
