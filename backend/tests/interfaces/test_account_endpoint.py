@@ -36985,3 +36985,74 @@ async def test_account_password_reset_confirmation_missing_new_password_returns_
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+@pytest.mark.asyncio
+async def test_account_password_reset_confirmation_non_string_new_password_returns_422_with_security_headers(client: AsyncClient):
+    """
+        The account password reset confirmation POST with a non-string new_password value:
+    """
+    # The password-reset-confirmation non-string-new_password branch, not yet locked:
+    # function-name grep count 0 for
+    # password_reset_confirmation_non_string_new_password (verified fresh this
+    # run); the existing confirmation locks cover the no-record 406,
+    # the invalid/wrong-user/wrong-type/expired token 406s, the weak
+    # new password 406, the success 200, the missing-token and
+    # missing-user_id 422s, the missing-body 422, and the missing
+    # new_password 422, not a present-but-wrong-typed new_password.
+    # PasswordResetConfirmRequestDto.new_password is a required str
+    # with no default (auth_dto.py), so a JSON list value cannot be
+    # coerced to a str and fails FastAPI request validation before
+    # the handler body runs: change_password never runs, so no reset
+    # record is looked up, no password is updated, and no
+    # notification email is sent, making this lock deterministic even
+    # though the success path needs a seeded record and a live token.
+    # The endpoint has no permission gate and no CurrentUser
+    # dependency, and its dependency (get_auth_service) merely
+    # resolves a container object, so nothing can mask the 422. The
+    # two query params are both valid strings, so no other 422 can
+    # mask the new_password error. Deliberately no exact error-type
+    # assertion: like the register non-string password 422 lock, a
+    # string-type error type has no precedent in this file, so the
+    # lock asserts only the 422 status and a detail entry located at
+    # new_password. Deliberately no Cache-Control/Pragma assertion:
+    # a 422 is FastAPI request validation, not an ApiBaseException,
+    # so the central handler's no-store headers do not apply to it.
+    # The security headers ARE locked: the pure-ASGI middleware
+    # stamps every HTTP response, including validation errors, with
+    # no path exclusions.
+    response = await client.post(
+        "/account/password_reset_confirmation?token=<redacted>&user_id=68c302ef6bf7a039b7e9b385",
+        json={"new_password": ["NewPassword123!"]},
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert isinstance(detail, list) and detail
+    assert any(
+        "new_password" in [str(part) for part in err.get("loc", [])]
+        for err in detail
+    )
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the password-reset-confirmation missing-new_password
+    # 422 lock, using substring checks so later additions to the list
+    # do not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
