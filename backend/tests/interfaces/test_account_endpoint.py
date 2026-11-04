@@ -32288,3 +32288,90 @@ async def test_account_login_trailing_crlf_username_returns_422_with_cache_and_s
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+@pytest.mark.asyncio
+async def test_account_password_reset_confirmation_invalid_token_returns_406_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The account password reset confirmation POST for a user id
+        WITH a seeded reset record but a garbage token:
+    """
+    # The invalid-token branch, verified fresh this run, not assumed:
+    # function-name grep count 0 for
+    # test_account_password_reset_confirmation_invalid_token, and no
+    # password_reset_confirmation POST combines a seeded reset record
+    # with an unverifiable token (the existing no_reset_record lock
+    # posts a garbage token with NO record, and the success path
+    # needs a valid token plus a notification email). The handler
+    # takes only the AuthService dependency (account_endpoint.py
+    # password_reset_confirm), so no permission gate or CurrentUser
+    # lookup can interfere. The deterministic ordering is the key:
+    # change_password (auth_service.py) first calls
+    # retrieve_password_reset_data_by_user_id, which returns the
+    # seeded UserPasswordReset document for this user id, and only
+    # then calls verify_password_reset_token. A garbage token fails
+    # JWT decoding regardless of which secret it is verified
+    # against, so verify raises InvalidOperationException
+    # ("Invalid password reset token") BEFORE any password update,
+    # record deletion, or notification email -- so no live mail
+    # server is needed, unlike the success branch, and the seeded
+    # record is never consumed. The exact message pins this branch:
+    # it is distinct from the no-record branch ("Invalid or expired
+    # password reset token.") and from the wrong-user-token branch
+    # ("Invalid password reset token." with a trailing period),
+    # both of which are different raises in the same function. The
+    # seeded record uses the mocked host user's id, and its secret
+    # value is arbitrary: verification fails on the token's shape
+    # before any secret comparison. No X-Tenant-ID header is sent,
+    # so the seed and the service read use the host test DB, and
+    # the conftest fixture drops the test DB after the test, so
+    # the row cannot leak into other tests. The central
+    # ApiBaseException handler maps InvalidOperationException to
+    # 406 with body {"error": ..., "code": 406} and Cache-Control:
+    # no-store plus Pragma: no-cache (api/__init__.py), and the
+    # pure-ASGI security-headers middleware stamps every HTTP
+    # response with no path exclusions.
+    from datetime import datetime, timezone
+
+    from beanie import PydanticObjectId
+
+    from api.domain.entities.user_password_reset import UserPasswordReset
+
+    await UserPasswordReset(
+        user_id=PydanticObjectId("68c302ef6bf7a039b7e9b385"),
+        token_secret="seeded-test-reset-secret",
+        reset_secret_updated_at=datetime.now(timezone.utc),
+        first_name="Test",
+    ).insert()
+    response = await client.post(
+        "/account/password_reset_confirmation?token=not-a-jwt-token&user_id=68c302ef6bf7a039b7e9b385",
+        json={"new_password": "NewPassword123!"},
+    )
+    assert response.status_code == 406
+    assert response.json()["code"] == 406
+    assert response.json()["error"] == "Invalid password reset token"
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the no-reset-record lock, using substring checks
+    # so later additions to the list do not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
