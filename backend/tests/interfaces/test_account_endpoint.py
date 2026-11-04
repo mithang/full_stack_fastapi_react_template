@@ -33376,3 +33376,67 @@ async def test_account_activate_success_returns_200_with_security_headers(client
     assert activated.activated_at is not None
     assert activated.first_name == "Activate"
     assert activated.last_name == "Success"
+
+
+@pytest.mark.asyncio
+async def test_account_logout_with_stale_cookie_returns_200_with_deletion_and_security_headers(client: AsyncClient):
+    """
+        The account logout GET with a stale refresh cookie present:
+    """
+    # Function-name grep count 0 for
+    # test_account_logout_with_stale_cookie before appending, so
+    # this branch was fresh: the only existing logout lock sends
+    # no cookie at all. The handler deletes the refresh cookie
+    # unconditionally (before the optional-user check), so a stale
+    # cookie left over from an earlier session must be cleared
+    # even though no Authorization header is sent: the optional
+    # user resolves from the Authorization bearer token, not from
+    # the cookie, so with no bearer token current_user is None,
+    # the audit write is skipped, and the handler still runs its
+    # session-ending act. No DB row, minted token, or authenticated
+    # user is needed -- the stale value is deliberately not a
+    # JWT, so even a path that tried to use it could not succeed.
+    # The pure-ASGI security-headers middleware stamps every HTTP
+    # response with no path exclusions, so the 200 carries the
+    # same headers as the no-cookie logout lock.
+    response = await client.get(
+        "/account/logout",
+        cookies={"refresh_token": "stale-not-a-jwt"},
+    )
+    assert response.status_code == 200
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    # The deletion itself must be present and must not re-issue or
+    # echo the stale value: Starlette's delete_cookie renders a
+    # Set-Cookie with Max-Age=0 for the refresh_token key, which is
+    # what instructs the browser to drop the cookie. The empty
+    # value rendering is deliberately not locked here (quoting
+    # varies by Starlette version and pytest could not be executed
+    # in this run to pin it down); Max-Age=0 plus the absence of
+    # the stale value is the version-robust deletion signal.
+    set_cookie = response.headers.get("set-cookie", "")
+    assert "refresh_token" in set_cookie
+    assert "max-age=0" in set_cookie.lower()
+    assert "stale-not-a-jwt" not in set_cookie
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the logout lock, using substring checks so later
+    # additions to the list do not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
