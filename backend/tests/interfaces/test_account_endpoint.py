@@ -26517,3 +26517,107 @@ async def test_account_login_both_sides_carriage_return_username_returns_422_wit
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+@pytest.mark.asyncio
+async def test_account_login_trailing_carriage_return_password_returns_401_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The account login POST with a valid email but the correct
+        password with a trailing carriage return appended:
+    """
+    # The first carriage-return-password branch, verified fresh this run,
+    # not assumed: function-name grep count 0 for
+    # test_account_login_trailing_carriage_return_password, and no login
+    # POST uses a carriage-return-padded password value (the existing
+    # padded-password locks pad with spaces, tabs, or newlines only, and
+    # the carriage-return locks pad only the username, which is an
+    # EmailStr). The handler takes OAuth2PasswordRequestForm
+    # (account_endpoint.py login signature), whose username and password
+    # fields are both required form fields, and a password with a trailing
+    # carriage return counts as present, so form validation PASSES:
+    # unlike the missing-password lock (form-validation 422), this request
+    # reaches the handler body. There LoginRequestDto(email="<seeded>",
+    # password="<seeded>\r") constructs fine -- password is a plain str
+    # (login_dto.py), so the padded value raises no ValidationError -- and
+    # AuthService.login (auth_service.py) finds the seeded row and runs
+    # verify_password with the padded value against the stored hash.
+    # verify_password (security.py) is a plain pbkdf2_sha256.verify with
+    # no trimming, so the trailing carriage return makes verification
+    # return False, raising the same generic UnauthorizedException
+    # ("Authentication failed. Please check your credentials.") as the
+    # unknown-email, wrong-password, empty-password, whitespace-only, and
+    # space-, tab-, and newline-padded password paths, before
+    # _get_token_set runs -- so no role row is needed, no audit-log write
+    # happens, and no refresh cookie is set. Seeding mirrors the
+    # trailing-newline password 401 lock: directly through the User
+    # document (doc.insert()), not through POST /users, whose permission
+    # dependency 404s on the fresh test DB. The seeded password is hashed
+    # with the app's own hash_it, never stored in plaintext, and the
+    # conftest fixture drops the test DB after the test, so the row cannot
+    # leak into other tests. No X-Tenant-ID header is sent, so both the
+    # seed and the login read the host test DB. It is distinct from the
+    # space-, tab-, and newline-padded password locks: a carriage return
+    # is a different control character, so a future change that stripped
+    # only spaces, tabs, or line feeds before verification would turn
+    # those locks into 200s without touching this lock, and vice versa
+    # for a CR-only strip; and it is distinct from the whitespace-only
+    # password lock (a correct password corrupted only by one trailing
+    # carriage return, not a password of only whitespace) and from the
+    # carriage-return username locks (the username is an EmailStr, so CR
+    # there is rejected at validation with 422, while CR in the plain-str
+    # password reaches verification and fails with 401). The value below
+    # deliberately uses a single-backslash escape (verified by byte
+    # inspection after appending), so it locks a genuine carriage return,
+    # not the literal backslash-plus-r typo found in the earlier
+    # one-sided CR username tests. Deliberately Cache-Control no-store
+    # and Pragma no-cache ARE asserted here, unlike the form-validation
+    # 422s: this 401 is raised as an ApiBaseException inside the service,
+    # so the central handler stamps the no-store headers on it, mirroring
+    # the other padded-password 401 locks. The security headers ARE
+    # locked: the pure-ASGI middleware stamps every HTTP response,
+    # including error responses, with no path exclusions.
+    from api.common.enums.gender import Gender
+    from api.common.security import hash_it
+    from api.domain.entities.user import User
+
+    await User(
+        first_name="Trailing",
+        last_name="CRPassword",
+        email="trailingcrpass@example.com",
+        gender=Gender.OTHER,
+        is_active=True,
+        password=hash_it("TrailingCRPass123!"),
+    ).insert()
+    response = await client.post(
+        "/account/login",
+        data={"username": "trailingcrpass@example.com", "password": "TrailingCRPass123!\r"},
+    )
+    assert response.status_code == 401
+    assert response.json()["code"] == 401
+    assert "Authentication failed. Please check your credentials." in response.json()["error"]
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the other padded-password 401 locks, using
+    # substring checks so later additions to the list do not
+    # break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
