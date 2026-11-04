@@ -24036,3 +24036,96 @@ async def test_account_login_empty_username_returns_422_with_cache_and_security_
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+async def test_account_login_empty_password_returns_401_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The account login POST with a valid email but an empty password:
+    """
+    # The next login validation branch after the empty-username 422
+    # lock, verified fresh this run, not assumed: no test named
+    # test_account_login_empty_password exists (function-name grep
+    # count 0) and no login POST uses an empty password value (the
+    # only "password": "" in the file is a register test). The
+    # handler takes OAuth2PasswordRequestForm
+    # (account_endpoint.py login signature), whose username and
+    # password fields are both required form fields, but an empty
+    # string counts as present, so form validation PASSES: unlike
+    # the missing-password lock (form-validation 422, detail list
+    # located at password, no cache headers), this request reaches
+    # the handler body. There LoginRequestDto(email="<seeded>",
+    # password="") constructs fine — password is a plain str, so
+    # the empty string raises no ValidationError — and
+    # AuthService.login (auth_service.py lines 176-194) finds the
+    # seeded row and runs verify_password("", stored hash), which
+    # returns False, raising the same generic UnauthorizedException
+    # ("Authentication failed. Please check your credentials.") as
+    # the unknown-email and wrong-password paths. Seeding mirrors
+    # the wrong-password 401 lock: directly through the User
+    # document (doc.insert()), not through POST /users, whose
+    # permission dependency 404s on the fresh test DB; no role row
+    # is needed because login raises before _get_token_set runs, so
+    # no role lookup and no audit-log write ever happen. The seeded
+    # password is hashed with the app's own hash_it, never stored
+    # in plaintext, and the conftest fixture drops the test DB
+    # after the test, so the row cannot leak into other tests. No
+    # X-Tenant-ID header is sent, so both the seed and the login
+    # read the host test DB. It is distinct from the wrong-password
+    # lock (nonempty wrong password against the same found-user
+    # branch) and from the unknown-email lock (no row, dummy
+    # verify): an empty password is its own input class, and a
+    # future change that treated empty form values as missing (422)
+    # or that short-circuited empty passwords to a different error
+    # would change this branch without touching either lock.
+    # Deliberately Cache-Control no-store and Pragma no-cache ARE
+    # asserted here, unlike the form-validation 422s: this 401 is
+    # raised as an ApiBaseException inside the service, so the
+    # central handler stamps the no-store headers on it, mirroring
+    # the unknown-email and wrong-password 401 locks. The security
+    # headers ARE locked: the pure-ASGI middleware stamps every
+    # HTTP response, including error responses, with no path
+    # exclusions.
+    from api.common.enums.gender import Gender
+    from api.common.security import hash_it
+    from api.domain.entities.user import User
+
+    await User(
+        first_name="Empty",
+        last_name="Password",
+        email="emptypass@example.com",
+        gender=Gender.OTHER,
+        is_active=True,
+        password=hash_it("x" * 12),
+    ).insert()
+    response = await client.post(
+        "/account/login",
+        data={"username": "emptypass@example.com", "password": ""},
+    )
+    assert response.status_code == 401
+    assert response.json()["code"] == 401
+    assert "Authentication failed. Please check your credentials." in response.json()["error"]
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the empty-username 422 lock, using substring
+    # checks so later additions to the list do not break this
+    # test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
