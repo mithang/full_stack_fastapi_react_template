@@ -34238,3 +34238,101 @@ async def test_account_resend_activation_email_nonstring_id_returns_422_with_sec
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+async def test_account_resend_activation_email_nonstring_email_returns_422_with_security_headers(client: AsyncClient):
+    """
+        The account resend-activation-email POST with a non-string email:
+    """
+    # The resend-activation-email non-string-email branch, not yet
+    # locked: function-name grep count 0 for
+    # resend_activation_email_nonstring_email (verified fresh
+    # this run); the existing resend locks cover the missing-role
+    # 404, the already-active 406, the invalid-email 422, the
+    # unknown-email 404, and the missing-first_name, missing-id,
+    # missing-email, nonstring-first_name, and nonstring-id
+    # 422s, not a wrong-type email. UserResendActivationEmailRequestDto.email
+    # is a required EmailStr field with no validator
+    # (user_dto.py), so a JSON list value cannot be coerced to
+    # an email string under any Pydantic version and fails
+    # FastAPI request validation before the handler body runs,
+    # mirroring the resend non-string id 422 lock. The endpoint
+    # is permission-gated (USER_READ_AND_WRITE_ONLY and
+    # FULL_ACCESS, any_permission=False), and FastAPI solves
+    # sub-dependencies before validating the endpoint's own
+    # body, so the mocked caller's role must be seeded first --
+    # otherwise the permission gate's RoleNotFoundException 404
+    # would mask the 422, exactly as in the nonstring-id lock.
+    # The role is seeded with the mocked user's exact role_id
+    # (68c302ef6bf7a039b7e9b386, conftest.py) and both required
+    # permissions, mirroring that lock, so the gate passes; the
+    # FrontendHost dependency only reads request state with no
+    # DB lookup, and get_auth_service merely resolves a
+    # container object. Validation then fails on email before
+    # the handler body runs, so auth_service.send_activation_email
+    # never runs: no user lookup, no token minting, and no SMTP
+    # send -- no live mail server is needed, unlike the 202
+    # success branch, which stays deliberately NOT locked. The
+    # id and first_name fields are valid, so only the email
+    # type can fail.
+    # Deliberately no exact error-type assertion: like the resend
+    # non-string id lock, a string-type error type has no
+    # precedent in this file, so the lock asserts only the 422
+    # status and a detail entry located at email. Deliberately
+    # no Cache-Control/Pragma assertion: a 422 is FastAPI
+    # request validation, not an ApiBaseException, so the
+    # central handler's no-store headers do not apply to it,
+    # mirroring the nonstring-id 422 lock. The security headers
+    # ARE locked: the pure-ASGI middleware stamps every HTTP
+    # response, including validation errors, with no path
+    # exclusions.
+    from beanie import PydanticObjectId
+
+    from api.domain.entities.role import Role
+    from api.domain.enum.permission import Permission
+
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b386"),
+        name="Admin",
+        description="Administrator role for the mocked caller",
+        permissions=[Permission.USER_READ_AND_WRITE_ONLY, Permission.FULL_ACCESS],
+    ).insert()
+    response = await client.post(
+        "/account/resend_activation_email",
+        json={
+            "id": "68c302ef6bf7a039b7e9b386",
+            "email": ["newuser@example.com"],
+            "first_name": "Test",
+        },
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert isinstance(detail, list) and detail
+    assert any(
+        err.get("loc") == ["body", "email"]
+        for err in detail
+    )
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the resend nonstring-id 422 lock, using
+    # substring checks so later additions to the list do not
+    # break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
