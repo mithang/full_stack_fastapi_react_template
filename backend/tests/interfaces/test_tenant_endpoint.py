@@ -3840,3 +3840,182 @@ async def test_update_tenant_with_duplicate_custom_domain_returns_409_with_cache
     )
     assert stored_role is not None
     assert stored_role.permissions == [Permission.HOST_MANAGE_TENANTS]
+
+
+@pytest.mark.asyncio
+async def test_update_dns_with_duplicate_custom_domain_returns_409_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The update_dns duplicate-custom-domain error path:
+        the tenant test file locked the PUT /tenants/{id}
+        duplicate-custom-domain 409, but no test asserted a
+        409 on POST /tenants/{tenant_id}/update_dns for a
+        custom domain another tenant already holds -
+        function-name grep count 0 for
+        update_dns_with_duplicate_custom_domain, verified
+        fresh this run. Dropping the duplicate check would
+        previously have gone uncaught, and a second tenant
+        would then sit on a domain another tenant already
+        holds: update_dns writes custom_domain directly in
+        the endpoint instead of going through
+        TenantService.update_tenant, so the PUT guard never
+        ran on this path. That matters because the
+        middleware resolves the tenant for a request host
+        via find_by_custom_domain
+        (tenant_middleware.py:45), which is single_or_none
+        - first match wins - so two tenants on one domain
+        would route that domain's traffic to whichever row
+        sorts first, serving the wrong tenant's data. The
+        domain has no unique index to fall back on either:
+        Tenant.custom_domain is a plain field (tenant.py)
+        with only a plain "custom_domain" entry in
+        Settings.indexes, no Indexed unique annotation, so
+        the repository has no DuplicateKeyError catch to
+        fire. The endpoint now checks first, mirroring the
+        update_tenant service guard: the domain is looked
+        up with find_by_custom_domain and raises
+        ConflictException("Tenant", custom_domain) before
+        any write or DNS-job enqueue when a different
+        tenant holds it, which subclasses ApiBaseException
+        with the message "Tenant with identifier <domain>
+        already exists." (common/exceptions.py:26-38), and
+        the central handler maps it to 409 with {"error":
+        ..., "code": 409} plus the no-store/Pragma error
+        headers (api/__init__.py:89-90, 121-133).
+        Re-supplying the tenant's own domain is allowed
+        (same id), so the check cannot false-positive on
+        a re-submitted domain. The seeded role (id
+        68c302ef6bf7a039b7e9b386) must carry the route's
+        HOST_MANAGE_TENANTS permission, since the
+        permission dependency runs before the handler, and
+        the shared conftest mock is a host caller
+        (tenant_id None), so the host scope guard passes
+        too. The body is a valid UpdateTenantDto (only
+        custom_domain set, all fields optional), so no 422
+        can mask the 409, and "app.example.com" passes
+        the CustomDomain validator (tenant.py
+        validate_custom_domain: trimmed, urlparse
+        hostname lowercased, matches CUSTOM_DOMAIN_REGEX,
+        not the "fsrapp.com" main domain). The target
+        tenant has no custom_domain_status set, so neither
+        the activation-progress nor the active early
+        return can mask the 409. The seeded holder tenant
+        is inserted directly, so this test makes exactly
+        one API call and enqueues no Celery job: the 409
+        fires before any write or DNS job. A future change
+        that drops the endpoint check would break this lock
+        while leaving the PUT duplicate-custom-domain 409
+        lock and the update_dns 404 lock green, so the
+        paths are locked separately. Residual, not covered
+        by this lock: concurrent duplicate DNS updates can
+        still race past the check-then-write, and a true
+        database guarantee needs a unique index on
+        custom_domain, which needs a migration on existing
+        databases - assess separately.
+    """
+    from beanie import PydanticObjectId
+
+    from api.domain.entities.role import Role
+    from api.domain.entities.tenant import Tenant
+    from api.domain.enum.permission import Permission
+
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b386"),
+        name="Host tenant administrator",
+        description="Role carrying HOST_MANAGE_TENANTS for the mocked caller",
+        permissions=[Permission.HOST_MANAGE_TENANTS],
+    ).insert()
+
+    await Tenant(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b387"),
+        name="target",
+        subdomain="target.fsrapp.com",
+    ).insert()
+
+    await Tenant(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b388"),
+        name="holder",
+        subdomain="holder.fsrapp.com",
+        custom_domain="app.example.com",
+    ).insert()
+
+    response = await client.post(
+        "/tenants/68c302ef6bf7a039b7e9b387/update_dns",
+        json={"custom_domain": "app.example.com"},
+    )
+    assert response.status_code == 409
+    body = response.json()
+    assert body["code"] == 409
+    assert "Tenant with identifier app.example.com already exists." in body["error"]
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    # The 409 must still carry the error-response headers: the
+    # duplicate check raises before the handler creates any
+    # response object, so on this path the no-store/Pragma headers
+    # come from the central ApiBaseException handler, and a cached
+    # 409 could otherwise be served to a different admin after an
+    # account switch on a shared machine.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+
+    # Same security-headers lock as the other tenant tests in
+    # this file: the pure-ASGI middleware stamps every HTTP
+    # response with no path exclusions, so this authenticated
+    # tenant 409 must carry the same headers as the other
+    # interface locks.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Presence alone would not catch the value being weakened:
+    # lock the twelve most sensitive directives as disabled,
+    # mirroring the other interface locks, using substring
+    # checks so later additions to the list do not break this
+    # test. The full value lives in _SECURITY_HEADERS. Each
+    # directive is safe to lock here for the same reasons as on
+    # the other routes: the SPA has no camera, microphone,
+    # geolocation, payment, clipboard-read, display-capture,
+    # fullscreen, motion-sensor, compass, XR, or
+    # idle-detection flow (verified by grep in the earlier
+    # sweeps and re-verified fresh this run: zero
+    # case-insensitive idle matches and zero
+    # IdleDetector/requestIdleCallback matches across
+    # frontend/app/src).
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+    # Postconditions: the duplicate check fires before any
+    # write, so the request is side-effect free - still
+    # exactly one tenant on custom domain app.example.com
+    # (the seeded holder), the target tenant still has no
+    # custom domain and its status is untouched, and the
+    # seeded role is still there with HOST_MANAGE_TENANTS.
+    # Had the check been dropped, the handler would have
+    # moved the target tenant onto app.example.com and
+    # enqueued a DNS-update job for it, and the
+    # middleware's find_by_custom_domain would then resolve
+    # that domain to whichever of the two rows sorts first.
+    holders = await Tenant.find(Tenant.custom_domain == "app.example.com").to_list()
+    assert len(holders) == 1
+    assert holders[0].name == "holder"
+    target = await Tenant.find_one(
+        Tenant.id == PydanticObjectId("68c302ef6bf7a039b7e9b387")
+    )
+    assert target is not None
+    assert target.custom_domain is None
+    assert target.custom_domain_status == "failed"
+    stored_role = await Role.find_one(
+        Role.id == PydanticObjectId("68c302ef6bf7a039b7e9b386")
+    )
+    assert stored_role is not None
+    assert stored_role.permissions == [Permission.HOST_MANAGE_TENANTS]

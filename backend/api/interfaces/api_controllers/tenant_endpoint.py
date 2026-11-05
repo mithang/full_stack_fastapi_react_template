@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Query, Response, status
 
 from api.common.dtos.worker_dto import WorkerPayloadDto
 from api.common.security import hash_it
-from api.common.exceptions import ApiBaseException, ForbiddenException, InvalidOperationException
+from api.common.exceptions import ApiBaseException, ConflictException, ForbiddenException, InvalidOperationException
 from api.common.utils import get_host_main_domain_name, get_logger, get_utc_now
 from api.core.container import    get_billing_record_service, get_subscription_plan_service, get_tenant_service
 from api.core.exceptions import InvalidSubdomainException, TenantNotFoundException
@@ -406,6 +406,27 @@ async def update_tenant_dns_record(
     # above), so reject it cleanly before any write or job enqueue.
     if not data.custom_domain:
         raise InvalidOperationException("Custom domain is required.")
+
+    # Duplicate-custom-domain guard, mirroring the update_tenant
+    # service guard (iteration 907): Tenant.custom_domain has no
+    # unique index, and this endpoint writes it directly instead of
+    # going through TenantService.update_tenant, so without this
+    # check a DNS update could move a second tenant onto a domain
+    # another tenant already holds. The middleware resolves a
+    # request host via find_by_custom_domain (single_or_none, first
+    # match wins), so two tenants on one domain would route that
+    # domain's traffic to whichever row sorts first - the wrong
+    # tenant's data. The check runs before any write or DNS-job
+    # enqueue; re-supplying the tenant's own domain is allowed
+    # (same id), and the CustomDomain validator already normalizes
+    # to the lowercased hostname, so stored and incoming values
+    # compare exactly.
+    try:
+        existing = await tenant_service.find_by_custom_domain(data.custom_domain)
+    except TenantNotFoundException:
+        existing = None
+    if existing is not None and str(existing.id) != str(tenant.id):
+        raise ConflictException("Tenant", data.custom_domain)
 
     payload=WorkerPayloadDto[dict[str, str]](
         label="update-tenant-dns",
