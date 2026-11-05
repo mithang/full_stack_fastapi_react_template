@@ -1782,3 +1782,155 @@ async def test_update_role_outside_tenant_scope_returns_403_with_cache_and_secur
     assert stored is not None
     assert stored.name == "Tenant role writer"
     assert stored.permissions == [Permission.ROLE_READ_AND_WRITE_ONLY]
+
+
+@pytest.mark.asyncio
+async def test_delete_role_outside_tenant_scope_returns_403_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The role delete scope-guard error path:
+    """
+    # The role delete scope-guard branch, not yet locked:
+    # function-name grep count 0 for delete_role_outside_tenant_scope
+    # (verified fresh this run), and no test in this file asserts a
+    # 403 on DELETE /roles/{role_id} at all - the list, single-role
+    # read, create and update 403 locks cover only _assert_list_scope,
+    # _assert_get_scope, _assert_create_scope and _assert_update_scope,
+    # while the delete guard has its own message and handler.
+    # Deleting _assert_delete_scope (role_endpoint.py) would
+    # previously have gone uncaught, and a tenant caller deleting
+    # on the host DB (no X-Tenant-ID/subdomain) could then delete a
+    # tenant-stamped role sitting in the host DB (e.g. planted
+    # before the create guard), removing a role that host callers
+    # resolve by id with no tenant scope.
+    # The guard runs in the handler body, after the
+    # ROLE_DELETE_ONLY permission dependency, so the gate must be
+    # satisfied first: the shared conftest mock points at
+    # role id 68c302ef6bf7a039b7e9b386 with no row in the fresh
+    # test database, which is why the missing-role 404 lock fails
+    # there. Seeding that exact id carrying ROLE_DELETE_ONLY,
+    # mirroring the list/get/create/update 403 seed precedent,
+    # lets the dependency pass: UserAccessManagement.get_role_detail
+    # calls get_role_by_id(role_id) with no tenant filter
+    # (user_access_management.py:36-39), and _caller_may_access
+    # returns True for a host-stamped row when the caller tenant
+    # is None (role_service.py:18-19), so the seeded row is
+    # visible regardless of the caller's tenant scope. The caller
+    # is then made tenant-scoped by swapping in a per-test
+    # MeResponseDto override (tenant_id set), mirroring the list
+    # 403 lock's override pattern, and restored in finally so no
+    # other test's mock is affected. With no X-Tenant-ID header
+    # the tenant middleware resolves host scope, so
+    # request_tenant_id is None and the guard raises
+    # ForbiddenException before any delete runs - no side effect.
+    # The central ApiBaseException handler maps
+    # ForbiddenException to 403 (api/__init__.py:98-103) with
+    # {"error": ..., "code": 403} and the no-store/Pragma error
+    # headers, since the handler sets them only after the guard.
+    # A future change that drops the guard would break this lock
+    # while leaving the list, single-role read, create and update
+    # 403 locks green, so the five paths are locked separately.
+    # This is the last of the five role scope guards.
+    from beanie import PydanticObjectId
+
+    from api import app
+    from api.common.enums.gender import Gender
+    from api.domain.dtos.auth_dto import MeResponseDto
+    from api.domain.entities.role import Role
+    from api.infrastructure.security.current_user import get_current_user
+
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b386"),
+        name="Tenant role deleter",
+        description="Role carrying ROLE_DELETE_ONLY for the mocked caller",
+        permissions=[Permission.ROLE_DELETE_ONLY],
+    ).insert()
+
+    async def override_get_current_user_tenant_scoped():
+        return MeResponseDto(
+            first_name="Admin",
+            last_name="User",
+            id="68c302ef6bf7a039b7e9b385",
+            email="admin@example.com",
+            gender=Gender.OTHER,
+            is_active=True,
+            role_id="68c302ef6bf7a039b7e9b386",
+            tenant_id="68c302ef6bf7a039b7e9b387",
+            created_at="2024-10-01T00:00:00Z",
+            updated_at="2024-10-01T00:00:00Z",
+            role=RoleDto(
+                id="68c302ef6bf7a039b7e9b386",
+                name="Tenant role deleter",
+                description="Role carrying ROLE_DELETE_ONLY for the mocked caller",
+                created_at="2024-10-01T00:00:00Z",
+                updated_at="2024-10-01T00:00:00Z",
+                permissions=[Permission.ROLE_DELETE_ONLY],
+            ),
+            subscription=None,
+        )
+
+    original_override = app.dependency_overrides.get(get_current_user)
+    app.dependency_overrides[get_current_user] = override_get_current_user_tenant_scoped
+    try:
+        response = await client.delete(
+            "/roles/68c302ef6bf7a039b7e9b386",
+        )
+    finally:
+        if original_override is None:
+            app.dependency_overrides.pop(get_current_user, None)
+        else:
+            app.dependency_overrides[get_current_user] = original_override
+    assert response.status_code == 403
+    body = response.json()
+    assert body["code"] == 403
+    assert "outside your tenant's scope" in body["error"]
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    # The 403 must still carry the error-response headers: the
+    # handler sets no-store only after the guard, so on this path
+    # they come from the central ApiBaseException handler, and a
+    # cached 403 could otherwise be served to a different user
+    # after an account switch on a shared machine.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+
+    # Same security-headers lock as the role list 200 and 404
+    # tests: the pure-ASGI middleware stamps every HTTP response
+    # with no path exclusions, so the role delete 403 must carry
+    # the same headers as the authenticated GETs, including the
+    # exception-handler responses.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Presence alone would not catch the value being weakened: lock
+    # the twelve most sensitive directives as disabled, mirroring
+    # the role list locks, using substring checks so later
+    # additions to the list do not break this test. Each directive
+    # is safe to lock here for the same reasons as on the other
+    # role routes: the SPA has no camera, microphone, geolocation,
+    # payment, clipboard-read, display-capture, fullscreen,
+    # motion-sensor, compass, XR, or idle-detection flow
+    # (verified by grep in the earlier sweeps).
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+    # Postcondition: the guard fires before any delete, so the
+    # request is side-effect free - the seeded role still exists
+    # with its original name and permission.
+    stored = await Role.find_one(
+        Role.id == PydanticObjectId("68c302ef6bf7a039b7e9b386")
+    )
+    assert stored is not None
+    assert stored.name == "Tenant role deleter"
+    assert stored.permissions == [Permission.ROLE_DELETE_ONLY]
