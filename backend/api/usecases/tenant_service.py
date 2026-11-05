@@ -162,8 +162,26 @@ class TenantService:
 
 
     async def update_tenant(self, tenant_id: str, data: UpdateTenantDto) -> None:
-        """Update tenant details. Raises TenantNotFoundException if tenant not found."""
+        """Update tenant details. Raises TenantNotFoundException if tenant not found. Raises ConflictException if the supplied custom_domain is already held by another tenant."""
         tenant = await self.get_tenant_by_id(tenant_id)
+        # Duplicate-custom-domain guard, mirroring the create_tenant
+        # name/subdomain guards: Tenant.custom_domain has no unique
+        # index (plain "custom_domain" in Settings.indexes, no Indexed
+        # unique annotation), so without this check a PUT could move
+        # a second tenant onto a domain another tenant already holds.
+        # The middleware resolves the tenant for a request host via
+        # find_by_custom_domain (single_or_none, first match wins),
+        # so two tenants on one domain would route that domain's
+        # traffic to whichever row sorts first - the wrong tenant's
+        # data. The CustomDomain validator already normalizes to the
+        # lowercased hostname, so stored and incoming values compare
+        # exactly. A None domain means "leave unchanged" (the update
+        # dumps exclude_none=True) and is not checked; re-supplying
+        # the tenant's own domain is allowed (same id).
+        if data.custom_domain is not None:
+            existing = await self.tenant_repository.single_or_none(custom_domain=data.custom_domain)
+            if existing is not None and str(existing.id) != str(tenant.id):
+                raise ConflictException("Tenant", data.custom_domain)
         tenant.is_active = data.is_active
         tenant.custom_domain = data.custom_domain
         tenant.subscription_id = data.subscription_id
