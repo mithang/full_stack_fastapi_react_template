@@ -1141,6 +1141,104 @@ async def test_patch_user_remove_role_with_missing_role_returns_404_with_cache_a
     assert "idle-detection=()" in permissions_policy
 
 
+@pytest.mark.asyncio
+async def test_patch_user_remove_role_clears_role_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The PATCH /users/{user_id}/remove_role success path:
+        remove_user_role verified the user held the role and then
+        called UserService.update_user with UpdateUserDto(role_id=None),
+        but update_user only acted `if user_data.role_id:`, so the
+        explicit None was swallowed and the endpoint returned 202
+        with the role still assigned - a silent no-op on a privilege
+        revocation (function-name grep count 0 for
+        patch_user_remove_role_clears_role, verified fresh this run),
+        the same accepted-field-silently-ignored class as the
+        is_active PUT lock and the changed-email 400 lock. The
+        service now gates on model_fields_set, so an explicitly
+        supplied role_id - including null - is a deliberate change,
+        while an omitted role_id (the profile-picture caller) still
+        leaves the role untouched. The lock assigns a role first and
+        then removes it, which also pins the other branch of the new
+        guard (a truthy role_id is assigned). The mocked host
+        caller's role (...386, from conftest) carries no row in the
+        fresh test database, so it is seeded here with
+        USER_ROLE_ASSIGN_OR_REMOVE_ONLY, mirroring the role-list
+        403 lock's seed; the member role (...387) is seeded too.
+        Both PATCHes make no Celery or email call, so the lock needs
+        no broker or SMTP care. A future change that drops the
+        explicit-None branch would break this lock while leaving the
+        remove_role 404 and 403 locks and the assign_role success
+        path green, so the paths are locked separately.
+    """
+    from beanie import PydanticObjectId
+
+    from api.domain.entities.role import Role
+    from api.domain.enum.permission import Permission
+
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b386"),
+        name="Role assigner",
+        description="Role carrying USER_ROLE_ASSIGN_OR_REMOVE_ONLY for the mocked caller",
+        permissions=[Permission.USER_ROLE_ASSIGN_OR_REMOVE_ONLY],
+    ).insert()
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b387"),
+        name="Member role",
+        description="Role assigned to the target user before removal",
+        permissions=[Permission.USER_VIEW_ONLY],
+    ).insert()
+
+    new_user_response = await create_user(client)
+
+    # Assign first: the lock must start from a user that actually
+    # holds a role, and the assign success pins the truthy branch
+    # of the new guard.
+    response = await client.patch(f"/users/{new_user_response.id}/assign_role", json={"role_id": "68c302ef6bf7a039b7e9b387"})
+    assert response.status_code == 202
+    assert UserDto.model_validate(response.json()).role_id == "68c302ef6bf7a039b7e9b387"
+
+    # Remove it: the old code returned 202 and stored nothing, so the
+    # admin believed the role was revoked while the user kept it.
+    response = await client.patch(f"/users/{new_user_response.id}/remove_role", json={"role_id": "68c302ef6bf7a039b7e9b387"})
+    assert response.status_code == 202
+    # Same security-headers lock as the other user-route tests: the
+    # middleware stamps every HTTP response, so it stamps this PATCH
+    # response too, but until now only its status and body were
+    # asserted on this path - deleting the middleware registration
+    # would have gone uncaught here.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Presence alone would not catch the value being weakened: lock
+    # the twelve most sensitive directives as disabled, mirroring
+    # the single-user GET lock in this file, using substring checks
+    # so later additions to the list do not break this test. The full
+    # value lives in _SECURITY_HEADERS.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+    assert UserDto.model_validate(response.json()).role_id is None
+
+    # Postcondition: a follow-up GET shows the role gone - had the
+    # clear been dropped, the GET would still show the member role.
+    response = await client.get(f"/users/{new_user_response.id}")
+    assert response.status_code == 200
+    assert UserDto.model_validate(response.json()).role_id is None
+
+
 async def test_get_user_profile_image_with_missing_role_returns_404_with_cache_and_security_headers(client: AsyncClient):
     """
         The user profile-image GET (the last user path with no test

@@ -204,22 +204,42 @@ class UserService:
             # unchanged", so the internal role-only / image-only
             # callers (which pass neither) are unaffected.
             existing.is_active = user_data.is_active
-        if user_data.role_id:
-            try:
-                existing.role_id = PydanticObjectId(user_data.role_id)
-            except Exception:
-                # role_id arrives as a plain str (UpdateUserDto /
-                # UserRoleUpdateRequestDto do not validate it as an
-                # ObjectId), so a malformed value from an assign-role
-                # request raised InvalidId inside PydanticObjectId()
-                # and escaped as a 500 instead of the clean 404 the
-                # role lookup itself returns for an unknown id. A
-                # malformed id cannot match any role, so report it
-                # the same way; the catch is broad on purpose, as in
-                # BaseRepository.get: bson raises InvalidId while
-                # pydantic-validated paths raise ValidationError.
-                # A None role_id still keeps the existing role.
-                raise RoleNotFoundException(role_id=user_data.role_id)
+        # Gate on model_fields_set, not truthiness: the remove_role
+        # PATCH passes role_id=None explicitly to clear the role, and
+        # the old `if user_data.role_id:` guard swallowed that None,
+        # so PATCH /users/{id}/remove_role returned 202 with the role
+        # still assigned - a silent no-op on a privilege revocation
+        # (same class as the is_active / changed-email no-ops fixed
+        # in the previous runs). An explicitly supplied role_id -
+        # including null - is now a deliberate change: a value is
+        # assigned, null clears the field. An omitted role_id (the
+        # profile-picture / image-only callers, which build
+        # UpdateUserDto without it) still leaves the role untouched,
+        # and a PUT body that omits role_id behaves as before; only
+        # a PUT body that explicitly sends role_id: null now clears
+        # it, matching the partial-update convention (exclude_unset)
+        # the role repository already uses.
+        if "role_id" in user_data.model_fields_set:
+            if user_data.role_id:
+                try:
+                    existing.role_id = PydanticObjectId(user_data.role_id)
+                except Exception:
+                    # role_id arrives as a plain str (UpdateUserDto /
+                    # UserRoleUpdateRequestDto do not validate it as an
+                    # ObjectId), so a malformed value from an assign-role
+                    # request raised InvalidId inside PydanticObjectId()
+                    # and escaped as a 500 instead of the clean 404 the
+                    # role lookup itself returns for an unknown id. A
+                    # malformed id cannot match any role, so report it
+                    # the same way; the catch is broad on purpose, as in
+                    # BaseRepository.get: bson raises InvalidId while
+                    # pydantic-validated paths raise ValidationError.
+                    # An explicitly supplied None clears the role (see
+                    # above); an omitted role_id never reaches this
+                    # branch.
+                    raise RoleNotFoundException(role_id=user_data.role_id)
+            else:
+                existing.role_id = None
         doc = await existing.to_serializable_dict()
         doc["image_url"] = user_data.image_url or existing.image_url
         # to_serializable_dict() is a full model_dump(), so doc carries the
