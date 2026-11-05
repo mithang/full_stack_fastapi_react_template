@@ -1621,3 +1621,162 @@ async def test_create_user_outside_tenant_scope_returns_403_with_cache_and_secur
     assert stored.permissions == [Permission.USER_READ_AND_WRITE_ONLY]
     planted = await User.find_one(User.email == "test@example.com")
     assert planted is None
+
+
+async def test_get_user_outside_tenant_scope_returns_403_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The user get scope-guard error path:
+    """
+    # The user get scope-guard branch, not yet locked:
+    # function-name grep count 0 for get_user_outside_tenant_scope
+    # (verified fresh this run), and no test in this file asserts a
+    # 403 on GET /users/{user_id} - the get locks cover only the
+    # host success path, while the role get scope guard has its own
+    # 403 lock in test_role_endpoint.py and the users list/create
+    # scope guards have theirs in this file. Deleting
+    # _assert_get_scope (user_endpoint.py) would previously have
+    # gone uncaught, and a tenant caller reading on the host DB (no
+    # X-Tenant-ID/subdomain) could then read a tenant-stamped user
+    # sitting in the host DB (e.g. planted before the create guard),
+    # including another tenant's user whose id they know. The guard
+    # runs in the handler body, after the USER_VIEW_ONLY permission
+    # dependency, so the gate must be satisfied first: the shared
+    # conftest mock points at role id 68c302ef6bf7a039b7e9b386 with
+    # no row in the fresh test database. Seeding that exact id
+    # carrying USER_VIEW_ONLY, mirroring the users list/create 403
+    # seed precedent, lets the dependency pass: the GET route's
+    # required list is [USER_SELF_READ_AND_WRITE_ONLY,
+    # USER_VIEW_ONLY] with allow_self_access=True, and the general
+    # check strips USER_SELF_READ_AND_WRITE_ONLY (it is honoured
+    # only by the self-access branch), so USER_VIEW_ONLY is the
+    # sole general permission; get_role_by_id is called with no
+    # tenant filter (user_access_management.py), and
+    # _caller_may_access returns True when the caller tenant is
+    # None (role_service.py:18-19), so the seeded row is visible
+    # regardless of the caller's tenant scope. The target id is a
+    # plausible ObjectId distinct from the caller's own id, so the
+    # self-access branch cannot pass and the permission gate is
+    # satisfied only by USER_VIEW_ONLY. The caller is then made
+    # tenant-scoped by swapping in a per-test MeResponseDto
+    # override (tenant_id set), mirroring the users list/create 403
+    # locks' override pattern, and restored in finally so no other
+    # test's mock is affected. With no X-Tenant-ID header the
+    # tenant middleware resolves host scope, so request_tenant_id
+    # is None and the guard raises ForbiddenException before any
+    # read runs - get_user_by_id never happens, so no target user
+    # needs seeding and no existence signal leaks via the 404.
+    # The central ApiBaseException handler maps ForbiddenException
+    # to 403 (api/__init__.py) with {"error": ..., "code": 403}
+    # and the no-store/Pragma error headers, since the handler sets
+    # them only after the guard. A future change that drops the
+    # guard would break this lock while leaving the get 200 lock
+    # green, so the two paths are locked separately.
+    from beanie import PydanticObjectId
+
+    from api import app
+    from api.common.enums.gender import Gender
+    from api.domain.dtos.auth_dto import MeResponseDto
+    from api.domain.dtos.role_dto import RoleDto
+    from api.domain.entities.role import Role
+    from api.domain.entities.user import User
+    from api.domain.enum.permission import Permission
+    from api.infrastructure.security.current_user import get_current_user
+
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b386"),
+        name="Tenant user reader",
+        description="Role carrying USER_VIEW_ONLY for the mocked caller",
+        permissions=[Permission.USER_VIEW_ONLY],
+    ).insert()
+
+    async def override_get_current_user_tenant_scoped():
+        return MeResponseDto(
+            first_name="Admin",
+            last_name="User",
+            id="68c302ef6bf7a039b7e9b385",
+            email="admin@example.com",
+            gender=Gender.OTHER,
+            is_active=True,
+            role_id="68c302ef6bf7a039b7e9b386",
+            tenant_id="68c302ef6bf7a039b7e9b387",
+            created_at="2024-10-01T00:00:00Z",
+            updated_at="2024-10-01T00:00:00Z",
+            role=RoleDto(
+                id="68c302ef6bf7a039b7e9b386",
+                name="Tenant user reader",
+                description="Role carrying USER_VIEW_ONLY for the mocked caller",
+                created_at="2024-10-01T00:00:00Z",
+                updated_at="2024-10-01T00:00:00Z",
+                permissions=[Permission.USER_VIEW_ONLY],
+            ),
+            subscription=None,
+        )
+
+    original_override = app.dependency_overrides.get(get_current_user)
+    app.dependency_overrides[get_current_user] = override_get_current_user_tenant_scoped
+    try:
+        response = await client.get("/users/68c302ef6bf7a039b7e9b388")
+    finally:
+        if original_override is None:
+            app.dependency_overrides.pop(get_current_user, None)
+        else:
+            app.dependency_overrides[get_current_user] = original_override
+    assert response.status_code == 403
+    body = response.json()
+    assert body["code"] == 403
+    assert "outside your tenant's scope" in body["error"]
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    # The 403 must still carry the error-response headers: the
+    # handler sets no-store only after the guard, so on this path
+    # they come from the central ApiBaseException handler, and a
+    # cached 403 could otherwise be served to a different user
+    # after an account switch on a shared machine.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+
+    # Same security-headers lock as the users list 403 test: the
+    # pure-ASGI middleware stamps every HTTP response with no path
+    # exclusions, so the users-get 403 must carry the same headers
+    # as the authenticated GETs, including the exception-handler
+    # responses.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Presence alone would not catch the value being weakened: lock
+    # the twelve most sensitive directives as disabled, mirroring
+    # the users list locks, using substring checks so later
+    # additions to the list do not break this test. Each directive
+    # is safe to lock here for the same reasons as on the other
+    # user routes: the SPA has no camera, microphone, geolocation,
+    # payment, clipboard-read, display-capture, fullscreen,
+    # motion-sensor, compass, XR, or idle-detection flow
+    # (verified by grep in the earlier sweeps).
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+    # Postconditions: the guard fires before get_user_by_id, so
+    # the read is side-effect free - the seeded role is still
+    # there with its permission, and no user row exists for the
+    # target id the guard refused to read.
+    stored = await Role.find_one(
+        Role.id == PydanticObjectId("68c302ef6bf7a039b7e9b386")
+    )
+    assert stored is not None
+    assert stored.permissions == [Permission.USER_VIEW_ONLY]
+    target = await User.find_one(
+        User.id == PydanticObjectId("68c302ef6bf7a039b7e9b388")
+    )
+    assert target is None
