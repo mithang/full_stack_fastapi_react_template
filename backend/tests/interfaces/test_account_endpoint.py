@@ -57265,3 +57265,84 @@ async def test_account_passkey_register_null_credential_returns_422_with_securit
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+@pytest.mark.asyncio
+async def test_account_passkey_register_empty_credential_returns_406_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The passkey register POST with an empty-dict credential:
+    """
+    # The passkey register empty-dict-credential branch, not
+    # yet locked: function-name grep count 0 for
+    # test_account_passkey_register_empty_credential (verified
+    # fresh this run; the only other passkey_register_empty*
+    # name is the empty-string-email 422 lock); the
+    # existing passkey register locks cover only the
+    # no-challenge 406 (with a populated credential dict),
+    # the missing-credential 422, the non-dict (string)
+    # credential 422, the null-credential 422 and the
+    # whitespace-only-email 422, and the login
+    # empty-credential case does not cover this endpoint.
+    # An empty dict passes Body validation (credential:
+    # dict = Body(...), account_endpoint.py:371-372), so
+    # no 422 can mask the outcome, and complete_registration
+    # (passkey_service.py:122-131) looks up the expected
+    # challenge FIRST, before touching any credential key,
+    # so against a fresh test DB with no registration
+    # challenge for the email it raises PassKeyException("No
+    # expected challenge found or challenge expired.") and
+    # no KeyError from the empty dict can arise, no
+    # webauthn verification runs, and no credential is
+    # stored. The endpoint's blanket except re-raises as
+    # PassKeyException("Passkey registration failed."),
+    # which the central ApiBaseException handler maps to
+    # 406 with body {"error": ..., "code": 406} and
+    # Cache-Control: no-store plus Pragma: no-cache
+    # (api/__init__.py) - the identical outcome class as
+    # the existing without-challenge lock, pinned here
+    # separately because a future change that validates
+    # credential keys before the challenge lookup (or a
+    # webauthn library upgrade that reads the dict
+    # eagerly) would break this lock while leaving the
+    # populated-credential lock green. The error assertion
+    # uses a substring check because PassKeyException
+    # prefixes its message with "PassKey Error: ". This
+    # endpoint has no permission gate and no CurrentUser
+    # dependency, and get_passkey_service merely resolves
+    # a container object, so nothing can mask the 406.
+    response = await client.post(
+        "/account/passkey/register",
+        json={"email": "unknown@example.com", "credential": {}},
+    )
+    assert response.status_code == 406
+    assert response.json()["code"] == 406
+    assert "Passkey registration failed." in response.json()["error"]
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    # Same security-headers lock as the passkey register
+    # without-challenge test: the pure-ASGI middleware
+    # stamps every HTTP response with no path exclusions,
+    # so the 406 must carry the same headers.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the passkey register without-challenge 406
+    # lock, using substring checks so later additions to
+    # the list do not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
