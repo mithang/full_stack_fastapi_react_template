@@ -53717,6 +53717,82 @@ async def test_account_change_email_confirmation_whitespace_only_token_returns_4
     assert "idle-detection=()" in permissions_policy
 
 
+async def test_account_change_email_confirmation_empty_token_returns_400_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The account change-email-confirmation PATCH with an
+        empty-string token:
+    """
+    # The empty-string-token branch was deliberately NOT
+    # locked by the whitespace-only-token lock (a
+    # whitespace-only token, which the DTO strips to the
+    # empty string before verification), the invalid-token
+    # lock (a non-JWT string with a non-space core, which
+    # fails jwt.decode before any trim could matter), the
+    # padded-token locks (live tokens, which verify after
+    # the strip), the expired, wrong-type, missing-type,
+    # and wrong-shape locks (all minted JWTs with a
+    # non-space core), the other-user and malformed-user_id
+    # locks (unpadded tokens, same reason), or the success
+    # lock (an unpadded live token, which verifies verbatim
+    # and never exercises the trim), and is locked here,
+    # verified fresh this run, not assumed:
+    # function-name grep count 0 for
+    # test_account_change_email_confirmation_empty_token
+    # before appending. The token is a plain str with no
+    # min_length, so the empty string passes request
+    # validation; the DTO strip is a no-op on it, and it
+    # reaches verification, where jwt.decode("") raises
+    # InvalidTokenError, which verify_change_email_token
+    # converts to InvalidOperationException("Invalid change
+    # email token") before any user lookup, email-existence
+    # check, email update, or notification email, and the
+    # endpoint converts that to HTTPException 400 with the
+    # generic detail "Email change confirmation failed.", so
+    # the failure reveals nothing about the token or any
+    # account. No row is seeded and no email is sent on this
+    # path. The Starlette HTTPException handler returns body
+    # {"detail": ...} with Cache-Control: no-store plus
+    # Pragma: no-cache (api/__init__.py), and the pure-ASGI
+    # security-headers middleware stamps every HTTP response
+    # with no path exclusions. A future change that rejected
+    # empty tokens at DTO validation with 422 would break
+    # this lock while leaving the whitespace-only-token lock
+    # green (a whitespace-only token has length > 0 before
+    # the strip), so the two inputs are locked separately.
+    response = await client.patch(
+        "/account/change_email_confirmation",
+        json={"token": ""},
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Email change confirmation failed."
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the whitespace-only-token lock, using substring
+    # checks so later additions to the list do not break
+    # this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+
+
 async def test_account_change_email_confirmation_nonstring_token_returns_422_with_security_headers(client: AsyncClient):
     """
         The account change-email-confirmation PATCH with a
