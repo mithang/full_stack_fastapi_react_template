@@ -55514,3 +55514,79 @@ async def test_account_email_magic_link_login_empty_string_email_returns_422_wit
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+@pytest.mark.asyncio
+async def test_account_passkey_has_passkeys_empty_string_email_returns_422_with_security_headers(client: AsyncClient):
+    """
+        The passkey has_passkeys POST with an empty-string email value:
+    """
+    # The has_passkeys empty-string-email branch, not yet locked:
+    # function-name grep count 0 for
+    # passkey_has_passkeys_empty_string_email (verified fresh
+    # this run); the existing has_passkeys locks cover the
+    # malformed-string email 422, the non-string email 422,
+    # the missing-body 422 and the null-email 422, not an
+    # empty-string body, and the magic-link login
+    # empty-string-email lock does not cover this endpoint.
+    # The endpoint takes a bare EmailStr body param
+    # (account_endpoint.py: email: EmailStr = Body(...)), so
+    # an empty string has no @-sign and cannot be a valid
+    # email under any Pydantic/email-validator version, and
+    # stripping changes nothing ("" stripped is still ""), so
+    # it fails FastAPI request validation before the handler
+    # body runs. This endpoint has no permission gate and no
+    # CurrentUser dependency, and its only dependency,
+    # get_passkey_service, merely resolves a container
+    # object, so nothing can mask the 422. Validation fails
+    # before passkey_service.has_passkeys runs, so no
+    # UserPasskey lookup runs, making this lock deterministic
+    # even though the 200 path was previously deferred as
+    # non-deterministic without model initialization -- no
+    # user or passkey record is consulted here. The loc
+    # assertion pins ["body"]: a bare body param reports
+    # that loc, not ["body", "email"], mirroring the
+    # non-string-email and null-email 422 locks. Deliberately
+    # no exact error-type assertion (no empty-string error-type
+    # precedent in this file for this endpoint) and no
+    # Cache-Control/Pragma assertion: a 422 is FastAPI request
+    # validation, not an ApiBaseException, so the central
+    # handler's no-store headers do not apply to it. The
+    # security headers ARE locked: the pure-ASGI middleware
+    # stamps every HTTP response, including validation
+    # errors, with no path exclusions.
+    response = await client.post(
+        "/account/passkey/has_passkeys",
+        json="",
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert isinstance(detail, list) and detail
+    assert any(
+        err.get("loc") == ["body"]
+        for err in detail
+    )
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the has_passkeys non-string-email 422 lock,
+    # using substring checks so later additions to the list do
+    # not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
