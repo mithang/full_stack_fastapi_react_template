@@ -52278,3 +52278,103 @@ async def test_account_activate_malformed_token_missing_type_returns_406_with_ca
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+@pytest.mark.asyncio
+async def test_account_activate_padded_token_returns_200_with_security_headers(client: AsyncClient):
+    """
+        The account activation POST with a correctly signed,
+        unexpired activation token carrying surrounding
+        whitespace, as pasted from an email.
+    """
+    # The activate padded-token success branch, verified fresh
+    # this run, not assumed: function-name grep count 0 for
+    # test_account_activate_padded_token, ObjectId grep count 0
+    # for 68c302ef6bf7a039b7e9b3c and email grep count 0 for
+    # activate-padded@example.com before appending. None of
+    # the existing activate locks exercises a padded token:
+    # the success lock posts the token verbatim, and the
+    # error locks post garbage, expired, wrong-type, or
+    # malformed-payload tokens. UserActivationRequestDto
+    # .normalize_token (user_dto.py) strips the token before
+    # the handler passes it to verify_activation_token, so
+    # the padded token must still activate: without the
+    # strip, JWT verification of the space-padded value
+    # would raise InvalidTokenError and the central handler
+    # would map it to 406 instead of 200. The seed and
+    # token payload otherwise mirror the success lock
+    # exactly (inactive user, matching email, type
+    # "activation", 1-hour expiry), so a 200 here locks
+    # only the strip behaviour, not the success path in
+    # general. No Cache-Control is asserted because the
+    # success path sets none (mirroring the success lock);
+    # the security headers ARE locked via the pure-ASGI
+    # middleware, which stamps every HTTP response. No
+    # email is sent and no Celery task is enqueued on
+    # this path. The conftest fixture drops the test DB
+    # after the test, so the activated row cannot leak
+    # into other tests.
+    import jwt
+    from datetime import datetime, timedelta, timezone
+
+    from beanie import PydanticObjectId
+
+    from api.common.enums.gender import Gender
+    from api.common.security import ALGORITHM, JWT_SECRET, hash_it
+    from api.domain.entities.user import User
+
+    await User(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b3c"),
+        first_name="Activate",
+        last_name="Padded",
+        email="activate-padded@example.com",
+        gender=Gender.OTHER,
+        is_active=False,
+        password=hash_it("68c302ef6bf7a039b7e9b3c"),
+    ).insert()
+    activation_token = jwt.encode(
+        {
+            "user_id": "68c302ef6bf7a039b7e9b3c",
+            "email": "activate-padded@example.com",
+            "type": "activation",
+            "exp": datetime.now(timezone.utc) + timedelta(hours=1),
+        },
+        JWT_SECRET,
+        algorithm=ALGORITHM,
+    )
+    response = await client.post(
+        "/account/activate",
+        json={"token": "  " + activation_token + "  "},
+    )
+    assert response.status_code == 200
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the activate success lock, using substring checks
+    # so later additions to the list do not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+    # Postcondition: the seeded user is now active, stamped with an
+    # activation time, and otherwise unchanged.
+    activated = await User.find_one(User.email == "activate-padded@example.com")
+    assert activated is not None
+    assert activated.is_active is True
+    assert activated.activated_at is not None
+    assert activated.first_name == "Activate"
+    assert activated.last_name == "Padded"
