@@ -1382,3 +1382,175 @@ async def test_tenant_checkout_success_outside_tenant_scope_returns_403_with_cac
     )
     assert stored is not None
     assert stored.features == [Feature(name=FeatureEnum.STRIPE, enabled=True)]
+
+
+@pytest.mark.asyncio
+async def test_tenant_checkout_cancel_outside_tenant_scope_returns_403_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The checkout tenant payment-cancel scope-guard error path:
+    """
+    # The POST /checkouts/tenant/payment/cancel create scope-guard
+    # branch, not yet locked: function-name grep count 0 for
+    # tenant_checkout_cancel_outside_tenant_scope (verified fresh
+    # this run), and no test in this file asserts a 403 with an
+    # "outside your tenant's scope" message for this route - the
+    # locks cover only the feature-disabled 403s (GET /all, host
+    # POST, tenant POST, host/tenant payment-success, host/tenant
+    # payment-cancel) and the create/list/success scope 403s.
+    # Deleting _assert_create_scope (checkout_endpoint.py:34-54)
+    # from the cancel handler would previously have gone
+    # uncaught, and a tenant caller confirming a cancel on the
+    # wrong DB would then have the caller's pending tenant-scope
+    # billing records marked canceled in the host DB instead of
+    # the caller's own tenant DB. The guard runs first in the
+    # handler body (:268), before the tenant-required check and
+    # before any billing-service call, so no record is touched.
+    # It cannot be reached the way the roles/users/audit-logs
+    # locks reach their guards (tenant-scoped caller, no
+    # X-Tenant-ID header): the checkout router is feature-gated,
+    # and check_feature_access looks the tenant up by
+    # request.state.tenant_id before the handler runs, so with
+    # no header the lookup gets None, BaseRepository.get returns
+    # None, and get_tenant_by_id raises TenantNotFoundException
+    # - a 404 from the gate, never the scope 403. The lock
+    # therefore uses the mismatched scope the guard is written
+    # for, mirroring the checkout create/success scope locks:
+    # the caller is tenant-scoped to
+    # 68c302ef6bf7a039b7e9b387 while the request carries
+    # X-Tenant-ID 68c302ef6bf7a039b7e9b388, a seeded tenant with
+    # the STRIPE feature enabled, so the feature gate passes
+    # (Tenant stays bound to the host DB - init_db excludes it
+    # from the tenant-DB models, mongodb.py:53-56 - so the
+    # lookup finds the seeded row) and the guard raises
+    # ForbiddenException before any service call. The caller
+    # override mirrors the success scope lock's pattern
+    # (per-test MeResponseDto, restored in finally). Unlike
+    # the checkout list route, this route carries no permission
+    # dependency, so the role needs no permission here - an
+    # empty permission list is deliberate, not an omission.
+    # Unlike the payment-success callback, the cancel callback
+    # takes no query params and no body at all, so no 422 can
+    # mask the 403. The handler takes no Response param, so the
+    # no-store/Pragma headers on the 403 come from the central
+    # ApiBaseException handler, which maps ForbiddenException to
+    # 403 (api/__init__.py:98-103) with {"error": ..., "code":
+    # 403}. A future change that drops the guard would break
+    # this lock while leaving the feature-disabled tenant
+    # cancel 403 lock and the create/list/success scope 403
+    # locks green, so the paths are locked separately.
+    from beanie import PydanticObjectId
+
+    from api.domain.entities.tenant import Feature, Tenant
+    from api.domain.enum.feature import Feature as FeatureEnum
+
+    await Tenant(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b388"),
+        name="checkout-scope-tenant",
+        subdomain="checkout-scope.fsrapp.com",
+        features=[Feature(name=FeatureEnum.STRIPE, enabled=True)],
+    ).insert()
+
+    async def override_get_current_user_tenant_scoped():
+        return MeResponseDto(
+            first_name="Admin",
+            last_name="User",
+            id="68c302ef6bf7a039b7e9b385",
+            email="admin@example.com",
+            gender=Gender.OTHER,
+            is_active=True,
+            role_id="68c302ef6bf7a039b7e9b386",
+            tenant_id="68c302ef6bf7a039b7e9b387",
+            created_at="2024-10-01T00:00:00Z",
+            updated_at="2024-10-01T00:00:00Z",
+            role=RoleDto(
+                id="68c302ef6bf7a039b7e9b386",
+                name="Tenant checkout caller",
+                description="Role for the tenant-scoped checkout cancel caller",
+                created_at="2024-10-01T00:00:00Z",
+                updated_at="2024-10-01T00:00:00Z",
+                permissions=[],
+            ),
+            subscription=None,
+        )
+
+    original_override = app.dependency_overrides.get(get_current_user)
+    app.dependency_overrides[get_current_user] = override_get_current_user_tenant_scoped
+    try:
+        response = await client.post(
+            "/checkouts/tenant/payment/cancel",
+            headers={"X-Tenant-ID": "68c302ef6bf7a039b7e9b388"},
+        )
+    finally:
+        if original_override is None:
+            app.dependency_overrides.pop(get_current_user, None)
+        else:
+            app.dependency_overrides[get_current_user] = original_override
+    assert response.status_code == 403
+    body = response.json()
+    assert body["code"] == 403
+    assert "outside your tenant's scope" in body["error"]
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    # The 403 must still carry the error-response headers: the
+    # handler sets no-store only on the success path of the sibling
+    # record-list route, so on this path they come from the central
+    # ApiBaseException handler, and a cached 403 could otherwise be
+    # served to a different user after an account switch on a shared
+    # machine.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+
+    # Same security-headers lock as the checkout feature-disabled
+    # tests: the pure-ASGI middleware stamps every HTTP response
+    # with no path exclusions, so the checkout 403 must carry the
+    # same headers as the authenticated GETs, including the
+    # exception-handler responses.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Presence alone would not catch the value being weakened:
+    # lock the twelve most sensitive directives as disabled,
+    # mirroring the checkout GET lock, using substring checks
+    # so later additions to the list do not break this test.
+    # The full value lives in _SECURITY_HEADERS. Each directive
+    # is safe to lock here for the same reasons as on the other
+    # routes: the SPA has no camera, microphone, geolocation,
+    # payment, clipboard-read, display-capture, fullscreen,
+    # motion-sensor, compass, XR, or idle-detection flow
+    # (verified by grep in the earlier sweeps and re-verified
+    # fresh this run: zero case-insensitive idle matches
+    # across frontend/app/src, and the remaining flows
+    # verified absent).
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+    # Postconditions: the guard fires before any service call, so
+    # no billing record is marked canceled, and the seeded tenant
+    # is still there with the STRIPE feature enabled. A pending
+    # billing record would be the decisive postcondition - without
+    # the guard, handle_tenant_checkout_canceled
+    # (billing_record_service.py:611-642) searches the caller's
+    # pending tenant-scope records and flips the matching ones
+    # to "canceled" - but BillingRecord is not among the conftest
+    # test-DB models (conftest.py:24), so no such record can be
+    # seeded in the test DB; the tenant row is the observable
+    # postcondition, as in the success scope lock. The 403
+    # assertion itself is the lock: dropping the guard changes
+    # the outcome to a 202 or a service error, never a 403.
+    stored = await Tenant.find_one(
+        Tenant.id == PydanticObjectId("68c302ef6bf7a039b7e9b388")
+    )
+    assert stored is not None
+    assert stored.features == [Feature(name=FeatureEnum.STRIPE, enabled=True)]
