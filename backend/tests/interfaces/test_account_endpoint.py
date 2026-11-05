@@ -53097,3 +53097,107 @@ async def test_account_change_email_confirmation_missing_type_token_returns_400_
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+async def test_account_change_email_confirmation_malformed_user_id_returns_400_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The account change-email-confirmation PATCH with a live
+        token carrying a non-ObjectId user_id:
+    """
+    # The malformed-user_id branch was deliberately NOT locked by
+    # the invalid-token lock (a non-JWT, which raises
+    # InvalidTokenError at decode), the expired-token lock (a
+    # past exp, which raises ExpiredSignatureError before the
+    # type check), the wrong-type and missing-type locks (which
+    # fail the type check before any DTO build), the
+    # wrong-shape locks (missing user_id, missing email, or an
+    # invalid email format, which raise ValidationError at DTO
+    # build), or the other-user lock (a live token of the
+    # correct type carrying a well-formed ObjectId of another
+    # user, which reaches the ownership check and fails it on
+    # a well-formed id), and is locked here, verified fresh
+    # this run, not assumed: function-name grep count 0 for
+    # test_account_change_email_confirmation_malformed_user_id
+    # and payload grep count 0 for
+    # change-email-malformed-userid and
+    # change-email-malformed@example.com before appending.
+    # The token is minted inside the test with the app's own
+    # signing constants (imported, never hardcoded): payload
+    # user_id is "change-email-malformed-userid", a plain
+    # string that is not a 24-hex ObjectId, email is a valid
+    # address, type is "change_email_confirmation", and exp
+    # is one hour in the future, so jwt.decode succeeds, the
+    # type check passes, and VerifyEmailTokenPayloadDto
+    # (token_dto.py: user_id is a plain str, email is
+    # EmailStr) builds without a ValidationError. The service
+    # then compares payload.user_id against the conftest
+    # mocked user id (68c302ef6bf7a039b7e9b385) and the
+    # mismatch raises InvalidOperationException before any
+    # user lookup, so the malformed id never reaches
+    # repository.get, where it would fail PydanticObjectId
+    # conversion; a future reorder putting the lookup before
+    # the ownership check would change this path, which is
+    # why it needs its own lock. The endpoint catches
+    # InvalidOperationException and re-raises HTTPException 400
+    # with the generic detail "Email change confirmation
+    # failed.", so the failure reveals nothing about the
+    # token's user_id or any account. No seeded row and no
+    # live service is needed, and no side effect occurs: no
+    # user lookup, email-existence check, email update, or
+    # notification email. The Starlette HTTPException handler
+    # returns body {"detail": ...} with Cache-Control:
+    # no-store plus Pragma: no-cache (api/__init__.py), and
+    # the pure-ASGI security-headers middleware stamps every
+    # HTTP response with no path exclusions. Note the body
+    # shape differs from the central ApiBaseException error
+    # shape: this endpoint converts the service error to a
+    # plain HTTPException, so the lock asserts "detail", not
+    # "error"/"code", mirroring the invalid-token lock. The
+    # conftest fixture drops the test DB after the test, so
+    # nothing can leak into other tests.
+    import jwt
+    from datetime import datetime, timedelta, timezone
+
+    from api.common.security import ALGORITHM, JWT_SECRET
+
+    token = jwt.encode(
+        {
+            "user_id": "change-email-malformed-userid",
+            "email": "change-email-malformed@example.com",
+            "type": "change_email_confirmation",
+            "exp": datetime.now(timezone.utc) + timedelta(hours=1),
+        },
+        JWT_SECRET,
+        algorithm=ALGORITHM,
+    )
+    response = await client.patch(
+        "/account/change_email_confirmation",
+        json={"token": token},
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Email change confirmation failed."
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the change-email-confirmation invalid-token lock,
+    # using substring checks so later additions to the list do
+    # not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
