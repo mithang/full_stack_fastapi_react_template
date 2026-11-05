@@ -57942,3 +57942,91 @@ async def test_account_passkey_has_passkeys_with_passkey_returns_200_with_securi
     )
     assert stored is not None
     assert len(stored.credentials) == 1
+
+
+async def test_account_passkey_has_passkeys_without_passkey_returns_200_with_security_headers(client: AsyncClient):
+    """
+        The passkey has_passkeys POST success path for an email
+        with no registered passkey:
+    """
+    # The has_passkeys 200-false branch, not yet locked:
+    # function-name grep count 0 for
+    # passkey_has_passkeys_without_passkey (verified fresh this
+    # run), and no existing has_passkeys lock reaches the
+    # false branch: the six 422 locks all fail earlier
+    # (malformed-string email, non-string email, missing body,
+    # null email, empty-string email, whitespace-only email)
+    # and the 200-true lock seeds a record, so it never
+    # exercises the no-record path. The endpoint takes a bare
+    # EmailStr body param (account_endpoint.py:461, email:
+    # EmailStr = Body(...)), so the request is the bare JSON
+    # string "never-registered@example.com" - not an {"email":
+    # ...} object, which would 422 and mask the 200 -
+    # mirroring the has_passkeys 200-true lock in this file.
+    # The service (passkey_service.py:273-278) looks the
+    # record up with single_or_none(user_email=email) and
+    # returns user is not None and len(user.credentials) > 0,
+    # so with no record for the email it must answer
+    # {"has_passkeys": false}; no challenge is consulted, no
+    # webauthn verification runs, and no token or refresh
+    # cookie is issued on this read-only path. The endpoint
+    # has no permission gate and no CurrentUser dependency,
+    # and its only dependency, get_passkey_service, merely
+    # resolves a container object, so nothing can mask the
+    # 200; no User row is needed, since the lookup is by
+    # email on the user_passkeys collection alone. No seed
+    # is needed: the conftest fixture drops the test DB after
+    # each test and seeds no UserPasskey record, and the
+    # chosen email differs from the seeded admin user and
+    # from the 200-true lock's passkey-holder email, so no
+    # record can exist for it. No X-Tenant-ID header is
+    # sent, so the service read uses the host test DB.
+    # Postconditions are asserted directly, not just the
+    # response: the read is side-effect free, so no record
+    # is created for the email. Deliberately no
+    # Cache-Control/Pragma assertion: the endpoint returns a
+    # plain DTO and sets no cache headers
+    # (account_endpoint.py:459-464), mirroring the
+    # has_passkeys 200-true lock. A future change that
+    # answers True when no record exists, or that requires a
+    # User row, would break this lock while leaving the
+    # 200-true lock green, so the two paths are locked
+    # separately.
+    from api.domain.entities.user_passkey import UserPasskey
+
+    response = await client.post(
+        "/account/passkey/has_passkeys",
+        json="never-registered@example.com",
+    )
+    assert response.status_code == 200
+    assert response.json() == {"has_passkeys": False}
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the has_passkeys 200-true lock, using substring
+    # checks so later additions to the list do not break this
+    # test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+    # Postcondition: the read is side-effect free - no record
+    # was created for the email.
+    stored = await UserPasskey.find_one(
+        UserPasskey.user_email == "never-registered@example.com"
+    )
+    assert stored is None
