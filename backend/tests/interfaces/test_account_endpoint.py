@@ -54488,3 +54488,81 @@ async def test_account_email_magic_link_login_whitespace_only_email_returns_422_
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+@pytest.mark.asyncio
+async def test_account_change_email_request_invalid_email_returns_422_with_security_headers(client: AsyncClient):
+    """
+        The account change-email-request PATCH with a malformed new_email value:
+    """
+    # The change-email-request invalid-email branch was
+    # deliberately NOT locked by the same-email 406 lock (a
+    # valid EmailStr equal to the caller's current address
+    # that reaches the service's first check) or by any
+    # change-email-confirmation lock (a different endpoint
+    # taking a token, not an email), and is locked here,
+    # verified fresh this run, not assumed: function-name
+    # grep count 0 for
+    # test_account_change_email_request_invalid_email before
+    # appending. ChangeEmailRequestDto.new_email is a required
+    # EmailStr field with no default and no model validator
+    # (auth_dto.py:19-20), so a value with no "@" fails
+    # FastAPI request validation before the handler body
+    # runs: the service's same-email check, email-existence
+    # check, user lookup, token minting, and confirmation
+    # email send never execute, so no DB row and no SMTP
+    # call can affect the outcome, and no refresh cookie is
+    # set. The endpoint takes CurrentUser, which conftest
+    # overrides to the mocked user, and a FrontendHost
+    # dependency that merely resolves the frontend host, so
+    # nothing can mask the 422. Deliberately no exact
+    # error-type assertion: no email-shape error type has a
+    # precedent in this file for a DTO field, so the lock
+    # asserts the 422 status, a detail entry located at
+    # new_email, and an email-shaped validation message,
+    # mirroring the magic-link login invalid-email 422 lock.
+    # Deliberately no Cache-Control/Pragma assertion: a 422
+    # is FastAPI request validation, not an ApiBaseException,
+    # so the central handler's no-store headers do not apply
+    # to it, mirroring the change-email-confirmation 422
+    # locks. The security headers ARE locked: the pure-ASGI
+    # middleware stamps every HTTP response, including
+    # validation errors, with no path exclusions.
+    response = await client.patch(
+        "/account/change_email_request",
+        json={"new_email": "not-an-email"},
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert isinstance(detail, list) and detail
+    assert any(
+        "new_email" in [str(part) for part in err.get("loc", [])]
+        for err in detail
+    )
+    assert any(
+        "email" in str(err.get("msg", "")).lower() for err in detail
+    )
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the change-email-request same-email lock,
+    # using substring checks so later additions to the list
+    # do not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
