@@ -3924,3 +3924,103 @@ async def test_create_duplicate_user_returns_409_with_cache_and_security_headers
     data = UserListDto.model_validate(response.json())
     assert data.total == 1
     assert data.users[0].email == "test@example.com"
+
+
+@pytest.mark.asyncio
+async def test_put_user_with_changed_email_returns_400_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The PUT /users/{id} changed-email error path:
+        UpdateUserDto carries an email field and the PUT
+        endpoint accepts it, but UserService.update_user
+        never applied it - the only email handling was the
+        commented-out TODO block - so a client sending a new
+        email got a 200 back with the old address still
+        stored, a silent no-op (function-name grep count 0
+        for put_user_with_changed_email, verified fresh this
+        run). Applying the new address in update_user would
+        bypass the change-email flow (account_endpoint
+        change_email_request / change_email_confirmation),
+        which sends a confirmation token to the new address
+        before the switch, so the service now rejects a
+        differing email with ApiBaseException, which the
+        central handler maps to 400 with {"error", "code":
+        400} plus the no-store/Pragma error headers
+        (api/__init__.py:89-90, 121-133) - the same 400 the
+        magic-link rate limit raises directly. Echoing the
+        current email stays a no-op, so the existing
+        test_update_user_by_id_from_host full-DTO echo still
+        passes, and the internal role-only / image-only
+        callers pass email None and never reach the branch.
+        The body is the fetched user with only the email
+        changed, so no 422 or role-change guard can mask
+        the 400. A future change that drops the service
+        check would break this lock while leaving the
+        update-user 200 lock green, so the paths are locked
+        separately. Residual, not covered by this lock: a
+        direct email change is still impossible by design -
+        callers must use the change-email flow.
+    """
+    new_user_response = await create_user(client)
+    response = await client.get(f"/users/{new_user_response.id}")
+    assert response.status_code == 200
+    data = UserDto.model_validate(response.json())
+
+    # Send the full DTO back with only the email changed, exactly
+    # as a full-DTO client would: the old code returned 200 and
+    # stored nothing, so the caller believed the email had moved.
+    payload = data.model_dump()
+    payload["email"] = "changed@example.com"
+    updated_data = UpdateUserDto(**payload)
+    response = await client.put(f"/users/{new_user_response.id}", json=updated_data.model_dump())
+    assert response.status_code == 400
+    body = response.json()
+    assert body["code"] == 400
+    assert "Email cannot be changed here. Use the change email flow to update your email address." in body["error"]
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    # The 400 must still carry the error-response headers: the
+    # check raises before the handler builds any response object,
+    # so on this path the no-store/Pragma headers come from the
+    # central ApiBaseException handler, and a cached 400 could
+    # otherwise be served to a different admin after an account
+    # switch on a shared machine.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+
+    # Same security-headers lock as the other user tests in this
+    # file: the pure-ASGI middleware stamps every HTTP response
+    # with no path exclusions, so this authenticated user 400
+    # must carry the same headers as the other interface locks.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Presence alone would not catch the value being weakened: lock
+    # the twelve most sensitive directives as disabled, mirroring
+    # the single-user GET lock in this file (iteration 1897),
+    # using substring checks so later additions to the list do not
+    # break this test. The full value lives in _SECURITY_HEADERS.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+
+    # Postcondition: the 400 fired before any write, so the stored
+    # email is unchanged - had the check been dropped, the old code
+    # would still have stored nothing (silent no-op), but a future
+    # naive implementation of the TODO block would have moved the
+    # address without confirmation, bypassing the change-email
+    # flow; this assertion pins the no-write outcome either way.
+    response = await client.get(f"/users/{new_user_response.id}")
+    assert response.status_code == 200
+    assert UserDto.model_validate(response.json()).email == "test@example.com"

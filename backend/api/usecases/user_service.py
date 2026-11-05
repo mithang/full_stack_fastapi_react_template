@@ -1,7 +1,7 @@
 from typing import Any
 from beanie import PydanticObjectId
 from pydantic import EmailStr
-from api.common.exceptions import InvalidOperationException
+from api.common.exceptions import ApiBaseException, InvalidOperationException
 from api.common.utils import get_logger, get_utc_now, validate_password
 from api.core.exceptions import EmailAlreadyExistsException, RoleNotFoundException, UserNotFoundException
 from api.domain.dtos.dashboard_dto import TimeSeriesDto
@@ -160,6 +160,22 @@ class UserService:
             # since the caller's tenant_id comes from their own
             # record, which carries that same tenant_id.
             raise UserNotFoundException(user_id)
+        if user_data.email is not None and user_data.email != existing.email:
+            # PUT /users/{id} accepts an email field (UpdateUserDto.email)
+            # but never applied it: the old commented-out block below
+            # was the only email handling, so a client sending a new
+            # email got a 200 back with the old address still stored -
+            # a silent no-op. Applying it here would bypass the
+            # change-email flow (account_endpoint change_email_request
+            # / change_email_confirmation), which sends a confirmation
+            # token to the new address before the switch. Reject a
+            # differing email with a 400 instead (ApiBaseException
+            # maps to 400 in the central handler, as for the
+            # magic-link rate limit); echoing the current email stays
+            # a no-op, so full-DTO clients are unaffected, and the
+            # internal role-only / image-only callers pass
+            # email None and never reach this branch.
+            raise ApiBaseException("Email cannot be changed here. Use the change email flow to update your email address.")
         # Todo: Refactor email update logic or check if email is being updated
         # existing_email = user_data.email
         # if existing_email and existing_email != existing.email:
