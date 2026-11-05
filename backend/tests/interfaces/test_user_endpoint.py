@@ -2787,3 +2787,162 @@ async def test_patch_user_remove_role_outside_tenant_scope_returns_403_with_cach
         User.id == PydanticObjectId("68c302ef6bf7a039b7e9b388")
     )
     assert target is None
+
+
+@pytest.mark.asyncio
+async def test_get_user_profile_image_with_unconfigured_s3_returns_502_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The user profile-image GET 502 path:
+    """
+    # The user profile-image GET 502 branch, not yet locked:
+    # function-name grep count 0 for
+    # get_user_profile_image_with_unconfigured_s3 (verified fresh
+    # this run), and no test anywhere in the suite asserts a 502
+    # (grep count 0 for "502" across backend/tests) - the
+    # profile-image locks cover only the missing-role 404 and the
+    # scope-guard 403, while the central ApiBaseException handler
+    # maps AwsException/AzureException to 502 (api/__init__.py)
+    # with no lock on any route. Deleting that mapping would
+    # previously have gone uncaught, and a storage outage on the
+    # avatar path would then surface as a 400 "bad request"
+    # instead of a 502, hiding an upstream failure from the
+    # client fallbacks that only trigger on rejection. The 502
+    # here is deterministic with no network and no live S3 call:
+    # the seeded StorageSettings row enables AWS_S3 with blank
+    # keys, and S3Storage.__init__ (s3_storage.py) raises
+    # S3StorageException("S3 storage credentials are not
+    # configured.") before constructing a boto3 client, so no
+    # credential resolution, signing, or HTTP request happens.
+    # The handler chain is: the USER_VIEW_ONLY permission
+    # dependency passes on the seeded role (mirroring the
+    # profile-image 403 lock's seed), the scope guard passes for
+    # the host mock (tenant_id None), the ownership check passes
+    # on the seeded user row storing the key as image_url, and
+    # then file_service.get_file_url -> FileRetrieval.
+    # generate_read_url finds the enabled S3 row and constructs
+    # S3Storage, which raises; the endpoint re-raises (its
+    # try/except only logs) and the central handler answers 502.
+    # StorageSettings is outside the conftest model set
+    # (conftest.py:25), so the test initializes it on the test DB
+    # first: init_beanie on the same URI/db name the conftest
+    # fixture uses (mongodb://localhost:27012/test_db,
+    # api_test_db), mirroring the branding tests' second-init
+    # precedent for Branding. The GET carries no body, so no
+    # payload validation can 422 before the storage call, and
+    # the key is a plain uuid-prefixed name, so the endpoint's
+    # strip is a no-op. A future change that drops the 502
+    # mapping, or that lets the S3 constructor fall through to
+    # ambient credentials, would break this lock while leaving
+    # the profile-image 404/403 locks green, so the paths are
+    # locked separately.
+    from beanie import PydanticObjectId, init_beanie
+    from pymongo import AsyncMongoClient
+
+    from api.domain.entities.role import Role
+    from api.domain.entities.storage_settings import StorageProvider, StorageSettings
+    from api.domain.entities.user import User
+    from api.domain.enum.permission import Permission
+
+    mongo_client = AsyncMongoClient("mongodb://localhost:27012/test_db")
+    await init_beanie(
+        mongo_client["api_test_db"], document_models=[StorageSettings]
+    )
+
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b386"),
+        name="Profile image storage caller",
+        description="Role carrying USER_VIEW_ONLY for the mocked caller",
+        permissions=[Permission.USER_VIEW_ONLY],
+    ).insert()
+
+    image_key = "123e4567-e89b-12d3-a456-426614174000-avatar.png"
+    await User(
+        first_name="Avatar",
+        last_name="Owner",
+        email="avatar-owner@example.com",
+        gender=Gender.OTHER,
+        is_active=True,
+        password="TestPassword123!",
+        image_url=image_key,
+    ).insert()
+
+    await StorageSettings(
+        provider=StorageProvider.AWS_S3,
+        is_enabled=True,
+        region="eu-central-1",
+        aws_access_key="",
+        aws_secret_key="",
+        aws_bucket_name="test-bucket",
+    ).insert()
+
+    response = await client.get(f"/users/profile/{image_key}")
+    assert response.status_code == 502
+    body = response.json()
+    assert body["code"] == 502
+    # S3StorageException prefixes its message ("S3 Storage
+    # Error: ..."), so assert on the fail-closed reason itself.
+    assert "S3 storage credentials are not configured." in body["error"]
+    assert "S3 Storage Error: " in body["error"]
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    # The 502 must still carry the error-response headers: the
+    # handler sets no-store only on the success path, so on this
+    # path they come from the central ApiBaseException handler,
+    # and a cached 502 could otherwise be served to a different
+    # user after an account switch on a shared machine.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+
+    # Same security-headers lock as the other user-route tests:
+    # the pure-ASGI middleware stamps every HTTP response with no
+    # path exclusions, so the profile-image GET 502 must carry the
+    # same headers as the authenticated GETs, including the
+    # exception-handler responses.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Presence alone would not catch the value being weakened: lock
+    # the twelve most sensitive directives as disabled, mirroring
+    # the other user-route locks, using substring checks so later
+    # additions to the list do not break this test. Each directive
+    # is safe to lock here for the same reasons as on the other
+    # user routes: the SPA has no camera, microphone, geolocation,
+    # payment, clipboard-read, display-capture, fullscreen,
+    # motion-sensor, compass, XR, or idle-detection flow
+    # (verified by grep in the earlier sweeps).
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+    # Postconditions: the constructor raises before any write or
+    # presigned-URL minting, so the request is side-effect free -
+    # the seeded role is still there with its permission, the
+    # owning user still stores the key, and the storage row is
+    # still the enabled S3 row with blank keys.
+    stored = await Role.find_one(
+        Role.id == PydanticObjectId("68c302ef6bf7a039b7e9b386")
+    )
+    assert stored is not None
+    assert stored.permissions == [Permission.USER_VIEW_ONLY]
+    owner = await User.find_one(User.image_url == image_key)
+    assert owner is not None
+    assert owner.email == "avatar-owner@example.com"
+    stored_settings = await StorageSettings.find_one(
+        StorageSettings.is_enabled == True
+    )
+    assert stored_settings is not None
+    assert stored_settings.provider == StorageProvider.AWS_S3
+    assert stored_settings.aws_access_key == ""
+    assert stored_settings.aws_secret_key == ""
+    await mongo_client.close()
