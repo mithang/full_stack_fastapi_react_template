@@ -581,3 +581,194 @@ async def test_get_app_configuration_with_branded_logo_and_unconfigured_azure_re
     assert stored_settings.azure_connection_string == ""
     assert stored_settings.azure_container_name == "test-container"
     await mongo_client.close()
+
+
+@pytest.mark.asyncio
+async def test_get_app_configuration_with_branded_logo_and_malformed_azure_returns_502_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The app-configuration GET Azure 502 path for a stored logo
+        with a malformed Azure connection string:
+    """
+    # The app-configuration GET Azure 502 branch for a malformed
+    # connection string, not yet locked: function-name grep count
+    # 0 for get_app_configuration_with_branded_logo_and_
+    # malformed_azure (verified fresh this run), and grep count
+    # 0 for "malformed" across
+    # test_app_configuration_endpoint.py. The blank-Azure 502 lock
+    # (previous run) covers only the empty-string branch, while
+    # the central ApiBaseException handler maps AwsException/
+    # AzureException to 502 (api/__init__.py:110-117) with no
+    # lock on the malformed branch of this route. Before the
+    # production fail-closed fix, a malformed Azure connection
+    # string raised a bare ValueError from
+    # BlobServiceClient.from_connection_string, which is not an
+    # ApiBaseException and so bypassed the central handler
+    # entirely, surfacing as an unhandled 500 instead of a 502
+    # and hiding an upstream failure from the client fallbacks
+    # that only trigger on rejection. The 502 here is
+    # deterministic with no network and no live Azure call: the
+    # seeded StorageSettings row enables AZURE_BLOB with the
+    # malformed connection string "not-a-connection-string" (no
+    # key=value pairs, so the SDK raises ValueError before any
+    # credential resolution, signing, or HTTP request), and
+    # AzureBlobStorage.__init__ (azure_storage.py) catches that
+    # ValueError and re-raises AzureBlobStorageException
+    # ("Azure Blob Storage connection string is invalid."). The
+    # handler chain is: no Authorization header, so
+    # current_user_optional resolves to None
+    # (current_user.py:47-60, exceptions swallowed to None) and
+    # the user-preference/passkey lookups are skipped; no
+    # X-Tenant-ID header, so get_tenant_id returns None
+    # (tenant_middleware.py:138-139) and get_tenant returns None
+    # without a service call; then get_only_enabled_providers()
+    # runs before get_branding()
+    # (app_configuration_endpoint.py:76-78) - SSOSettings is
+    # outside the conftest model set, so the test initializes
+    # it on the test DB alongside Branding and StorageSettings,
+    # making the whole chain self-contained regardless of which
+    # tests ran first in the session (the empty collection
+    # returns no providers, and re-initializing a model is a
+    # no-op per the branding tests' beanie 2.2.0 verification);
+    # branding_service.get_branding() finds the seeded record
+    # and, because it carries a logo_url, calls
+    # file_service.get_file_url -> FileRetrieval.
+    # generate_read_url, which finds the enabled Azure row and
+    # constructs AzureBlobStorage, which raises; the retrieval
+    # try catches only StorageNotEnabledException, so the
+    # exception propagates, and the central handler maps
+    # AzureException to 502 (api/__init__.py:110-117) with
+    # {"error": ..., "code": 502} and the no-store/Pragma error
+    # headers. The seeded branding carries an explicit tenant_id
+    # stamp: BrandingDto.tenant_id is a required str, so a
+    # None-stamped record would fail DTO validation inside
+    # get_branding() and 500 before ever reaching the file
+    # service - the stamp is never scope-checked on this read
+    # path, so any value keeps the DTO valid (mirroring the
+    # PATCH 406 lock's foreign-stamp seed and the S3 lock's
+    # seed). StorageSettings is outside the conftest model set
+    # (conftest.py:25), so the test initializes it on the test
+    # DB first: init_beanie on the same URI/db name the
+    # conftest fixture uses (mongodb://localhost:27012/test_db,
+    # api_test_db), in the same call as Branding, mirroring the
+    # branding tests' second-init precedent and the S3/Azure 502
+    # locks; the conftest fixture drops the DB after each test,
+    # so the blank-Azure lock's identical seed ids cannot
+    # collide with this test. The 502 fires inside
+    # get_branding(), so no config is returned and no file is
+    # written to storage. A future change that drops the
+    # malformed ValueError mapping, or that lets the Azure
+    # constructor fall through to the SDK's bare ValueError on
+    # this path, would break this lock while leaving the
+    # profile-image Azure 502 lock, the profile-picture upload
+    # Azure 502 lock, the branding PUT /logo Azure 502 lock,
+    # the app-configuration S3 502 lock, the app-configuration
+    # blank-Azure 502 lock, and the app-configuration 200 lock
+    # green, so the paths are locked separately.
+    from beanie import PydanticObjectId, init_beanie
+    from pymongo import AsyncMongoClient
+
+    from api.domain.entities.branding import Branding
+    from api.domain.entities.sso_settings import SSOSettings
+    from api.domain.entities.storage_settings import StorageProvider, StorageSettings
+
+    mongo_client = AsyncMongoClient("mongodb://localhost:27012/test_db")
+    await init_beanie(
+        mongo_client["api_test_db"],
+        document_models=[Branding, StorageSettings, SSOSettings],
+    )
+
+    await Branding(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b38a"),
+        tenant_id=PydanticObjectId("68c302ef6bf7a039b7e9b389"),
+        logo_url="logo.png",
+        logo_type="image/png",
+    ).insert()
+
+    await StorageSettings(
+        provider=StorageProvider.AZURE_BLOB,
+        is_enabled=True,
+        region="eu-central-1",
+        azure_connection_string="not-a-connection-string",
+        azure_container_name="test-container",
+    ).insert()
+
+    # No Authorization header and no X-Tenant-ID header: the
+    # public login-page fetch, exactly as the frontend sends it
+    # on every page load.
+    response = await client.get("/app_configuration/")
+    assert response.status_code == 502
+    body = response.json()
+    assert body["code"] == 502
+    # AzureBlobStorageException prefixes its message ("Azure Blob
+    # Storage Error: ..."), so assert on the fail-closed reason
+    # itself.
+    assert "Azure Blob Storage connection string is invalid." in body["error"]
+    assert "Azure Blob Storage Error: " in body["error"]
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    # The 502 must still carry the error-response headers: the
+    # handler sets no-store only on the success path, so on this
+    # path they come from the central ApiBaseException handler,
+    # and a cached 502 could otherwise be served to a different
+    # user after an account switch on a shared machine.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+
+    # Same security-headers lock as the app-configuration 200
+    # test: the pure-ASGI middleware stamps every HTTP response
+    # with no path exclusions, so the app-configuration 502
+    # must carry the same headers as the authenticated calls,
+    # including the exception-handler responses.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Presence alone would not catch the value being weakened:
+    # lock the twelve most sensitive directives as disabled,
+    # mirroring the app-configuration 200 lock, using substring
+    # checks so later additions to the list do not break this
+    # test. Each directive is safe to lock here for the same
+    # reasons as on the other routes: the SPA has no camera,
+    # microphone, geolocation, payment, clipboard-read,
+    # display-capture, fullscreen, motion-sensor, compass, XR,
+    # or idle-detection flow (verified by grep in the earlier
+    # sweeps and re-verified fresh this run: zero
+    # case-insensitive idle matches and zero
+    # IdleDetector/requestIdleCallback matches across
+    # frontend/app/src).
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+    # Postconditions: the 502 fires inside get_branding()
+    # before any config is returned, so the request is
+    # side-effect free - the seeded branding record is still
+    # there with its logo_url (the constructor raises before
+    # any read URL is minted), and the storage row is still
+    # the enabled Azure row with a malformed connection string
+    # and container "test-container" (the constructor raises
+    # before any write or upload).
+    stored_branding = await Branding.find_one(
+        Branding.id == PydanticObjectId("68c302ef6bf7a039b7e9b38a")
+    )
+    assert stored_branding is not None
+    assert stored_branding.logo_url == "logo.png"
+    assert stored_branding.tenant_id == PydanticObjectId("68c302ef6bf7a039b7e9b389")
+    stored_settings = await StorageSettings.find_one(
+        StorageSettings.is_enabled == True
+    )
+    assert stored_settings is not None
+    assert stored_settings.provider == StorageProvider.AZURE_BLOB
+    assert stored_settings.azure_connection_string == "not-a-connection-string"
+    assert stored_settings.azure_container_name == "test-container"
+    await mongo_client.close()
