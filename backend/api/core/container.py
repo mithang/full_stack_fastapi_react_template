@@ -211,9 +211,6 @@ def get_storage_settings_repository() -> StorageSettingsRepository:
 def get_file_service() -> FileService:
     return container.resolve(FileService)
 
-def get_email_service() -> IEmailService:
-    return container.resolve(IEmailService)
-
 def get_local_ai_service() -> LocalAIService:
     return container.resolve(LocalAIService)
 
@@ -223,17 +220,8 @@ def get_dns_resolver() -> DnsResolver:
 def get_coolify_app_service() -> CoolifyAppService:
     return container.resolve(CoolifyAppService)
 
-def get_user_passkey_repository() -> UserPasskeyRepository:
-    return container.resolve(UserPasskeyRepository)
-
-def get_user_passkey_challenges_repository() -> UserPasskeyChallengesRepository:
-    return container.resolve(UserPasskeyChallengesRepository)
-
 def get_passkey_service() -> PasskeyService:
     return container.resolve(PasskeyService)
-
-def get_user_magic_link_repository() -> UserMagicLinkRepository:
-    return container.resolve(UserMagicLinkRepository)
 
 def get_email_magic_link_service() -> EmailMagicLinkService:
     return container.resolve(EmailMagicLinkService)
@@ -246,9 +234,6 @@ def get_product_service() -> ProductService:
 
 def get_pricing_service() -> PricingService:
     return container.resolve(PricingService)
-
-def get_stripe_resolver() -> StripeResolver:
-    return container.resolve(StripeResolver)
 
 def get_stripe_setting_service() -> StripeSettingService:
     return container.resolve(StripeSettingService)
