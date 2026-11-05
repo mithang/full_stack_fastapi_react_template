@@ -55116,3 +55116,75 @@ async def test_account_change_email_request_whitespace_only_new_email_returns_42
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+@pytest.mark.asyncio
+async def test_account_password_reset_request_whitespace_only_email_returns_422_with_security_headers(client: AsyncClient):
+    """
+        The account password reset request POST with a whitespace-only email value:
+    """
+    # The password-reset-request validation branch, not yet locked:
+    # the locks cover invalid email, missing email, non-string
+    # email, unknown email (generic 200), extra field (generic
+    # 200), and the malformed/non-object/null/numeric/scalar/
+    # boolean body shapes - but no whitespace-only email case,
+    # although change-email-request already has a whitespace-only
+    # new_email 422 lock and magic-link login has a whitespace-only
+    # email 422 lock (function-name grep count 0, verified fresh
+    # this run). PasswordResetRequestDto.email is a required
+    # EmailStr field with no default and no model validator
+    # (auth_dto.py), so a whitespace-only value fails FastAPI
+    # request validation before the handler body runs: the blanket
+    # try/except/finally that returns the generic 200 is never
+    # reached, AuthService.initate_password_reset never runs, and
+    # no reset record is written, no token is minted, and no reset
+    # email is sent. The outcome is the same whether or not the
+    # value is stripped first (stripped it becomes "" which still
+    # fails EmailStr, unstripped it fails as-is), so no assumption
+    # about email-validator whitespace handling is baked in. The
+    # invalid-email lock already proves validation precedes any
+    # auth failure, so the endpoint's dependencies cannot mask
+    # the 422. Deliberately no Cache-Control/Pragma assertion: a
+    # 422 is FastAPI request validation, not an ApiBaseException,
+    # so the central handler's no-store headers do not apply to
+    # it, mirroring the password-reset-request invalid-email 422
+    # lock. The security headers ARE locked: the pure-ASGI
+    # middleware stamps every HTTP response, including validation
+    # errors, with no path exclusions.
+    response = await client.post(
+        "/account/password_reset_request",
+        json={"email": "   "},
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert any(
+        "email" in [str(part) for part in err.get("loc", [])]
+        for err in detail
+    )
+    assert any(
+        "email" in str(err.get("msg", "")).lower() for err in detail
+    )
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the change-email-request whitespace-only 422 lock,
+    # using substring checks so later additions to the list do not
+    # break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
