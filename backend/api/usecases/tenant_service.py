@@ -1,6 +1,7 @@
 from typing import List
 from beanie import PydanticObjectId
 
+from api.common.exceptions import ConflictException
 from api.common.utils import get_logger, get_utc_now, validate_password
 from api.core.exceptions import TenantNotFoundException
 from api.domain.dtos.tenant_dto import CreateTenantDto, FeatureDto, TenantListDto, UpdateTenantDto
@@ -83,8 +84,23 @@ class TenantService:
         return existing
 
     async def create_tenant(self, tenant_data: CreateTenantDto) -> PydanticObjectId | None:
-        """Create a new tenant. Raises InvalidOperationException if admin password is weak."""
+        """Create a new tenant. Raises InvalidOperationException if admin password is weak. Raises ConflictException if a tenant with the same name already exists."""
         validate_password(tenant_data.admin_password)
+        # Duplicate-name guard, mirroring RoleService.create_role and
+        # UserService.create_user: the repository's DuplicateKeyError
+        # catch cannot be relied on here, because Tenant.name is
+        # Indexed(unique=True) but Settings.indexes also lists plain
+        # "name", and beanie's init_indexes merges the two with the
+        # Settings side winning on the same fields, so the unique
+        # constraint is silently dropped at init_beanie and a second
+        # create with the same name previously returned 201 (and
+        # enqueued the post-creation Celery task). Check before any
+        # write, so the duplicate path needs no broker care: the
+        # endpoint's handle_post_tenant_creation.delay runs only after
+        # this method returns.
+        existing = await self.tenant_repository.single_or_none(name=tenant_data.name)
+        if existing is not None:
+            raise ConflictException("Tenant", tenant_data.name)
         response = await self.tenant_repository.create(tenant_data)
         return response
 
