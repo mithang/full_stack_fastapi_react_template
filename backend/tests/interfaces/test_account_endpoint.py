@@ -53201,3 +53201,121 @@ async def test_account_change_email_confirmation_malformed_user_id_returns_400_w
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+async def test_account_change_email_confirmation_padded_token_returns_200_with_security_headers(client: AsyncClient):
+    """
+        The account change-email-confirmation PATCH with a
+        space-padded live token:
+    """
+    # The padded-token success branch was deliberately NOT locked
+    # by the invalid-token lock (a non-JWT, which raises
+    # InvalidTokenError at decode), the expired-token lock (a
+    # past exp, which raises ExpiredSignatureError before any
+    # trim could matter), the wrong-type and missing-type locks
+    # (which fail the type check), the wrong-shape locks
+    # (which raise ValidationError at DTO build), the
+    # other-user lock (an unpadded token of another user, which
+    # fails the ownership check whether or not trimming runs),
+    # the malformed-user_id lock (an unpadded token, same
+    # reason), or the success lock (an unpadded token, which
+    # verifies verbatim and never exercises the trim), and is
+    # locked here, verified fresh this run, not assumed:
+    # function-name grep count 0 for
+    # test_account_change_email_confirmation_padded_token and
+    # payload grep count 0 for change-email-padded@example.com
+    # before appending. The request DTO strips the token before
+    # verification (ChangeEmailConfirmRequestDto.normalize_token
+    # in auth_dto.py, a model_validator that calls .strip() on
+    # a string token), mirroring the activate padded-token 200
+    # lock: without the strip, a token pasted from an email
+    # with surrounding whitespace would fail jwt.decode and
+    # surface as the generic 400 "Email change confirmation
+    # failed." instead of confirming. The token is minted
+    # inside the test with the app's own signing constants
+    # (imported, never hardcoded): payload user_id IS the
+    # conftest mocked user (admin@example.com, id
+    # 68c302ef6bf7a039b7e9b385), type is
+    # "change_email_confirmation", and exp is one hour in the
+    # future, so after the strip verify_change_email_token
+    # accepts it and the service's caller-ownership check
+    # passes. The caller row is seeded with that exact id via
+    # Beanie's explicit-id document insert (the same mechanism
+    # as the success lock), so get_user_by_id succeeds, and no
+    # second row is seeded, so check_email_exists for the
+    # token's new email returns False and the already-in-use
+    # raise cannot fire. The service then updates the row and
+    # saves it BEFORE the notification email, so a 200 here
+    # already proves the save completed, and the notification
+    # send uses the default raise_on_failure=False, whose
+    # handler swallows ApiError, ConnectionErrors, and any
+    # other exception (smtp_email.py) - so an unconfigured or
+    # unreachable SMTP server in the test environment cannot
+    # turn this success into an error. The endpoint returns
+    # ChangeEmailResponseDto(message="Email changed
+    # successfully.") with status 200 and sets no refresh
+    # cookie. No Cache-Control assertion here, deliberately:
+    # mirroring the success lock, this success path sets no
+    # cache headers (unlike the error paths, which go through
+    # the central HTTPException handler). No X-Tenant-ID header
+    # is sent, so the seed and the service reads all use the
+    # host test DB, and the service's get_user_by_id call passes
+    # no tenant id, so the host caller may access the row. The
+    # conftest fixture drops the test DB after the test, so the
+    # row cannot leak into other tests.
+    import jwt
+    from datetime import datetime, timedelta, timezone
+
+    from beanie import PydanticObjectId
+
+    from api.common.enums.gender import Gender
+    from api.common.security import ALGORITHM, JWT_SECRET, hash_it
+    from api.domain.entities.user import User
+
+    await User(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b385"),
+        first_name="Admin",
+        last_name="User",
+        email="admin@example.com",
+        gender=Gender.OTHER,
+        is_active=True,
+        password=hash_it("password"),
+    ).insert()
+    token = jwt.encode(
+        {
+            "user_id": "68c302ef6bf7a039b7e9b385",
+            "email": "change-email-padded@example.com",
+            "type": "change_email_confirmation",
+            "exp": datetime.now(timezone.utc) + timedelta(hours=1),
+        },
+        JWT_SECRET,
+        algorithm=ALGORITHM,
+    )
+    response = await client.patch(
+        "/account/change_email_confirmation",
+        json={"token": " " + token + " "},
+    )
+    assert response.status_code == 200
+    assert response.json()["message"] == "Email changed successfully."
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the eleven most sensitive directives as disabled,
+    # mirroring the success lock, using substring checks so
+    # later additions to the list do not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
