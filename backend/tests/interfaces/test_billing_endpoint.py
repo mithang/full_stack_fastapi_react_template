@@ -742,3 +742,174 @@ async def test_post_billing_plan_outside_tenant_scope_returns_403_with_cache_and
     )
     assert stored is not None
     assert stored.features == [Feature(name=FeatureEnum.STRIPE, enabled=True)]
+
+
+@pytest.mark.asyncio
+async def test_patch_billing_plan_outside_tenant_scope_returns_403_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The billing update scope-guard error path:
+    """
+    # The /billing/plans/{plan_id} update scope-guard branch,
+    # not yet locked: function-name grep count 0 for
+    # patch_billing_plan_outside_tenant_scope (verified fresh
+    # this run), and no test in this file asserts a 403 with
+    # an "outside your tenant's scope" message on PATCH - the
+    # locks cover only the feature-disabled 403s and the POST
+    # create scope 403 (previous run). PATCH shares the same
+    # _assert_create_scope guard (billing_endpoint.py:18-36)
+    # as POST, called first in the update handler body
+    # (:122-136), but a future change could drop the guard
+    # call from update_plan while leaving create_plan's call
+    # intact, and the POST lock would stay green while PATCH
+    # silently wrote into the HOST Stripe account. Deleting
+    # the guard would previously have gone uncaught on this
+    # route: a tenant caller updating a plan on the wrong DB
+    # would then have the update applied to the HOST Stripe
+    # account (the tenant Stripe resolver reads the singleton
+    # settings record in the current DB with no tenant
+    # filter), mutating the host catalog and hiding the change
+    # from the caller's own tenant Stripe account. The guard
+    # runs first in the handler body, before any Stripe call.
+    # It cannot be reached the way the roles/users/audit-logs
+    # locks reach their guards (tenant-scoped caller, no
+    # X-Tenant-ID header): the billing router is
+    # feature-gated, and check_feature_access looks the tenant
+    # up by request.state.tenant_id before the handler runs, so
+    # with no header the lookup gets None, BaseRepository.get
+    # returns None, and get_tenant_by_id raises
+    # TenantNotFoundException - a 404 from the gate, never the
+    # scope 403. The lock therefore uses the mismatched scope
+    # the guard is written for: the caller is tenant-scoped to
+    # 68c302ef6bf7a039b7e9b387 while the request carries
+    # X-Tenant-ID 68c302ef6bf7a039b7e9b388, a seeded tenant
+    # with the STRIPE feature enabled, so the feature gate
+    # passes (Tenant stays bound to the host DB - init_db
+    # excludes it from the tenant-DB models, mongodb.py:53-56
+    # - so the lookup finds the seeded row) and the guard
+    # raises ForbiddenException before any Stripe call. The
+    # caller override mirrors the POST scope lock's pattern
+    # (per-test MeResponseDto, restored in finally), and the
+    # role must carry MANAGE_BILLING here: like create, the
+    # update route has a MANAGE_BILLING permission dependency
+    # that runs before the handler body, so a role without it
+    # would 403 with "Insufficient permissions." instead of
+    # the scope message. The body is the same valid body the
+    # feature-disabled PATCH lock puts (trial_period_days 14,
+    # within ge=0/le=365; active and metadata default to None),
+    # so no 422 can mask the 403, and the :path plan_id param
+    # is a plain string and cannot mask the error. The central
+    # ApiBaseException handler maps ForbiddenException to 403
+    # (api/__init__.py:98-103) with {"error": ..., "code": 403}
+    # and the no-store/Pragma error headers. A future change
+    # that drops the guard from update_plan would break this
+    # lock while leaving the feature-disabled PATCH 403 lock
+    # and the POST scope 403 lock green, so the paths are
+    # locked separately.
+    from beanie import PydanticObjectId
+
+    from api.domain.entities.tenant import Feature, Tenant
+    from api.domain.enum.feature import Feature as FeatureEnum
+    from api.domain.enum.permission import Permission
+
+    await Tenant(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b388"),
+        name="billing-scope-tenant",
+        subdomain="billing-scope.fsrapp.com",
+        features=[Feature(name=FeatureEnum.STRIPE, enabled=True)],
+    ).insert()
+
+    async def override_get_current_user_tenant_scoped():
+        return MeResponseDto(
+            first_name="Admin",
+            last_name="User",
+            id="68c302ef6bf7a039b7e9b385",
+            email="admin@example.com",
+            gender=Gender.OTHER,
+            is_active=True,
+            role_id="68c302ef6bf7a039b7e9b386",
+            tenant_id="68c302ef6bf7a039b7e9b387",
+            created_at="2024-10-01T00:00:00Z",
+            updated_at="2024-10-01T00:00:00Z",
+            role=RoleDto(
+                id="68c302ef6bf7a039b7e9b386",
+                name="Tenant billing caller",
+                description="Role for the tenant-scoped billing update caller",
+                created_at="2024-10-01T00:00:00Z",
+                updated_at="2024-10-01T00:00:00Z",
+                permissions=[Permission.MANAGE_BILLING],
+            ),
+            subscription=None,
+        )
+
+    original_override = app.dependency_overrides.get(get_current_user)
+    app.dependency_overrides[get_current_user] = override_get_current_user_tenant_scoped
+    try:
+        response = await client.patch(
+            "/billing/plans/plan_test123",
+            json={"trial_period_days": 14},
+            headers={"X-Tenant-ID": "68c302ef6bf7a039b7e9b388"},
+        )
+    finally:
+        if original_override is None:
+            app.dependency_overrides.pop(get_current_user, None)
+        else:
+            app.dependency_overrides[get_current_user] = original_override
+    assert response.status_code == 403
+    body = response.json()
+    assert body["code"] == 403
+    assert "outside your tenant's scope" in body["error"]
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    # The 403 must still carry the error-response headers: the
+    # handler sets no-store only on the success path, so on this
+    # path they come from the central ApiBaseException handler,
+    # and a cached 403 could otherwise be served to a different
+    # user after an account switch on a shared machine.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+
+    # Same security-headers lock as the billing PATCH
+    # feature-disabled test: the pure-ASGI middleware stamps
+    # every HTTP response with no path exclusions, so the
+    # billing 403 must carry the same headers as the
+    # authenticated calls, including the exception-handler
+    # responses.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Presence alone would not catch the value being weakened:
+    # lock the twelve most sensitive directives as disabled,
+    # mirroring the billing PATCH feature-disabled lock, using
+    # substring checks so later additions to the list do not
+    # break this test. Each directive is safe to lock here for
+    # the same reasons as on the other billing routes: the SPA
+    # has no camera, microphone, geolocation, payment,
+    # clipboard-read, display-capture, fullscreen,
+    # motion-sensor, compass, XR, or idle-detection flow
+    # (verified by grep in the earlier sweeps).
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+    # Postconditions: the guard fires before any Stripe call,
+    # so no plan was updated in either Stripe account, and the
+    # seeded tenant is still there with the STRIPE feature
+    # enabled (there is no DB record a plan write would leave
+    # behind - plans are Stripe objects, not DB rows - so the
+    # tenant row is the observable postcondition).
+    stored = await Tenant.find_one(
+        Tenant.id == PydanticObjectId("68c302ef6bf7a039b7e9b388")
+    )
+    assert stored is not None
+    assert stored.features == [Feature(name=FeatureEnum.STRIPE, enabled=True)]
