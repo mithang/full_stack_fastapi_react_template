@@ -84,7 +84,7 @@ class TenantService:
         return existing
 
     async def create_tenant(self, tenant_data: CreateTenantDto) -> PydanticObjectId | None:
-        """Create a new tenant. Raises InvalidOperationException if admin password is weak. Raises ConflictException if a tenant with the same name already exists."""
+        """Create a new tenant. Raises InvalidOperationException if admin password is weak. Raises ConflictException if a tenant with the same name or the same subdomain already exists."""
         validate_password(tenant_data.admin_password)
         # Duplicate-name guard, mirroring RoleService.create_role and
         # UserService.create_user: the repository's DuplicateKeyError
@@ -101,6 +101,21 @@ class TenantService:
         existing = await self.tenant_repository.single_or_none(name=tenant_data.name)
         if existing is not None:
             raise ConflictException("Tenant", tenant_data.name)
+        # Duplicate-subdomain guard, same shape as the name guard
+        # above: Tenant.subdomain has no unique index (plain
+        # "subdomain" in Settings.indexes, no Indexed unique
+        # annotation) and no service check, so a second create
+        # with a different name but an existing subdomain
+        # previously returned 201 and enqueued the post-creation
+        # Celery task for the colliding tenant. The subdomain is
+        # already trimmed/lowercased by its AfterValidator, so
+        # the stored and incoming values compare exactly. A
+        # None subdomain (no subdomain supplied) is not checked:
+        # several tenants may legitimately have none.
+        if tenant_data.subdomain is not None:
+            existing = await self.tenant_repository.single_or_none(subdomain=tenant_data.subdomain)
+            if existing is not None:
+                raise ConflictException("Tenant", tenant_data.subdomain)
         response = await self.tenant_repository.create(tenant_data)
         return response
 

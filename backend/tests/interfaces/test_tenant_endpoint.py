@@ -3503,3 +3503,161 @@ async def test_create_duplicate_tenant_returns_409_with_cache_and_security_heade
     )
     assert stored_role is not None
     assert stored_role.permissions == [Permission.HOST_MANAGE_TENANTS]
+
+
+@pytest.mark.asyncio
+async def test_create_tenant_with_duplicate_subdomain_returns_409_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The tenant create duplicate-subdomain error path:
+        the duplicate-name 409 lock covers a second tenant
+        with the same name, but a different name on an
+        existing subdomain had no lock - function-name grep
+        count 0 for duplicate subdomain and grep count 0
+        for "subdomain.*already exists" across this file,
+        verified fresh this run. Tenant.subdomain is a plain
+        field (tenant.py:135): no Indexed unique annotation
+        and only a plain "subdomain" entry in
+        Settings.indexes, so there is no database guarantee
+        at all, and create_tenant had no service check for
+        it either - a second POST /tenants/ with a different
+        name but an existing subdomain previously returned
+        201 and dispatched the post-creation Celery task
+        for the colliding tenant. The service now checks
+        first, mirroring the duplicate-name guard:
+        single_or_none(subdomain=...) raises
+        ConflictException("Tenant", subdomain) before any
+        write, which subclasses ApiBaseException with the
+        message "Tenant with identifier <subdomain> already
+        exists." (common/exceptions.py:26-38), and the
+        central handler maps it to 409 with {"error": ...,
+        "code": 409} plus the no-store/Pragma error
+        headers (api/__init__.py:89-90, 121-133). The
+        check runs before repository.create, so the
+        duplicate path needs no Celery broker care: the
+        endpoint's handle_post_tenant_creation.delay runs
+        only after service.create_tenant returns, and the
+        seeded first tenant is inserted directly, so this
+        test makes exactly one API call. The seeded role
+        (id 68c302ef6bf7a039b7e9b386) must carry the
+        route's HOST_MANAGE_TENANTS permission, since the
+        permission dependency runs before the handler, and
+        the shared conftest mock is a host caller
+        (tenant_id None), so the host-restriction guard
+        passes too. The body is a valid CreateTenantDto
+        with a different name ("other") but the seeded
+        subdomain dup.fsrapp.com, so the name guard passes
+        and only the subdomain guard fires - no 422 can
+        mask the 409: FastAPI validates the body before
+        the handler runs, and the subdomain label "dup"
+        passes SUBDOMAIN_REGEX (tenant.py:11) against the
+        "fsrapp.com" main domain (config.py:32). The
+        subdomain is already trimmed/lowercased by its
+        AfterValidator, so the stored and incoming values
+        compare exactly. A future change that drops the
+        subdomain check would break this lock while
+        leaving the POST 201, POST 403, and duplicate-name
+        409 locks green, so the paths are locked
+        separately. Residual, not covered by this lock:
+        concurrent duplicate creates can still race past
+        the check-then-insert; a true database guarantee
+        needs a unique index on subdomain, which needs a
+        migration on existing databases - assess separately.
+    """
+    from beanie import PydanticObjectId
+
+    from api.domain.entities.role import Role
+    from api.domain.entities.tenant import Tenant
+    from api.domain.enum.permission import Permission
+
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b386"),
+        name="Host tenant administrator",
+        description="Role carrying HOST_MANAGE_TENANTS for the mocked caller",
+        permissions=[Permission.HOST_MANAGE_TENANTS],
+    ).insert()
+
+    await Tenant(
+        name="seeded",
+        subdomain="dup.fsrapp.com",
+    ).insert()
+
+    response = await client.post(
+        "/tenants/",
+        json=CreateTenantDto(
+            name="other",
+            subdomain="dup.fsrapp.com",
+            admin_email="other@test.com",
+            admin_password="Test@123!",
+            first_name="Other",
+            last_name="Admin",
+            gender=Gender.MALE,
+        ).model_dump(),
+    )
+    assert response.status_code == 409
+    body = response.json()
+    assert body["code"] == 409
+    assert "Tenant with identifier dup.fsrapp.com already exists." in body["error"]
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    # The 409 must still carry the error-response headers: the
+    # duplicate check raises before the handler creates any
+    # response object, so on this path the no-store/Pragma headers
+    # come from the central ApiBaseException handler, and a cached
+    # 409 could otherwise be served to a different admin after an
+    # account switch on a shared machine.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+
+    # Same security-headers lock as the other tenant tests in
+    # this file: the pure-ASGI middleware stamps every HTTP
+    # response with no path exclusions, so this authenticated
+    # tenant 409 must carry the same headers as the other
+    # interface locks.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Presence alone would not catch the value being weakened:
+    # lock the twelve most sensitive directives as disabled,
+    # mirroring the other interface locks, using substring
+    # checks so later additions to the list do not break this
+    # test. The full value lives in _SECURITY_HEADERS. Each
+    # directive is safe to lock here for the same reasons as on
+    # the other routes: the SPA has no camera, microphone,
+    # geolocation, payment, clipboard-read, display-capture,
+    # fullscreen, motion-sensor, compass, XR, or
+    # idle-detection flow (verified by grep in the earlier
+    # sweeps and re-verified fresh this run: zero
+    # case-insensitive idle matches and zero
+    # IdleDetector/requestIdleCallback matches across
+    # frontend/app/src).
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+    # Postconditions: the duplicate check fires before any
+    # write, so the request is side-effect free - still
+    # exactly one tenant on subdomain dup.fsrapp.com (the
+    # seeded one, named "seeded"), and the seeded role is
+    # still there with HOST_MANAGE_TENANTS. Had the check
+    # been dropped, the handler would have created a second
+    # tenant on dup.fsrapp.com (and dispatched the
+    # post-creation job for its admin account).
+    duplicates = await Tenant.find(Tenant.subdomain == "dup.fsrapp.com").to_list()
+    assert len(duplicates) == 1
+    assert duplicates[0].name == "seeded"
+    stored_role = await Role.find_one(
+        Role.id == PydanticObjectId("68c302ef6bf7a039b7e9b386")
+    )
+    assert stored_role is not None
+    assert stored_role.permissions == [Permission.HOST_MANAGE_TENANTS]
