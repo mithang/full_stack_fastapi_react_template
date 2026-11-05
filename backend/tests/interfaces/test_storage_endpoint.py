@@ -827,3 +827,101 @@ async def test_patch_storage_reset_outside_tenant_scope_returns_403_with_cache_a
     )
     assert stored_role is not None
     assert stored_role.permissions == [Permission.MANAGE_STORAGE_SETTINGS]
+
+
+@pytest.mark.asyncio
+async def test_configure_storage_preserves_created_at_on_update(client: AsyncClient):
+    """
+        The storage-settings re-configure created_at rewrite, not
+        yet locked: function-name grep count 0 for
+        configure_storage_preserves_created_at_on_update across
+        backend/tests source (verified fresh this run).
+        StorageSettingsRepository.configure_storage builds its
+        update from a fresh entity the service constructs from
+        the DTO, so that entity's created_at is "now"; the update
+        branch then passed a full model_dump() to
+        BaseRepository.update(), which $sets every key it is
+        given - so every re-configure silently rewrote the row's
+        creation time to the save time (same class as the
+        user-preference update fix). The repository is called
+        directly here, bypassing the endpoint on purpose: only a
+        direct call seeds a row with a known old created_at,
+        which no endpoint path can produce deterministically.
+        The client fixture is only used to initialise the
+        per-test database (conftest.py, db.drop() after); no HTTP
+        call is made. StorageSettings is outside the conftest
+        model set (conftest.py:25), so the test initializes it
+        on the test DB first: init_beanie on the same URI/db
+        name the conftest fixture uses
+        (mongodb://localhost:27012/test_db, api_test_db),
+        mirroring the branding/app-configuration tests'
+        second-init precedent. The seeded row is disabled, so
+        disable_all_active_storages is a no-op and the update
+        branch is the only write. The old code would return the
+        same row id but with created_at rewritten to now; the
+        fix carries existing.created_at onto the fresh entity,
+        so the stored row keeps 2024-01-01 while the region,
+        keys and enabled flag still update and updated_at is
+        still stamped centrally. A future change that drops the
+        preservation would break this lock while leaving the
+        configure 403/404 locks green, so the paths are locked
+        separately.
+    """
+    from datetime import datetime, timezone
+
+    from beanie import PydanticObjectId, init_beanie
+    from pymongo import AsyncMongoClient
+
+    from api.domain.entities.storage_settings import StorageProvider, StorageSettings
+    from api.infrastructure.persistence.repositories.storage_settings_repository_impl import (
+        StorageSettingsRepository,
+    )
+
+    mongo_client = AsyncMongoClient("mongodb://localhost:27012/test_db")
+    await init_beanie(
+        mongo_client["api_test_db"],
+        document_models=[StorageSettings],
+    )
+
+    repository = StorageSettingsRepository()
+    tenant_id = PydanticObjectId()
+    seeded_created_at = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    seeded = StorageSettings(
+        provider=StorageProvider.AWS_S3,
+        is_enabled=False,
+        region="us-east-1",
+        aws_access_key="old-access-key",
+        aws_secret_key="old-secret-key",
+        aws_bucket_name="old-bucket",
+        tenant_id=tenant_id,
+        created_at=seeded_created_at,
+        updated_by_user_id="68c302ef6bf7a039b7e9b385",
+    )
+    created = await repository.create(data=seeded.model_dump())
+
+    result_id = await repository.configure_storage(
+        setting=StorageSettings(
+            provider=StorageProvider.AWS_S3,
+            is_enabled=True,
+            region="eu-west-1",
+            aws_access_key="new-access-key",
+            aws_secret_key="new-secret-key",
+            aws_bucket_name="new-bucket",
+            tenant_id=tenant_id,
+            updated_by_user_id="68c302ef6bf7a039b7e9b385",
+        )
+    )
+
+    # The update branch ran on the seeded row (not a second create).
+    assert result_id == created.id
+    stored = await repository.single_or_none(provider=StorageProvider.AWS_S3.value)
+    assert stored is not None
+    assert stored.region == "eu-west-1"
+    assert stored.is_enabled is True
+    assert stored.aws_bucket_name == "new-bucket"
+    assert stored.aws_access_key == "new-access-key"
+    assert stored.tenant_id == tenant_id
+    # Mongo returns datetimes naive (UTC); normalise before comparing
+    # so the assertion holds whether Beanie hands back naive or aware.
+    assert stored.created_at.replace(tzinfo=timezone.utc) == seeded_created_at
+    assert stored.updated_at.replace(tzinfo=timezone.utc) > seeded_created_at

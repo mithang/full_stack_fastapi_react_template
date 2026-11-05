@@ -58,6 +58,19 @@ class StorageSettingsRepository(BaseRepository[StorageSettings], AuditLogReposit
             if getattr(setting, field) == "****":
                 setattr(setting, field, getattr(existing, field))
 
+        # Preserve the original creation time: `setting` is a fresh
+        # entity built from the DTO in the service, so its created_at
+        # is "now"; the full model_dump() below $sets every key it is
+        # given, so without this every re-configure silently rewrote
+        # the row's creation time to the save time (same class as the
+        # user-preference update fix). The tenant_id stamp is left
+        # alone on purpose: the endpoint requires a tenant context,
+        # so the fresh entity carries the caller's tenant id and
+        # re-stamping it is what adopts a legacy row into that
+        # tenant's scope; updated_at is stamped centrally by
+        # BaseRepository.update.
+        setting.created_at = existing.created_at
+
         result = await super().update(id=str(existing.id), data=setting.model_dump())
         logger.info(f"Update result: {result.id} document(s) modified.")
         is_enabled_change = existing.is_enabled != setting.is_enabled
