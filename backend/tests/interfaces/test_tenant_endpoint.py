@@ -2901,3 +2901,252 @@ async def test_check_tenant_dns_outside_tenant_scope_returns_403_with_cache_and_
     assert stored_tenant.is_active is False
     assert stored_tenant.custom_domain is None
     assert stored_tenant.custom_domain_status == "failed"
+
+
+@pytest.mark.asyncio
+async def test_activate_trial_plan_outside_tenant_scope_returns_403_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The tenant trial-activation PATCH scope-guard error
+        path: the tenant test file locked this PATCH route
+        itself only as a feature-disabled 403 (a host
+        caller whose tenant has STRIPE disabled, with no
+        seeded role) and locked the GET features, PUT,
+        DELETE, update_feature PATCH, update_dns POST, and
+        check_dns GET routes' scope guards in the previous
+        runs, but no test asserted a 403 on
+        PATCH /tenants/{tenant_id}/activate_trial_plan via
+        _assert_trial_activation_scope - function-name grep
+        count 0 for activate_trial_plan_outside_tenant_scope,
+        verified fresh this run. Dropping
+        _assert_trial_activation_scope
+        (tenant_endpoint.py:86-104) would previously have
+        gone uncaught, and a tenant caller activating on
+        the host DB could then create a Stripe trial
+        subscription for a tenant record sitting in the
+        host DB and overwrite its subscription_id, as the
+        guard's own comment describes (the stamp check in
+        activate_trial_plan only compares against the
+        record the request's database returned).
+        This guard is not reachable the way the other
+        scope locks reach theirs: the STRIPE feature gate
+        (check_feature_access, feature_access_management.py)
+        is a dependency listed in the handler signature
+        BEFORE the HOST_MANAGE_TENANTS permission
+        dependency and before the guard, and it does
+        tenant_service.get_tenant_by_id(request.state.tenant_id)
+        for a tenant caller. In the test env the middleware's
+        tenant-DB init targets the settings Mongo URI
+        (default 27017, no listener - both 27017 and 27012
+        verified closed this run), so it falls back to host
+        scope and the gate's lookup of id None raises
+        TenantNotFoundException, answering 404 before the
+        guard is ever reached - a test asserting 403 with
+        the plain pattern would fail if executed, so no
+        such lock was written in the earlier sweep. Two
+        other approaches were assessed and rejected: seeding
+        the request-scope tenant into the tenant DB would
+        not help, because that DB is initialised on the
+        settings-mongo client rather than the conftest test
+        DB, so the seed would not be visible to the gate's
+        lookup in the test env; and reordering the production
+        dependencies so the guard runs before the gate was
+        not needed for the lock and would change which 403
+        message some callers receive. Instead this test
+        isolates the guard the same way the file's other
+        locks isolate the code under test (they override
+        get_current_user per test): the gate callable is
+        read out of the endpoint signature (FastAPI Depends
+        exposes it as .dependency) and overridden to return
+        True, so the request reaches the handler body with
+        the gate passed. The gate itself stays locked by the
+        feature-disabled 403 test above, which exercises the
+        real gate; this test locks only the scope guard.
+        It cannot be reached the way the missing-role 404
+        lock reaches the route (host caller, no seeded
+        role): the permission dependency runs before the
+        guard, so the seeded role (id
+        68c302ef6bf7a039b7e9b386) must carry one of the
+        route's permissions - HOST_MANAGE_TENANTS here,
+        mirroring the update_dns lock - and the caller
+        override mirrors the stripe scope locks' and the
+        PUT/DELETE/features/update_feature/update_dns/
+        check_dns scope locks' pattern (per-test
+        MeResponseDto, restored in finally). The caller is
+        tenant-scoped to 68c302ef6bf7a039b7e9b387 while the
+        request carries X-Tenant-ID
+        68c302ef6bf7a039b7e9b388, so the guard fires on the
+        mismatch - and even if the middleware resolves the
+        header to scope 388 instead of falling back to
+        scope None, the guard fires the same way (387 vs
+        388), so the 403 does not depend on which of the
+        two scope values the middleware produces. The
+        seeded tenant carries the caller's own tenant id
+        (387), not the 385 of the DELETE lock: without the
+        guard, the stamp check at tenant_endpoint.py:643
+        would pass (tenant.id == caller tenant id) and the
+        handler would reach billing_record_service.list_plans
+        ('host'), a live Stripe call (billing_record_service.py:
+        176-179), instead of this 403. The PATCH carries no
+        body, so no 422 can mask the 403; the handler takes
+        no Response param, so the 403's no-store/Pragma
+        headers come from the central ApiBaseException
+        handler (api/__init__.py:98-103), which maps
+        ForbiddenException to 403 with {"error", "code"}.
+        A future change that drops the guard would break
+        this lock while leaving the PATCH feature-disabled
+        403 lock green, so the paths are locked separately.
+    """
+    import inspect
+
+    from beanie import PydanticObjectId
+
+    from api.domain.entities.role import Role
+    from api.domain.entities.tenant import Tenant
+    from api.domain.enum.permission import Permission
+    from api.interfaces.api_controllers.tenant_endpoint import activate_trial_plan
+
+    await Tenant(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b387"),
+        name="trial-activation-scope-tenant",
+        subdomain="trial-activation-scope.fsrapp.com",
+    ).insert()
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b386"),
+        name="Tenant tenant administrator",
+        description="Role carrying HOST_MANAGE_TENANTS for the mocked caller",
+        permissions=[Permission.HOST_MANAGE_TENANTS],
+    ).insert()
+
+    async def override_get_current_user_tenant_scoped():
+        return MeResponseDto(
+            first_name="Admin",
+            last_name="User",
+            id="68c302ef6bf7a039b7e9b385",
+            email="admin@example.com",
+            gender=Gender.OTHER,
+            is_active=True,
+            role_id="68c302ef6bf7a039b7e9b386",
+            tenant_id="68c302ef6bf7a039b7e9b387",
+            created_at="2024-10-01T00:00:00Z",
+            updated_at="2024-10-01T00:00:00Z",
+            role=RoleDto(
+                id="68c302ef6bf7a039b7e9b386",
+                name="Tenant tenant administrator",
+                description="Role carrying HOST_MANAGE_TENANTS for the mocked caller",
+                created_at="2024-10-01T00:00:00Z",
+                updated_at="2024-10-01T00:00:00Z",
+                permissions=[Permission.HOST_MANAGE_TENANTS],
+            ),
+            subscription=None,
+        )
+
+    async def override_feature_gate():
+        return True
+
+    # The STRIPE gate callable is the Depends default of the
+    # _feature_check parameter, created once at import time by
+    # check_feature_access(feature_name=Feature.STRIPE); a fresh
+    # call would build a different closure and would not match
+    # the route's dependency, so it is read out of the endpoint
+    # signature instead of reconstructed.
+    feature_gate = inspect.signature(activate_trial_plan).parameters["_feature_check"].default.dependency
+
+    original_user_override = app.dependency_overrides.get(get_current_user)
+    original_gate_override = app.dependency_overrides.get(feature_gate)
+    app.dependency_overrides[get_current_user] = override_get_current_user_tenant_scoped
+    app.dependency_overrides[feature_gate] = override_feature_gate
+    try:
+        response = await client.patch(
+            "/tenants/68c302ef6bf7a039b7e9b387/activate_trial_plan",
+            headers={"X-Tenant-ID": "68c302ef6bf7a039b7e9b388"},
+        )
+    finally:
+        if original_user_override is None:
+            app.dependency_overrides.pop(get_current_user, None)
+        else:
+            app.dependency_overrides[get_current_user] = original_user_override
+        if original_gate_override is None:
+            app.dependency_overrides.pop(feature_gate, None)
+        else:
+            app.dependency_overrides[feature_gate] = original_gate_override
+    assert response.status_code == 403
+    body = response.json()
+    assert body["code"] == 403
+    assert "outside your tenant's scope" in body["error"]
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    # The 403 must still carry the error-response headers: the
+    # trial-activation-scope guard raises before any tenant read
+    # or Stripe work, and the PATCH takes no Response param, so
+    # on this path the no-store/Pragma headers come from the
+    # central ApiBaseException handler, and a cached 403 could
+    # otherwise be served to a different admin after an account
+    # switch on a shared machine.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+
+    # Same security-headers lock as the other tenant tests in
+    # this file: the pure-ASGI middleware stamps every HTTP
+    # response with no path exclusions, so this authenticated
+    # tenant 403 must carry the same headers as the other
+    # interface locks.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Presence alone would not catch the value being weakened:
+    # lock the twelve most sensitive directives as disabled,
+    # mirroring the other interface locks, using substring
+    # checks so later additions to the list do not break this
+    # test. The full value lives in _SECURITY_HEADERS. Each
+    # directive is safe to lock here for the same reasons as on
+    # the other routes: the SPA has no camera, microphone,
+    # geolocation, payment, clipboard-read, display-capture,
+    # fullscreen, motion-sensor, compass, XR, or
+    # idle-detection flow (verified by grep in the earlier
+    # sweeps and re-verified fresh this run: zero
+    # case-insensitive idle matches across frontend/app/src).
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+    # Postconditions: the guard fires before any tenant read
+    # or Stripe work, so the PATCH is side-effect free - the
+    # seeded role is still there with HOST_MANAGE_TENANTS and
+    # the seeded tenant row still exists with is_active False
+    # (its entity default), custom_domain None (its entity
+    # default), custom_domain_status "failed" (its entity
+    # default, tenant.py:143), features [] (its entity
+    # default, tenant.py:144) and subscription_id None (its
+    # entity default, tenant.py:145). The 403 assertion above
+    # is the lock on the guard itself: had the guard been
+    # dropped, the handler would have passed its stamp check
+    # (seeded tenant id 387 equals the caller tenant id) and
+    # reached the live Stripe plan list instead of this 403,
+    # and the subscription_id-still-None postcondition proves
+    # no trial subscription was created or written.
+    stored_role = await Role.find_one(
+        Role.id == PydanticObjectId("68c302ef6bf7a039b7e9b386")
+    )
+    assert stored_role is not None
+    assert stored_role.permissions == [Permission.HOST_MANAGE_TENANTS]
+    stored_tenant = await Tenant.find_one(
+        Tenant.id == PydanticObjectId("68c302ef6bf7a039b7e9b387")
+    )
+    assert stored_tenant is not None
+    assert stored_tenant.name == "trial-activation-scope-tenant"
+    assert stored_tenant.is_active is False
+    assert stored_tenant.custom_domain is None
+    assert stored_tenant.custom_domain_status == "failed"
+    assert stored_tenant.features == []
+    assert stored_tenant.subscription_id is None
