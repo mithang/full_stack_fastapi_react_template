@@ -99,7 +99,13 @@ export function StripeProvider({ children }: StripeProviderProps) {
             await fetchConfiguredStripeSetting();
             toast.success("Stripe setting configured successfully.", { richColors: true, position: "top-right" });
         } catch (error) {
-            console.error("Error configuring Stripe setting:", error);
+            // Log only the extracted message, not the raw ApiError:
+            // its request.body holds the submitted
+            // CreateStripeSettingDto including stripe_secret_key and
+            // stripe_webhook_secret in plaintext, which must never
+            // reach the browser console (same class as the SSO
+            // client_secret log fixed in the previous run).
+            console.error("Error configuring Stripe setting:", extractErrorMessage(error));
             // A backend response (ApiError, which carries a numeric
             // status) means the server answered and rejected the
             // configuration; a failure with no status is a network
