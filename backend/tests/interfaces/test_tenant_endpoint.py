@@ -3150,3 +3150,183 @@ async def test_activate_trial_plan_outside_tenant_scope_returns_403_with_cache_a
     assert stored_tenant.custom_domain_status == "failed"
     assert stored_tenant.features == []
     assert stored_tenant.subscription_id is None
+
+
+@pytest.mark.asyncio
+async def test_create_tenant_as_tenant_caller_returns_403_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The tenant POST create host-restriction error path:
+        the tenant test file locked the POST route itself
+        (host create, 201) and the 403 scope guards for the
+        DELETE, PUT, DNS-update POST, DNS-check GET, features
+        GET, update_feature PATCH, and trial-activation PATCH
+        routes, but no test asserted a 403 on POST /tenants/
+        via the host-restriction check - function-name grep
+        count 0 for create_tenant_as_tenant_caller_returns_403
+        and grep count 0 for "restricted to host" across this
+        file, verified fresh this run. Dropping the check
+        (tenant_endpoint.py:204) would previously have gone
+        uncaught, and a tenant caller could then create
+        arbitrary new tenants with a caller-chosen admin
+        account (email + password), claiming subdomains and
+        gaining admin of a fresh tenant, as the guard's own
+        comment describes. The check runs first in the handler
+        body, before any service call or worker dispatch, so
+        no tenant is created and no post-creation job is
+        enqueued - unlike the 409 tenant-create path, this
+        lock needs no Celery broker care. It cannot be
+        reached the way the missing-role 404 locks reach the
+        route (host caller, no seeded role): the permission
+        dependency runs before the guard, so the seeded role
+        (id 68c302ef6bf7a039b7e9b386) must carry the route's
+        HOST_MANAGE_TENANTS permission, and the caller
+        override mirrors the delete scope lock's pattern
+        (per-test MeResponseDto, restored in finally). The
+        caller is tenant-scoped to
+        68c302ef6bf7a039b7e9b387, so the check fires on
+        tenant_id is not None alone - no X-Tenant-ID header
+        is needed, and the tenant router carries no feature
+        gate. get_role_detail calls get_role_by_id with no
+        tenant argument (user_access_management.py), so
+        _caller_may_access sees a None caller tenant and
+        returns True (role_service.py:18-19), and the seeded
+        row is visible regardless of the caller's tenant
+        scope - the same mechanism the delete scope lock
+        relies on. The body is a valid CreateTenantDto (name,
+        subdomain create-scope.fsrapp.com, admin email and
+        password, first/last name, gender), so no 422 can mask
+        the 403: FastAPI validates the body before the handler
+        runs, and the subdomain label "create-scope" passes
+        SUBDOMAIN_REGEX (tenant.py:11). The central
+        ApiBaseException handler maps ForbiddenException to 403
+        (api/__init__.py:98-103) with {"error": ...,
+        "code": 403} and the no-store/Pragma error headers.
+        A future change that drops the check would break this
+        lock while leaving the POST 201 lock green, so the
+        paths are locked separately.
+    """
+    from beanie import PydanticObjectId
+
+    from api.domain.entities.role import Role
+    from api.domain.entities.tenant import Tenant
+    from api.domain.enum.permission import Permission
+
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b386"),
+        name="Tenant tenant administrator",
+        description="Role carrying HOST_MANAGE_TENANTS for the mocked caller",
+        permissions=[Permission.HOST_MANAGE_TENANTS],
+    ).insert()
+
+    async def override_get_current_user_tenant_scoped():
+        return MeResponseDto(
+            first_name="Admin",
+            last_name="User",
+            id="68c302ef6bf7a039b7e9b385",
+            email="admin@example.com",
+            gender=Gender.OTHER,
+            is_active=True,
+            role_id="68c302ef6bf7a039b7e9b386",
+            tenant_id="68c302ef6bf7a039b7e9b387",
+            created_at="2024-10-01T00:00:00Z",
+            updated_at="2024-10-01T00:00:00Z",
+            role=RoleDto(
+                id="68c302ef6bf7a039b7e9b386",
+                name="Tenant tenant administrator",
+                description="Role carrying HOST_MANAGE_TENANTS for the mocked caller",
+                created_at="2024-10-01T00:00:00Z",
+                updated_at="2024-10-01T00:00:00Z",
+                permissions=[Permission.HOST_MANAGE_TENANTS],
+            ),
+            subscription=None,
+        )
+
+    original_override = app.dependency_overrides.get(get_current_user)
+    app.dependency_overrides[get_current_user] = override_get_current_user_tenant_scoped
+    try:
+        response = await client.post(
+            "/tenants/",
+            json=CreateTenantDto(
+                name="create-scope",
+                subdomain="create-scope.fsrapp.com",
+                admin_email="create-scope-admin@example.com",
+                admin_password="CreateScope123!",
+                first_name="Create",
+                last_name="Scope",
+                gender=Gender.MALE,
+            ).model_dump(),
+        )
+    finally:
+        if original_override is None:
+            app.dependency_overrides.pop(get_current_user, None)
+        else:
+            app.dependency_overrides[get_current_user] = original_override
+    assert response.status_code == 403
+    body = response.json()
+    assert body["code"] == 403
+    assert "Tenant creation is restricted to host administrators." in body["error"]
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    # The 403 must still carry the error-response headers: the
+    # host-restriction check raises before the handler creates
+    # any response object, so on this path the no-store/Pragma
+    # headers come from the central ApiBaseException handler,
+    # and a cached 403 could otherwise be served to a different
+    # admin after an account switch on a shared machine.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+
+    # Same security-headers lock as the other tenant tests in
+    # this file: the pure-ASGI middleware stamps every HTTP
+    # response with no path exclusions, so this authenticated
+    # tenant 403 must carry the same headers as the other
+    # interface locks.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Presence alone would not catch the value being weakened:
+    # lock the twelve most sensitive directives as disabled,
+    # mirroring the other interface locks, using substring
+    # checks so later additions to the list do not break this
+    # test. The full value lives in _SECURITY_HEADERS. Each
+    # directive is safe to lock here for the same reasons as on
+    # the other routes: the SPA has no camera, microphone,
+    # geolocation, payment, clipboard-read, display-capture,
+    # fullscreen, motion-sensor, compass, XR, or
+    # idle-detection flow (verified by grep in the earlier
+    # sweeps and re-verified fresh this run: zero
+    # case-insensitive idle matches and zero
+    # IdleDetector/requestIdleCallback matches across
+    # frontend/app/src).
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+    # Postconditions: the check fires before any service call
+    # or worker dispatch, so the POST is side-effect free -
+    # the seeded role is still there with HOST_MANAGE_TENANTS
+    # and, decisively, no tenant row was created with the
+    # requested subdomain: had the check been dropped, the
+    # handler would have created a tenant named "create-scope"
+    # on subdomain create-scope.fsrapp.com (and dispatched the
+    # post-creation job for its admin account).
+    stored_role = await Role.find_one(
+        Role.id == PydanticObjectId("68c302ef6bf7a039b7e9b386")
+    )
+    assert stored_role is not None
+    assert stored_role.permissions == [Permission.HOST_MANAGE_TENANTS]
+    stored_tenant = await Tenant.find_one(
+        Tenant.subdomain == "create-scope.fsrapp.com"
+    )
+    assert stored_tenant is None
