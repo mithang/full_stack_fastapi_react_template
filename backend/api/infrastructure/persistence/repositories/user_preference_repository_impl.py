@@ -44,7 +44,14 @@ class UserPreferenceRepository(BaseRepository[UserPreference], AuditLogRepositor
                 tenant_id=existing.tenant_id if existing and existing.tenant_id else None
             ))
             return
-        prf = existing.preferences.copy()
+        # Snapshot the prior preferences BEFORE merging: prf below is
+        # the merged (post-update) dict, so logging it as "old" recorded
+        # the new state as the old state and the audit trail lost the
+        # prior values entirely. "old" must be the pre-update dict,
+        # matching the "old": <pre-existing state> convention used by
+        # the other repositories (e.g. notification_banner, role).
+        old_preferences = existing.preferences.copy()
+        prf = old_preferences.copy()
         prf.update(preferences)
         payload = UserPreference(
             user_id=existing.user_id,
@@ -66,6 +73,6 @@ class UserPreferenceRepository(BaseRepository[UserPreference], AuditLogRepositor
             action="update",
             entity="UserPreference",
             user_id=user_id,
-            changes={"new": preferences, "old": prf},
+            changes={"new": preferences, "old": old_preferences},
             tenant_id=str(existing.tenant_id) if existing.tenant_id else None
         ))
