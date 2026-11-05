@@ -51,6 +51,3 @@ class CreateNotificationBannerSettingDto(BaseModel):
             raise ValueError("message must not be blank when the banner is enabled")
         return self
 
-class UpdateNotificationBannerSettingDto(CreateNotificationBannerSettingDto):
-    pass
-
