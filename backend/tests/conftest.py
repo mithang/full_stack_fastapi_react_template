@@ -7,6 +7,7 @@ from api.common.enums.gender import Gender
 from api.domain.dtos.user_dto import UserDto
 from api.domain.entities.role import Role
 from api.domain.entities.tenant import Tenant
+from api.domain.entities.user_magic_link import UserMagicLink
 from api.domain.entities.user_password_reset import UserPasswordReset
 from api.domain.entities.user_preference import UserPreference
 from api.infrastructure.persistence.mongodb import Database
@@ -19,7 +20,7 @@ TEST_MONGO_URI = "mongodb://localhost:27012/test_db"
 @pytest.fixture
 async def test_app():
     # Initialize test database per test function (same loop as the test)
-    db = Database(uri=TEST_MONGO_URI, models=[User, Tenant, Role, UserPasswordReset, UserPreference])
+    db = Database(uri=TEST_MONGO_URI, models=[User, Tenant, Role, UserMagicLink, UserPasswordReset, UserPreference])
     await db.init_db("api_test_db", is_tenant=False)
 
     # Override the get_current_user dependency to return a mocked test user

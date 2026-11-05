@@ -57557,3 +57557,145 @@ async def test_account_password_reset_confirmation_space_padded_token_returns_20
         UserPasswordReset.user_id == PydanticObjectId("68c3b6211202a03a0133023e")
     )
     assert remaining_record is None
+
+
+@pytest.mark.asyncio
+async def test_account_email_magic_link_validate_space_padded_user_id_returns_200_with_security_headers(client: AsyncClient):
+    """
+        The account magic-link validate GET success path with a
+        space-padded user_id query param:
+    """
+    # The magic-link validate space-padded-user_id branch, verified
+    # fresh this run, not assumed: function-name grep count 0 for
+    # test_account_email_magic_link_validate_space_padded_user_id,
+    # and no existing validate lock reaches the success path at
+    # all (the eight existing locks all fail earlier: invalid
+    # link, missing token, missing user_id, empty token,
+    # whitespace-only token, empty user_id, malformed user_id,
+    # whitespace-only user_id). The endpoint strips both query
+    # params (account_endpoint.py:515-516, token.strip() and
+    # user_id.strip(), after unquote at :505), so a user_id
+    # copied from an email link with surrounding spaces must
+    # still validate: the most common real-world whitespace
+    # class, matching the password-reset-confirmation
+    # space-padded 200 lock. The seed mirrors production
+    # exactly: create_magic_link (magic_link_service.py:32)
+    # generates the presented token as hash_it(user_id +
+    # JWT_SECRET) and the repository stores that raw token
+    # verbatim, so the seeded record carries
+    # token=hash_it(user_id + JWT_SECRET) and the lookup
+    # (magic_link_service.py:76, single_or_none by user_id and
+    # the presented token) finds it; validate_hashed_value
+    # (:96) then verifies user_id + JWT_SECRET against that
+    # presented token and returns True, and a successful
+    # validation consumes every outstanding link for the user.
+    # login_with_magic_link then needs a real seeded User row
+    # (get_user_by_id, host scope with no tenant_id, so the
+    # seeded host user is visible) and a seeded Role row (the
+    # _get_token_set helper looks the user's role up by id, as
+    # the already-locked refresh 200 test proves in-suite);
+    # the audit writes on this path are file-based JSONL in the
+    # temp dir, not test-DB rows, and token generation is pure
+    # JWT signing, so no email send, broker, or live service
+    # runs. UserMagicLink is added to the conftest model set
+    # this run so the collection is initialized; without it the
+    # seed insert would fail with a document-not-initialized
+    # error. No X-Tenant-ID header is sent, so the seeds and
+    # the service reads all use the host test DB, and the
+    # conftest fixture drops the test DB after the test, so the
+    # rows cannot leak into other tests. Postconditions are
+    # asserted directly, not just the response: the minted
+    # access token really belongs to the seeded user, the
+    # rotated refresh cookie is a genuine refresh token for
+    # the same user, and the magic-link record is consumed.
+    # A future change that drops the user_id strip would break
+    # this lock while leaving the whitespace-only-user_id 403
+    # lock green, so the two inputs are locked separately.
+    import jwt
+
+    from beanie import PydanticObjectId
+
+    from api.common.enums.gender import Gender
+    from api.common.security import ALGORITHM, JWT_SECRET, REFRESH_ALGORITHM, REFRESH_TOKEN_SECRET, hash_it
+    from api.domain.entities.role import Role
+    from api.domain.entities.user import User
+    from api.domain.entities.user_magic_link import UserMagicLink
+    from api.domain.enum.permission import Permission
+
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b386"),
+        name="Admin",
+        description="Administrator role for the magic-link user",
+        permissions=[Permission.USER_READ_AND_WRITE_ONLY, Permission.FULL_ACCESS],
+    ).insert()
+    await User(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b385"),
+        first_name="Magic",
+        last_name="User",
+        email="magic@example.com",
+        gender=Gender.OTHER,
+        is_active=True,
+        role_id=PydanticObjectId("68c302ef6bf7a039b7e9b386"),
+        password=hash_it("MagicPassword123!"),
+    ).insert()
+    user_id = "68c302ef6bf7a039b7e9b385"
+    presented_token = hash_it(user_id + JWT_SECRET)
+    await UserMagicLink(
+        user_id=PydanticObjectId(user_id),
+        token=presented_token,
+    ).insert()
+    response = await client.get(
+        "/account/email_magic_link_validate",
+        params={
+            "token": presented_token,
+            "user_id": f"  {user_id}  ",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert isinstance(body["access_token"], str) and len(body["access_token"]) > 0
+    assert isinstance(body["token_type"], str) and len(body["token_type"]) > 0
+    assert isinstance(body["refresh_token"], str) and len(body["refresh_token"]) > 0
+    assert body["expires_in"] > 0
+    assert body["refresh_token_expires_in"] > 0
+    set_cookie = response.headers.get("set-cookie", "")
+    assert "refresh_token=" in set_cookie
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the refresh 200 lock, using substring checks so
+    # later additions to the list do not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+    # Postconditions: the minted access token really belongs to
+    # the seeded user, and the rotated cookie is a genuine
+    # refresh token for the same user - not just a non-empty
+    # string in the response - and the presented link is
+    # consumed, so it cannot be replayed.
+    access_payload = jwt.decode(body["access_token"], JWT_SECRET, algorithms=[ALGORITHM])
+    assert access_payload["sub"] == user_id
+    rotated_refresh_token = set_cookie.split("refresh_token=", 1)[1].split(";", 1)[0]
+    refresh_payload = jwt.decode(rotated_refresh_token, REFRESH_TOKEN_SECRET, algorithms=[REFRESH_ALGORITHM])
+    assert refresh_payload["sub"] == user_id
+    assert refresh_payload["type"] == "refresh"
+    remaining_link = await UserMagicLink.find_one(
+        UserMagicLink.user_id == PydanticObjectId(user_id)
+    )
+    assert remaining_link is None
