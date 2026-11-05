@@ -50963,3 +50963,82 @@ async def test_account_password_reset_confirmation_overlong_tenant_id_with_nbsp_
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+async def test_account_password_reset_confirmation_overlong_tenant_id_with_zero_width_space_ascii_space_em_space_nbsp_mixed_weak_new_password_returns_406_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The account password reset confirmation POST with an
+        overlong tenant_id query param (5000 characters)
+        combined with a new password mixing a
+        zero-width space (U+200B), an ASCII space,
+        an em space (U+2003) and NBSP (U+00A0)
+        around a weak core (U+200B + " " + U+2003
+        + U+00A0 + weak + U+00A0 + U+2003 + " "
+        + U+200B), for a
+        user id with no seeded reset record:
+    """
+    # Function-name grep count 0 for
+    # password_reset_confirmation_overlong_tenant_id_with_zero_width_space_ascii_space_em_space_nbsp_mixed_weak_new_password
+    # before appending. This is the twenty-first
+    # four-codepoint lock around a weak core, in
+    # the enumeration order ASCII space, NBSP,
+    # ZWSP, em space: this one is ZWSP + ASCII
+    # space + em space + NBSP.
+    # The coarse normalizations verified fresh with
+    # python3: the 12-character string trims under
+    # whitespace-only stripping to 12 (it stops at
+    # the outer ZWSP, category Cf, which is not
+    # whitespace); a U+200B-only strip leaves it at
+    # 10 (the two outer ZWSPs are removed, then it
+    # stops at the ASCII spaces); stripping all four
+    # codepoints recovers the clean weak core
+    # (length 4). The raw input string itself
+    # differs in codepoint order from the earlier
+    # locks, so an exact-prefix / suffix sanitizer
+    # would treat it differently.
+    # The password is built with chr(0x00A0),
+    # chr(0x200B) and chr(0x2003) rather than literal
+    # characters so this test region stays ASCII-only.
+    overlong_tenant_id = "a" * 5000
+    zero_width_space_ascii_space_em_space_nbsp_mixed_weak_new_password = (
+        chr(0x200B) + " " + chr(0x2003) + chr(0x00A0) + "weak" + chr(0x00A0) + chr(0x2003) + " " + chr(0x200B)
+    )
+    response = await client.post(
+        f"/account/password_reset_confirmation?token=<redacted>&user_id=000000000000000000000000&tenant_id={overlong_tenant_id}",
+        json={"new_password": zero_width_space_ascii_space_em_space_nbsp_mixed_weak_new_password},
+    )
+    assert response.status_code == 406
+    assert response.json()["code"] == 406
+    assert "Invalid or expired password reset token" in response.json()["error"]
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    # Error responses must not be cached either: a cached 406
+    # could be served to a different user after an account switch
+    # on a shared machine, and a cached success on this flow
+    # would replay a consumed reset link's token set.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    # Same security-headers lock as the other account tests: the
+    # pure-ASGI middleware stamps every HTTP response with no path
+    # exclusions, so this 406 must carry the same headers.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the password-reset-confirmation extra-field
+    # 406 lock, using substring checks so later additions
+    # to the list do not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
