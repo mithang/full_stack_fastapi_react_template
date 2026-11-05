@@ -641,3 +641,163 @@ async def test_get_stripe_settings_outside_tenant_scope_returns_403_with_cache_a
     )
     assert stored_tenant is not None
     assert stored_tenant.features == [Feature(name=FeatureEnum.STRIPE, enabled=True)]
+
+
+@pytest.mark.asyncio
+async def test_get_stripe_settings_with_feature_disabled_returns_403_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The Stripe settings GET feature-gate error path:
+        every other feature-gated router in the app (billing,
+        checkout, prices, invoice, product, AI, and the tenant
+        trial-plan route) already locks its feature-disabled 403,
+        but the Stripe settings router had none - function-name
+        grep count 0 for stripe_settings_with_feature_disabled
+        and grep count 0 for "is not enabled" across
+        backend/tests, verified fresh this run. Dropping the
+        router-level check_feature_access(Feature.STRIPE)
+        dependency (stripe_endpoint.py:26-35) would previously
+        have gone uncaught on this router, and a host caller
+        without the Stripe feature would then reach the
+        settings handler instead of failing closed before it.
+        The gate runs after the router's MANAGE_PAYMENTS_SETTINGS
+        permission dependency (listed first), so the permission
+        check runs first: the seeded role (id
+        68c302ef6bf7a039b7e9b386) must carry that permission, and
+        get_role_detail calls get_role_by_id with no tenant
+        argument (user_access_management.py), so the seeded row
+        is visible regardless of the caller's tenant scope - the
+        same mechanism the scope locks in this file rely on. The
+        caller is a host caller (tenant_id None, no X-Tenant-ID
+        header) whose role carries no HOST_MANAGE_TENANTS, so
+        the host-scope branch of check_feature_access raises
+        FeatureNotEnabledException("stripe") before the handler
+        runs - so no Stripe settings service is ever reached, no
+        stored secret key is read, and no live external call is
+        made. GET takes no body, so unlike POST/PATCH there is
+        no validation that could mask the 403. The shared
+        conftest mock cannot be used directly: it is a plain
+        UserDto with no role attribute, so the gate would fail
+        with an AttributeError 500 instead of the deterministic
+        403 - the caller override mirrors the scope lock's
+        pattern (per-test MeResponseDto, restored in finally).
+        The central ApiBaseException handler maps
+        ForbiddenException to 403 (api/__init__.py:98-103)
+        with {"error": ..., "code": 403} and the no-store/Pragma
+        error headers. A future change that drops the feature
+        gate would break this lock while leaving the GET 404
+        lock and the scope 403 locks green, so the paths are
+        locked separately.
+    """
+    from beanie import PydanticObjectId
+
+    from api import app
+    from api.common.enums.gender import Gender
+    from api.domain.dtos.auth_dto import MeResponseDto
+    from api.domain.dtos.role_dto import RoleDto
+    from api.domain.entities.role import Role
+    from api.domain.enum.permission import Permission
+    from api.infrastructure.security.current_user import get_current_user
+
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b386"),
+        name="Stripe feature administrator",
+        description="Role carrying MANAGE_PAYMENTS_SETTINGS for the mocked caller",
+        permissions=[Permission.MANAGE_PAYMENTS_SETTINGS],
+    ).insert()
+
+    async def override_get_current_user_with_role():
+        return MeResponseDto(
+            first_name="Admin",
+            last_name="User",
+            id="68c302ef6bf7a039b7e9b385",
+            email="admin@example.com",
+            gender=Gender.OTHER,
+            is_active=True,
+            role_id="68c302ef6bf7a039b7e9b386",
+            created_at="2024-10-01T00:00:00Z",
+            updated_at="2024-10-01T00:00:00Z",
+            role=RoleDto(
+                id="68c302ef6bf7a039b7e9b386",
+                name="Stripe feature administrator",
+                description="Role carrying MANAGE_PAYMENTS_SETTINGS for the mocked caller",
+                created_at="2024-10-01T00:00:00Z",
+                updated_at="2024-10-01T00:00:00Z",
+                permissions=[Permission.MANAGE_PAYMENTS_SETTINGS],
+            ),
+            subscription=None,
+        )
+
+    original_override = app.dependency_overrides.get(get_current_user)
+    app.dependency_overrides[get_current_user] = override_get_current_user_with_role
+    try:
+        response = await client.get("/configurations/stripe")
+    finally:
+        if original_override is None:
+            app.dependency_overrides.pop(get_current_user, None)
+        else:
+            app.dependency_overrides[get_current_user] = original_override
+    assert response.status_code == 403
+    body = response.json()
+    assert body["code"] == 403
+    assert body["error"] == "Feature 'stripe' is not enabled."
+    # The 403 must still carry the error-response headers: the
+    # settings GET handler takes a Response param but only sets
+    # cache headers on the success path, so on this path they
+    # come from the central ApiBaseException handler, and a
+    # cached 403 could otherwise be served to a different admin
+    # after an account switch on a shared machine.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+
+    # Same security-headers lock as the other tests in this file:
+    # the pure-ASGI middleware stamps every HTTP response with no
+    # path exclusions, so this authenticated settings 403 must
+    # carry the same headers as the other interface locks.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Presence alone would not catch the value being weakened:
+    # lock the twelve most sensitive directives as disabled,
+    # mirroring the other interface locks, using substring
+    # checks so later additions to the list do not break this
+    # test. The full value lives in _SECURITY_HEADERS. Each
+    # directive is safe to lock here for the same reasons as on
+    # the other routes: the SPA has no camera, microphone,
+    # geolocation, payment, clipboard-read, display-capture,
+    # fullscreen, motion-sensor, compass, XR, or
+    # idle-detection flow (verified by grep in the earlier
+    # sweeps and re-verified fresh this run: zero
+    # case-insensitive idle matches and zero
+    # IdleDetector/requestIdleCallback matches across
+    # frontend/app/src, and the remaining flows verified
+    # absent).
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+    # Postconditions: the gate fires before any stripe-setting
+    # service call, so the read is side-effect free - the
+    # seeded role is still there with
+    # MANAGE_PAYMENTS_SETTINGS and no HOST_MANAGE_TENANTS.
+    # No StripeSettings row is asserted: StripeSettings is not
+    # in the conftest model set, so it cannot be queried from
+    # this test, and the gate firing before the handler is what
+    # guarantees nothing was read - the role row is the
+    # observable postcondition.
+    stored_role = await Role.find_one(
+        Role.id == PydanticObjectId("68c302ef6bf7a039b7e9b386")
+    )
+    assert stored_role is not None
+    assert stored_role.permissions == [Permission.MANAGE_PAYMENTS_SETTINGS]
