@@ -1015,3 +1015,182 @@ async def test_put_branding_logo_with_malformed_azure_returns_502_with_cache_and
     stored_branding = await Branding.find_one()
     assert stored_branding is None
     await mongo_client.close()
+
+
+@pytest.mark.asyncio
+async def test_put_branding_logo_with_blank_azure_returns_502_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The branding PUT /logo Azure 502 path for a blank connection string:
+    """
+    # The branding PUT /logo Azure 502 branch for a blank connection
+    # string, not yet locked: function-name grep count 0 for
+    # put_branding_logo_with_blank_azure (verified fresh this
+    # run), and the malformed-connection-string lock added in the
+    # previous run covers only the SDK ValueError branch, not the
+    # fail-closed blank branch. The Azure 502 mapping is locked
+    # for the profile-image read path (blank and malformed) and
+    # the profile-picture upload path (malformed) in
+    # test_user_endpoint.py, but PUT /brandings/logo reaches the
+    # same fixed constructor through a different caller
+    # (FileUpload.upload_file, file_upload.py:55), so a change
+    # that drops the blank fail-closed raise - or that lets a
+    # blank connection string fall through to the SDK's bare
+    # ValueError on this path - would break nothing in the user
+    # tests while the logo upload 500s. The 502 here is
+    # deterministic with no network and no live Azure call: the
+    # seeded StorageSettings row enables AZURE_BLOB with a blank
+    # connection string (\"\"), and AzureBlobStorage.__init__
+    # (azure_storage.py:24-28) raises AzureBlobStorageException
+    # (\"Azure Blob Storage connection string is not configured.\")
+    # on the blank/whitespace check before touching the SDK or
+    # the network. The handler chain is: the router-level
+    # FULL_ACCESS permission dependency passes on the seeded
+    # role (mirroring the PUT /logo 404/406 locks' seed - the
+    # shared conftest mock points at role id
+    # 68c302ef6bf7a039b7e9b386 with no row in the fresh test
+    # database, so that exact id is seeded here carrying
+    # FULL_ACCESS; get_role_by_id is called with no tenant
+    # filter, and _caller_may_access returns True when the
+    # caller tenant is None, so the seeded row is visible
+    # regardless of scope), the size/empty/content-type
+    # validations pass on the real (tiny) PNG part, so no 406
+    # masks the error, branding_service.get_branding() finds
+    # no record (Branding is outside the conftest model set,
+    # so the test initializes it on the test DB first,
+    # mirroring the PUT /logo 406 lock), and the host mock
+    # (tenant_id None) passes _assert_create_scope, so the
+    # request reaches file_service.upload_file ->
+    # FileUpload.upload_file, which finds the enabled Azure row
+    # and constructs AzureBlobStorage, which raises; the
+    # upload try catches only StorageNotEnabledException, so
+    # the exception propagates, and the central handler maps
+    # AzureException to 502 (api/__init__.py:110-113) with
+    # {\"error\": ..., \"code\": 502} and the no-store/Pragma error
+    # headers. StorageSettings is outside the conftest model
+    # set (conftest.py:25), so the test initializes it on the
+    # test DB first: init_beanie on the same URI/db name the
+    # conftest fixture uses (mongodb://localhost:27012/
+    # test_db, api_test_db), in the same call as Branding,
+    # mirroring the branding tests' second-init precedent and
+    # the S3/Azure 502 locks. The 502 fires before
+    # create_branding, so no branding record is created and no
+    # file is written to storage. A future change that drops
+    # the 502 mapping, or that lets the Azure constructor fall
+    # through to the SDK's bare ValueError on this path, would
+    # break this lock while leaving the profile-image 502
+    # locks, the profile-picture upload 502 lock, the branding
+    # PUT /logo 404/406 locks, and the branding PUT /logo
+    # malformed-Azure 502 lock green, so the paths are locked
+    # separately.
+    from beanie import PydanticObjectId, init_beanie
+    from pymongo import AsyncMongoClient
+
+    from api.domain.entities.branding import Branding
+    from api.domain.entities.role import Role
+    from api.domain.entities.storage_settings import StorageProvider, StorageSettings
+    from api.domain.enum.permission import Permission
+
+    mongo_client = AsyncMongoClient("mongodb://localhost:27012/test_db")
+    await init_beanie(
+        mongo_client["api_test_db"], document_models=[Branding, StorageSettings]
+    )
+
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b386"),
+        name="Branding logo storage caller",
+        description="Role carrying FULL_ACCESS for the mocked caller",
+        permissions=[Permission.FULL_ACCESS],
+    ).insert()
+
+    await StorageSettings(
+        provider=StorageProvider.AZURE_BLOB,
+        is_enabled=True,
+        region="eu-central-1",
+        azure_connection_string="",
+        azure_container_name="test-container",
+    ).insert()
+
+    png_1x1 = (
+        b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
+        b"\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00\x00"
+        b"\x00\x0cIDATx\x9cc\xf8\x0f\x00\x00\x01\x01\x00\x05"
+        b"\x18\xd8N\x00\x00\x00\x00IEND\xaeB`\x82"
+    )
+    response = await client.put(
+        "/brandings/logo",
+        files={"file": ("logo.png", png_1x1, "image/png")},
+    )
+    assert response.status_code == 502
+    body = response.json()
+    assert body["code"] == 502
+    # AzureBlobStorageException prefixes its message ("Azure Blob
+    # Storage Error: ..."), so assert on the fail-closed reason
+    # itself.
+    assert "Azure Blob Storage connection string is not configured." in body["error"]
+    assert "Azure Blob Storage Error: " in body["error"]
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    # The 502 must still carry the error-response headers: the
+    # handler sets no-store only on the success path, so on this
+    # path they come from the central ApiBaseException handler,
+    # and a cached 502 could otherwise be served to a different
+    # user after an account switch on a shared machine.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+
+    # Same security-headers lock as the branding PUT /logo
+    # 404/406 tests: the pure-ASGI middleware stamps every HTTP
+    # response with no path exclusions, so the branding 502
+    # must carry the same headers as the authenticated calls,
+    # including the exception-handler responses.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Presence alone would not catch the value being weakened:
+    # lock the twelve most sensitive directives as disabled,
+    # mirroring the branding PUT /logo 404/406 locks, using
+    # substring checks so later additions to the list do not
+    # break this test. Each directive is safe to lock here for
+    # the same reasons as on the other branding routes: the SPA
+    # has no camera, microphone, geolocation, payment,
+    # clipboard-read, display-capture, fullscreen,
+    # motion-sensor, compass, XR, or idle-detection flow
+    # (verified by grep in the earlier sweeps and re-verified
+    # fresh this run: zero case-insensitive idle matches and
+    # zero IdleDetector/requestIdleCallback matches across
+    # frontend/app/src).
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+    # Postconditions: the 502 fires before create_branding, so
+    # the request is side-effect free - the seeded role is still
+    # there with its permission, the storage row is still the
+    # enabled Azure row with the blank connection string
+    # (the constructor raises before any write or upload), and
+    # no branding record was created.
+    stored_role = await Role.find_one(
+        Role.id == PydanticObjectId("68c302ef6bf7a039b7e9b386")
+    )
+    assert stored_role is not None
+    assert stored_role.permissions == [Permission.FULL_ACCESS]
+    stored_settings = await StorageSettings.find_one(
+        StorageSettings.is_enabled == True
+    )
+    assert stored_settings is not None
+    assert stored_settings.provider == StorageProvider.AZURE_BLOB
+    assert stored_settings.azure_connection_string == ""
+    stored_branding = await Branding.find_one()
+    assert stored_branding is None
+    await mongo_client.close()
