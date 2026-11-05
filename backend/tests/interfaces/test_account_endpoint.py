@@ -55987,3 +55987,74 @@ async def test_account_resend_activation_email_empty_string_email_returns_422_wi
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+@pytest.mark.asyncio
+async def test_account_login_json_body_returns_422_with_security_headers(client: AsyncClient):
+    """
+        The account login POST with a JSON body instead of form data:
+    """
+    # The next login validation branch after the missing-username,
+    # missing-password, malformed-email, and empty-username 422
+    # locks, verified fresh this run, not assumed: no test named
+    # test_account_login_json_body exists (function-name grep
+    # count 0) and no login POST uses a json= body (payload grep
+    # count 0 for a json login call). The handler takes
+    # OAuth2PasswordRequestForm (account_endpoint.py login
+    # signature), whose username and password are required FORM
+    # fields, so a JSON body carries no form fields at all:
+    # FastAPI validates the form BEFORE the handler body runs,
+    # reporting both fields missing, and the LoginRequestDto
+    # construction and the AuthService.login call (which would do
+    # the find_by_email lookup) never execute, and no token is
+    # minted and no refresh cookie is set. This is distinct from
+    # the missing-password lock (a form submission missing one
+    # field) and from the malformed-email lock (a form submission
+    # reaching the handler): a JSON login is its own input class,
+    # and a future change that accepted JSON credentials would
+    # change this branch without touching either of those locks.
+    # Deliberately no Cache-Control/Pragma assertion: a 422 is
+    # FastAPI validation, not an ApiBaseException, so the central
+    # handler's no-store headers do not apply to it, mirroring
+    # the missing-password 422 lock. The security headers ARE
+    # locked: the pure-ASGI middleware stamps every HTTP
+    # response, including validation errors, with no path
+    # exclusions.
+    response = await client.post(
+        "/account/login",
+        json={"username": "admin@example.com", "password": "whatever123"},
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert isinstance(detail, list) and detail
+    assert any(
+        "username" in [str(part) for part in err.get("loc", [])]
+        for err in detail
+    )
+    assert any(
+        "password" in [str(part) for part in err.get("loc", [])]
+        for err in detail
+    )
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the missing-password 422 lock, using substring
+    # checks so later additions to the list do not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
