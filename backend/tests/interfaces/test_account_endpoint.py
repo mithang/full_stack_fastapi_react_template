@@ -55817,3 +55817,102 @@ async def test_account_change_email_request_empty_string_new_email_returns_422_w
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+@pytest.mark.asyncio
+async def test_account_resend_activation_email_empty_string_email_returns_422_with_security_headers(client: AsyncClient):
+    """
+        The account resend-activation-email POST with an empty-string email value:
+    """
+    # The resend-activation-email validation branch, not yet locked:
+    # the locks cover invalid email, missing email, non-string
+    # email, whitespace-only email, unknown email (404), missing
+    # first_name/id, non-string first_name/id/email/tenant_id, the
+    # missing-role 404 and the already-active 406 - but no
+    # empty-string email case, although password-reset-request,
+    # change-email-request, email-magic-link-login and passkey
+    # has_passkeys already have empty-string email 422 locks
+    # (function-name grep count 0 for
+    # test_account_resend_activation_email_empty_string_email,
+    # verified fresh this run). UserResendActivationEmailRequestDto
+    # (user_dto.py) declares email as a required EmailStr field
+    # with no default and no model validator, so an empty string
+    # has no "@" and stripping changes nothing ("" stripped is
+    # still ""), so it fails FastAPI request validation with 422
+    # (loc ["body", "email"], mirroring the whitespace-only lock)
+    # before the handler body runs: auth_service
+    # .send_activation_email never runs, so no user lookup, no
+    # token minting, and no SMTP send can occur - no live mail
+    # server is needed, unlike the 202 success branch, which stays
+    # deliberately NOT locked. The endpoint is permission-gated
+    # (USER_READ_AND_WRITE_ONLY and FULL_ACCESS), and FastAPI solves
+    # sub-dependencies before validating the endpoint's own body,
+    # so the mocked caller's role is seeded first - otherwise the
+    # permission gate's RoleNotFoundException 404 would mask the
+    # 422, exactly as in the invalid-email lock, which is mirrored
+    # here: the role is seeded with the mocked user's exact role_id
+    # (68c302ef6bf7a039b7e9b386, conftest.py) and both required
+    # permissions. The id and first_name fields are valid, so only
+    # the email shape can fail. Deliberately no Cache-Control/Pragma
+    # assertion: a 422 is FastAPI request validation, not an
+    # ApiBaseException, so the central handler's no-store headers do
+    # not apply to it, mirroring the resend invalid-email 422 lock.
+    # The security headers ARE locked: the pure-ASGI middleware
+    # stamps every HTTP response, including validation errors, with
+    # no path exclusions. The loc assertion is deliberately loose
+    # (a DTO field reports loc ["body", "email"]), so the
+    # email-shape check pins the validation message instead. The
+    # conftest fixture drops the test DB after the test, so the
+    # seeded role cannot leak into other tests.
+    from beanie import PydanticObjectId
+
+    from api.domain.entities.role import Role
+    from api.domain.enum.permission import Permission
+
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b386"),
+        name="Admin",
+        description="Administrator role for the mocked caller",
+        permissions=[Permission.USER_READ_AND_WRITE_ONLY, Permission.FULL_ACCESS],
+    ).insert()
+    response = await client.post(
+        "/account/resend_activation_email",
+        json={
+            "email": "",
+            "id": "68c302ef6bf7a039b7e9b390",
+            "first_name": "Inactive",
+        },
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert isinstance(detail, list) and detail
+    assert any(
+        "email" in [str(part) for part in err.get("loc", [])]
+        for err in detail
+    )
+    assert any(
+        "email" in str(err.get("msg", "")).lower() for err in detail
+    )
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the resend invalid-email 422 lock, using substring
+    # checks so later additions to the list do not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
