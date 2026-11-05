@@ -13,6 +13,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Cloud, Database, Settings as SettingsIcon, CheckCircle, AlertCircle } from "lucide-react";
 import { useAuthContext } from "@/components/providers/auth-provider";
 import { AvailableStorageProviderDto } from "@/api";
+import { extractErrorMessage } from "@/lib/utils";
 import { ShowScreenLoader } from "@/components/shared/show-screen-loader";
 
 
@@ -99,7 +100,12 @@ export function Settings() {
         try {
             await onConfigureStorage(formData);
         } catch (error) {
-            console.error('Failed to configure storage:', error);
+            // Log only the message: the raw ApiError carries the submitted
+            // StorageSettingsDto (aws_secret_key / azure_connection_string)
+            // in its request body, which must not reach the browser console.
+            // Unreachable today (the provider swallows the error), but
+            // kept safe if it ever rethrows.
+            console.error('Failed to configure storage:', extractErrorMessage(error));
         } finally {
             setIsLoading(false);
         }
