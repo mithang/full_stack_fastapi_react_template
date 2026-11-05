@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
@@ -15,6 +16,26 @@ import {
     Coffee
 } from 'lucide-react'
 import { Logo } from './logo'
+
+// Placeholder entries ('#') have no destination yet, so render them as plain
+// text: an <a href="#"> is a dead link that jumps to the top of the page.
+// Once a real URL is set, the entry renders as a normal link again.
+function FooterLink({ name, href, className, children }: { name: string; href: string; className: string; children?: ReactNode }) {
+    if (href === '#') {
+        return (
+            <span className={className}>
+                {name}
+                {children}
+            </span>
+        )
+    }
+    return (
+        <a href={href} className={className}>
+            {name}
+            {children}
+        </a>
+    )
+}
 
 export function Footer() {
     const currentYear = new Date().getFullYear()
@@ -118,14 +139,14 @@ export function Footer() {
                         <ul className="space-y-2">
                             {footerLinks.product.map((link) => (
                                 <li key={link.name}>
-                                    <a
-                                        href={link.href}
-                                        className="text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center"
-                                    >
-                                        {link.name}
-                                        <ExternalLink className="w-3 h-3 ml-1 opacity-0 group-hover:opacity-100 transition-opacity" />
-                                    </a>
-                                </li>
+                                <FooterLink
+                                    name={link.name}
+                                    href={link.href}
+                                    className="text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center"
+                                >
+                                    <ExternalLink className="w-3 h-3 ml-1 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                </FooterLink>
+                            </li>
                             ))}
                         </ul>
                     </div>
@@ -136,12 +157,11 @@ export function Footer() {
                         <ul className="space-y-2">
                             {footerLinks.company.map((link) => (
                                 <li key={link.name}>
-                                    <a
+                                    <FooterLink
+                                        name={link.name}
                                         href={link.href}
                                         className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-                                    >
-                                        {link.name}
-                                    </a>
+                                    />
                                 </li>
                             ))}
                         </ul>
@@ -153,12 +173,11 @@ export function Footer() {
                         <ul className="space-y-2">
                             {footerLinks.support.map((link) => (
                                 <li key={link.name}>
-                                    <a
+                                    <FooterLink
+                                        name={link.name}
                                         href={link.href}
                                         className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-                                    >
-                                        {link.name}
-                                    </a>
+                                    />
                                 </li>
                             ))}
                         </ul>
@@ -175,13 +194,12 @@ export function Footer() {
                         </p>
                         <div className="flex space-x-4">
                             {footerLinks.legal.map((link) => (
-                                <a
+                                <FooterLink
                                     key={link.name}
+                                    name={link.name}
                                     href={link.href}
                                     className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-                                >
-                                    {link.name}
-                                </a>
+                                />
                             ))}
                         </div>
                     </div>
