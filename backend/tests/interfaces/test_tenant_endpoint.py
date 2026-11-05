@@ -2220,3 +2220,215 @@ async def test_get_tenant_features_outside_tenant_scope_returns_403_with_cache_a
     assert stored_tenant is not None
     assert stored_tenant.name == "features-scope-tenant"
     assert stored_tenant.is_active is False
+
+
+async def test_update_tenant_feature_outside_tenant_scope_returns_403_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The tenant feature PATCH scope-guard error path:
+        the tenant test file locked the PATCH route itself
+        only as a missing-role 404 (the permission
+        dependency raises RoleNotFoundException before
+        the scope guard, any tenant lookup, or any
+        feature write) and locked the GET features, PUT
+        and DELETE routes' scope guards in the previous
+        runs, but no test asserted a 403 on
+        PATCH /tenants/{tenant_id}/update_feature via
+        _assert_feature_update_scope - function-name grep
+        count 0 for update_tenant_feature_outside_tenant_scope,
+        verified fresh this run. Dropping
+        _assert_feature_update_scope
+        (tenant_endpoint.py:67-83) would previously have
+        gone uncaught, and a tenant caller toggling on
+        the host DB could then toggle the features of a
+        tenant record sitting in the host DB (e.g.
+        disable STRIPE or enable a feature that tenant
+        never bought), as the guard's own comment
+        describes (the stamp check in
+        update_tenant_feature only compares against the
+        record the request's database returned). The
+        guard runs first in the handler body
+        (tenant_endpoint.py:595), before
+        get_tenant_by_id and any feature write, so no
+        write happens. It cannot be reached the way the
+        missing-role 404 lock reaches the route (host
+        caller, no seeded role): the permission
+        dependency runs before the guard, so the seeded
+        role (id 68c302ef6bf7a039b7e9b386) must carry the
+        route's HOST_MANAGE_TENANTS permission, and the
+        caller override mirrors the stripe scope locks'
+        and the PUT/DELETE/features scope locks' pattern
+        (per-test MeResponseDto, restored in finally).
+        The caller is tenant-scoped to
+        68c302ef6bf7a039b7e9b387 while the request carries
+        X-Tenant-ID 68c302ef6bf7a039b7e9b388, so the guard
+        fires on the mismatch. The seeded tenant carries
+        the caller's own tenant id (387), not the 385 of
+        the DELETE lock: without the guard, the stamp
+        check at tenant_endpoint.py:597 would pass
+        (tenant.id == caller tenant id) and the PATCH
+        body {"name": "stripe", "enabled": true} would
+        enable STRIPE on the seeded tenant, so the
+        features-still-empty postcondition is decisive
+        here - with the DELETE lock's 385-vs-387 split
+        the stamp check would instead have 404'd and no
+        write could have happened either way. The body
+        is a valid FeatureDto (name FeatureEnum "stripe",
+        enabled bool, tenant_dto.py:9-11, feature.py:4-11),
+        so no 422 can mask the 403; the handler takes no
+        Response param, so the 403's no-store/Pragma
+        headers come from the central ApiBaseException
+        handler (api/__init__.py:98-103). The tenant
+        router carries no feature gate, so no seeded
+        tenant feature is needed to reach the guard; the
+        request scope comes from the header alone, and
+        the middleware's tenant-DB init targets the
+        default 27017 URI, which has no listener in the
+        test/dev environment (dev/test Mongo is on 27012
+        per CONTRIBUTE.md), so it falls back to host
+        scope and the guard fires on caller-387 vs
+        scope-None - and even if the scope resolved to
+        388 the guard would fire the same way (387 vs
+        388), so the 403 does not depend on which of the
+        two scope values the middleware produces.
+        get_role_detail calls get_role_by_id with no
+        tenant argument (user_access_management.py:39),
+        so _caller_may_access sees a None caller tenant
+        and returns True (role_service.py:18-19), and
+        the seeded row is visible regardless of the
+        caller's tenant scope - the same mechanism the
+        stripe scope locks rely on. The central
+        ApiBaseException handler maps ForbiddenException
+        to 403 (api/__init__.py:98-103) with {"error":
+        ..., "code": 403} and the no-store/Pragma error
+        headers. A future change that drops the guard
+        would break this lock while leaving the PATCH 404
+        lock green, so the paths are locked separately.
+    """
+    from beanie import PydanticObjectId
+
+    from api.domain.entities.role import Role
+    from api.domain.entities.tenant import Tenant
+    from api.domain.enum.permission import Permission
+
+    await Tenant(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b387"),
+        name="update-feature-scope-tenant",
+        subdomain="update-feature-scope.fsrapp.com",
+    ).insert()
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b386"),
+        name="Tenant tenant administrator",
+        description="Role carrying HOST_MANAGE_TENANTS for the mocked caller",
+        permissions=[Permission.HOST_MANAGE_TENANTS],
+    ).insert()
+
+    async def override_get_current_user_tenant_scoped():
+        return MeResponseDto(
+            first_name="Admin",
+            last_name="User",
+            id="68c302ef6bf7a039b7e9b385",
+            email="admin@example.com",
+            gender=Gender.OTHER,
+            is_active=True,
+            role_id="68c302ef6bf7a039b7e9b386",
+            tenant_id="68c302ef6bf7a039b7e9b387",
+            created_at="2024-10-01T00:00:00Z",
+            updated_at="2024-10-01T00:00:00Z",
+            role=RoleDto(
+                id="68c302ef6bf7a039b7e9b386",
+                name="Tenant tenant administrator",
+                description="Role carrying HOST_MANAGE_TENANTS for the mocked caller",
+                created_at="2024-10-01T00:00:00Z",
+                updated_at="2024-10-01T00:00:00Z",
+                permissions=[Permission.HOST_MANAGE_TENANTS],
+            ),
+            subscription=None,
+        )
+
+    original_override = app.dependency_overrides.get(get_current_user)
+    app.dependency_overrides[get_current_user] = override_get_current_user_tenant_scoped
+    try:
+        response = await client.patch(
+            "/tenants/68c302ef6bf7a039b7e9b387/update_feature",
+            json={"name": "stripe", "enabled": True},
+            headers={"X-Tenant-ID": "68c302ef6bf7a039b7e9b388"},
+        )
+    finally:
+        if original_override is None:
+            app.dependency_overrides.pop(get_current_user, None)
+        else:
+            app.dependency_overrides[get_current_user] = original_override
+    assert response.status_code == 403
+    body = response.json()
+    assert body["code"] == 403
+    assert "outside your tenant's scope" in body["error"]
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    # The 403 must still carry the error-response headers: the
+    # feature-update-scope guard raises before any tenant read or
+    # feature write, and the PATCH takes no Response param, so on
+    # this path the no-store/Pragma headers come from the central
+    # ApiBaseException handler, and a cached 403 could otherwise
+    # be served to a different admin after an account switch on
+    # a shared machine.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+
+    # Same security-headers lock as the other tenant tests in
+    # this file: the pure-ASGI middleware stamps every HTTP
+    # response with no path exclusions, so this authenticated
+    # tenant 403 must carry the same headers as the other
+    # interface locks.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Presence alone would not catch the value being weakened:
+    # lock the twelve most sensitive directives as disabled,
+    # mirroring the other interface locks, using substring
+    # checks so later additions to the list do not break this
+    # test. The full value lives in _SECURITY_HEADERS. Each
+    # directive is safe to lock here for the same reasons as on
+    # the other routes: the SPA has no camera, microphone,
+    # geolocation, payment, clipboard-read, display-capture,
+    # fullscreen, motion-sensor, compass, XR, or
+    # idle-detection flow (verified by grep in the earlier
+    # sweeps and re-verified fresh this run: zero
+    # case-insensitive idle matches and zero
+    # IdleDetector/requestIdleCallback matches across
+    # frontend/app/src).
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+    # Postconditions: the guard fires before any tenant read
+    # or feature write, so the PATCH is side-effect free -
+    # the seeded role is still there with HOST_MANAGE_TENANTS
+    # and the seeded tenant row still exists with is_active
+    # False (its entity default) and no features enabled
+    # (entity default, tenant.py:144). Had the guard been
+    # dropped, the handler would have passed its stamp check
+    # (seeded tenant id 387 equals the caller tenant id)
+    # and enabled STRIPE on the tenant instead of this 403.
+    stored_role = await Role.find_one(
+        Role.id == PydanticObjectId("68c302ef6bf7a039b7e9b386")
+    )
+    assert stored_role is not None
+    assert stored_role.permissions == [Permission.HOST_MANAGE_TENANTS]
+    stored_tenant = await Tenant.find_one(
+        Tenant.id == PydanticObjectId("68c302ef6bf7a039b7e9b387")
+    )
+    assert stored_tenant is not None
+    assert stored_tenant.name == "update-feature-scope-tenant"
+    assert stored_tenant.is_active is False
+    assert stored_tenant.features == []
