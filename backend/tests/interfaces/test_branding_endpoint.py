@@ -1194,3 +1194,181 @@ async def test_put_branding_logo_with_blank_azure_returns_502_with_cache_and_sec
     stored_branding = await Branding.find_one()
     assert stored_branding is None
     await mongo_client.close()
+
+
+async def test_put_branding_logo_with_unconfigured_s3_returns_502_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The branding PUT /logo S3 502 path for unconfigured S3
+        credentials:
+    """
+    # The branding PUT /logo S3 502 branch for blank credentials,
+    # not yet locked: function-name grep count 0 for
+    # put_branding_logo_with_unconfigured_s3 (verified fresh this
+    # run; the S3 502 case is locked only for the profile-image
+    # GET read path and the profile-picture upload path in
+    # test_user_endpoint.py). The Azure upload locks cover the
+    # same FileUpload.upload_file call with the other provider
+    # branch, but the S3 branch constructs a different storage
+    # class, so deleting the fail-closed blank-key raise in
+    # S3Storage.__init__ would previously have gone uncaught on
+    # this path - boto3 would silently resolve ambient
+    # credentials (env vars, shared config, IAM role) and upload
+    # the logo to the tenant bucket under the deployment's
+    # credentials, hiding a misconfiguration from the client
+    # fallbacks that only trigger on rejection. The 502 here is
+    # deterministic with no network and no live S3 call: the
+    # blank check runs before any boto3 client construction or
+    # HTTP request (s3_storage.py), so no credential resolution,
+    # signing, or request happens. The handler chain is: the
+    # router-level FULL_ACCESS permission dependency passes on
+    # the seeded role (mirroring the PUT /logo 404/406 locks'
+    # seed - the shared conftest mock points at role id
+    # 68c302ef6bf7a039b7e9b386 with no row in the fresh test
+    # database, so that exact id is seeded here carrying
+    # FULL_ACCESS; get_role_by_id is called with no tenant
+    # filter, and _caller_may_access returns True when the
+    # caller tenant is None, so the seeded row is visible
+    # regardless of scope), the size/empty/content-type
+    # validations pass on the real (tiny) PNG part, so no 406
+    # masks the error, branding_service.get_branding() finds
+    # no record (Branding is outside the conftest model set,
+    # so the test initializes it on the test DB first,
+    # mirroring the PUT /logo 406 lock), and the host mock
+    # (tenant_id None) passes _assert_create_scope, so the
+    # request reaches file_service.upload_file ->
+    # FileUpload.upload_file, which finds the enabled S3 row
+    # and constructs S3Storage, which raises; the upload try
+    # catches only StorageNotEnabledException, so the exception
+    # propagates, and the central handler maps AwsException to
+    # 502 (api/__init__.py:110-117) with {"error": ..., "code":
+    # 502} and the no-store/Pragma error headers.
+    # StorageSettings is outside the conftest model set
+    # (conftest.py:25), so the test initializes it on the test
+    # DB first: init_beanie on the same URI/db name the
+    # conftest fixture uses (mongodb://localhost:27012/
+    # test_db, api_test_db), in the same call as Branding,
+    # mirroring the branding tests' second-init precedent and
+    # the S3/Azure 502 locks. The 502 fires before
+    # create_branding, so no branding record is created and no
+    # file is written to storage. A future change that drops
+    # the blank fail-closed raise, or that lets blank S3 keys
+    # fall through to ambient boto3 credentials on this path,
+    # would break this lock while leaving the profile-image S3
+    # 502 lock, the profile-picture upload S3 502 lock, the
+    # branding PUT /logo 404/406 locks, and the branding PUT
+    # /logo Azure 502 locks green, so the paths are locked
+    # separately.
+    from beanie import PydanticObjectId, init_beanie
+    from pymongo import AsyncMongoClient
+
+    from api.domain.entities.branding import Branding
+    from api.domain.entities.role import Role
+    from api.domain.entities.storage_settings import StorageProvider, StorageSettings
+    from api.domain.enum.permission import Permission
+
+    mongo_client = AsyncMongoClient("mongodb://localhost:27012/test_db")
+    await init_beanie(
+        mongo_client["api_test_db"], document_models=[Branding, StorageSettings]
+    )
+
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b386"),
+        name="Branding logo storage caller",
+        description="Role carrying FULL_ACCESS for the mocked caller",
+        permissions=[Permission.FULL_ACCESS],
+    ).insert()
+
+    await StorageSettings(
+        provider=StorageProvider.AWS_S3,
+        is_enabled=True,
+        region="eu-central-1",
+        aws_access_key="",
+        aws_secret_key="",
+        aws_bucket_name="test-bucket",
+    ).insert()
+
+    png_1x1 = (
+        b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
+        b"\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00\x00"
+        b"\x00\x0cIDATx\x9cc\xf8\x0f\x00\x00\x01\x01\x00\x05"
+        b"\x18\xd8N\x00\x00\x00\x00IEND\xaeB`\x82"
+    )
+    response = await client.put(
+        "/brandings/logo",
+        files={"file": ("logo.png", png_1x1, "image/png")},
+    )
+    assert response.status_code == 502
+    body = response.json()
+    assert body["code"] == 502
+    # S3StorageException prefixes its message ("S3 Storage Error:
+    # ..."), so assert on the fail-closed reason itself.
+    assert "S3 storage credentials are not configured." in body["error"]
+    assert "S3 Storage Error: " in body["error"]
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    # The 502 must still carry the error-response headers: the
+    # handler sets no-store only on the success path, so on this
+    # path they come from the central ApiBaseException handler,
+    # and a cached 502 could otherwise be served to a different
+    # user after an account switch on a shared machine.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+
+    # Same security-headers lock as the branding PUT /logo
+    # 404/406 tests: the pure-ASGI middleware stamps every HTTP
+    # response with no path exclusions, so the branding 502
+    # must carry the same headers as the authenticated calls,
+    # including the exception-handler responses.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Presence alone would not catch the value being weakened:
+    # lock the twelve most sensitive directives as disabled,
+    # mirroring the branding PUT /logo 404/406 locks, using
+    # substring checks so later additions to the list do not
+    # break this test. Each directive is safe to lock here for
+    # the same reasons as on the other branding routes: the SPA
+    # has no camera, microphone, geolocation, payment,
+    # clipboard-read, display-capture, fullscreen,
+    # motion-sensor, compass, XR, or idle-detection flow
+    # (verified by grep in the earlier sweeps and re-verified
+    # fresh this run: zero case-insensitive idle matches and
+    # zero IdleDetector/requestIdleCallback matches across
+    # frontend/app/src).
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+    # Postconditions: the 502 fires before create_branding, so
+    # the request is side-effect free - the seeded role is still
+    # there with its permission, the storage row is still the
+    # enabled S3 row with blank keys and bucket "test-bucket"
+    # (the constructor raises before any write or upload), and
+    # no branding record was created.
+    stored_role = await Role.find_one(
+        Role.id == PydanticObjectId("68c302ef6bf7a039b7e9b386")
+    )
+    assert stored_role is not None
+    assert stored_role.permissions == [Permission.FULL_ACCESS]
+    stored_settings = await StorageSettings.find_one(
+        StorageSettings.is_enabled == True
+    )
+    assert stored_settings is not None
+    assert stored_settings.provider == StorageProvider.AWS_S3
+    assert stored_settings.aws_access_key == ""
+    assert stored_settings.aws_secret_key == ""
+    assert stored_settings.aws_bucket_name == "test-bucket"
+    stored_branding = await Branding.find_one()
+    assert stored_branding is None
+    await mongo_client.close()
