@@ -53750,3 +53750,77 @@ async def test_account_change_email_confirmation_null_token_returns_422_with_sec
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+async def test_account_activate_whitespace_only_token_returns_406_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The account activation POST with a whitespace-only token:
+    """
+    # The whitespace-only-token branch was deliberately NOT
+    # locked by the garbage-token 406 lock (a non-empty string
+    # that fails jwt.decode), the padded-token 200 lock (a
+    # correctly signed token that verifies after the strip),
+    # the missing-token 422 lock (an absent field that fails
+    # required-field validation), or the invalid/expired/
+    # wrong-type/missing-type/wrong-shape locks (all non-empty
+    # string tokens that reach verification), and is locked
+    # here, verified fresh this run, not assumed:
+    # function-name grep count 0 for
+    # test_account_activate_whitespace_only_token before
+    # appending. UserActivationRequestDto.token is a required
+    # str field with no default (user_dto.py:125), and its
+    # mode="after" normalize_token validator strips the token
+    # (user_dto.py:127-140), so a whitespace-only token
+    # becomes "" and passes request validation, then reaches
+    # verify_activation_token (jwt_token_service.py:121-147),
+    # where jwt.decode("") raises InvalidTokenError ("Not
+    # enough segments"), converted to
+    # InvalidOperationException("Invalid activation token")
+    # before any user lookup, activation write, or email --
+    # so no user row is seeded and no Celery task is
+    # enqueued on this path. The central ApiBaseException
+    # handler maps InvalidOperationException to 406 with
+    # body {"error": ..., "code": 406} and Cache-Control:
+    # no-store plus Pragma: no-cache (api/__init__.py),
+    # and the pure-ASGI security-headers middleware stamps
+    # every HTTP response with no path exclusions. A future
+    # change rejecting empty tokens at DTO validation with
+    # 422 would break this lock while leaving the
+    # garbage-token 406 lock green, so the two inputs are
+    # locked separately, mirroring the change-email
+    # whitespace-only 400 lock. The handler takes only the
+    # AuthService dependency plus an optional tenant query
+    # param (which the service ignores), so no permission
+    # gate or CurrentUser lookup can interfere.
+    response = await client.post(
+        "/account/activate",
+        json={"token": "   "},
+    )
+    assert response.status_code == 406
+    assert response.json()["code"] == 406
+    assert "Invalid activation token" in response.json()["error"]
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the garbage-token lock, using substring checks
+    # so later additions to the list do not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
