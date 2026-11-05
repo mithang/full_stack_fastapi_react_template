@@ -52,7 +52,15 @@ class UserPreferenceRepository(BaseRepository[UserPreference], AuditLogRepositor
         )
         # Log keys only, not values: full preference payloads must not reach server logs.
         logger.debug(f"Updating preferences for user {user_id} (keys: {_safe_log_keys(payload.preferences.keys())})")
-        await self.update(id=existing.id, data=payload.model_dump())
+        # Dump only the fields this update means to change: payload is
+        # a freshly constructed UserPreference, so a full model_dump()
+        # carries a brand-new created_at (now) and tenant_id=None, and
+        # BaseRepository.update() $sets every key it is given - so
+        # every preference save silently rewrote the row's creation
+        # time and wiped any tenant_id on it. exclude_unset drops the
+        # untouched defaults (created_at, updated_at, tenant_id, id);
+        # updated_at is still stamped centrally by BaseRepository.
+        await self.update(id=existing.id, data=payload.model_dump(exclude_unset=True, exclude_none=True))
         logger.debug(f"Updated preferences for user {user_id}")
         await self.add_audit_log(AuditLogDto(
             action="update",
