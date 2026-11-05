@@ -53669,3 +53669,84 @@ async def test_account_change_email_confirmation_missing_token_returns_422_with_
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+async def test_account_change_email_confirmation_null_token_returns_422_with_security_headers(client: AsyncClient):
+    """
+        The account change-email-confirmation PATCH with a
+        null token value:
+    """
+    # The null-token branch was deliberately NOT locked
+    # by the missing-token lock (an empty JSON body that
+    # fails required-field validation with 422), the
+    # non-string-token lock (a JSON list token that fails
+    # coercion with 422), the whitespace-only-token lock
+    # (a string token that strips to "" and fails
+    # jwt.decode with 400), the padded-token locks
+    # (string tokens that verify after the strip), or the
+    # invalid/expired/wrong-type/missing-type/wrong-shape/
+    # other-user/malformed-user_id/email-in-use locks (all
+    # string tokens that reach verification), and is locked
+    # here, verified fresh this run, not assumed:
+    # function-name grep count 0 for
+    # test_account_change_email_confirmation_null_token
+    # before appending. ChangeEmailConfirmRequestDto.token is
+    # a required str field with no default (auth_dto.py:23),
+    # so a JSON null value cannot be coerced to a str and
+    # fails FastAPI request validation before the handler
+    # body runs: the mode="after" normalize_token validator
+    # cannot mask the error either, since it runs only
+    # after field validation passes, and no service call,
+    # user lookup, email-existence check, email update, or
+    # notification email ever executes, and no token is
+    # minted and no refresh cookie is set. The endpoint
+    # (account_endpoint.py:328) takes the DTO as the body
+    # and converts only InvalidOperationException to 400,
+    # which is never reached here. The endpoint's CurrentUser
+    # dependency is overridden by conftest to the mocked
+    # user, so no auth header is needed. Deliberately no
+    # exact error-type assertion: no token-type error type
+    # has a precedent in this file, so the lock asserts only
+    # the 422 status and a detail entry located at token,
+    # mirroring the missing-token 422 lock. Deliberately no
+    # Cache-Control/Pragma assertion: a 422 is FastAPI
+    # request validation, not an ApiBaseException, so the
+    # central handler's no-store headers do not apply to
+    # it, mirroring the non-string-token 422 lock. The
+    # security headers ARE locked: the pure-ASGI middleware
+    # stamps every HTTP response, including validation
+    # errors, with no path exclusions.
+    response = await client.patch(
+        "/account/change_email_confirmation",
+        json={"token": None},
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert any(
+        "token" in [str(part) for part in err.get("loc", [])]
+        for err in detail
+    )
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the missing-token lock, using substring
+    # checks so later additions to the list do not break
+    # this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
