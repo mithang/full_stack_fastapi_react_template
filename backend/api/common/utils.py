@@ -34,9 +34,6 @@ def get_app_title() -> str:
 def is_production_environment() -> bool:
     return get_app_environment() == "production"
 
-def is_development_environment() -> bool:
-    return get_app_environment() == "development"
-
 
 # The {8,} and $ anchor matter: without them the pattern matched any
 # string whose first character was in the allowed set, so a 4-character
