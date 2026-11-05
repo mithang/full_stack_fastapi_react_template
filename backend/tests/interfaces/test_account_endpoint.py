@@ -44613,3 +44613,123 @@ async def test_account_password_reset_confirmation_overlong_tenant_id_with_zero_
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+async def test_account_password_reset_confirmation_overlong_tenant_id_with_zero_width_space_nbsp_ascii_space_mixed_weak_new_password_returns_406_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The account password reset confirmation POST with an
+        overlong tenant_id query param (5000 characters)
+        combined with a new password mixing zero-width
+        spaces with NBSP (U+00A0) and an ASCII space around
+        a weak core (U+200B + U+00A0 + " " + weak + " " +
+        U+00A0 + U+200B), for a user id with no seeded
+        reset record:
+    """
+    # The next password-reset-confirmation branch after the
+    # overlong-tenant_id-with-zero-width-space-nbsp-mixed-
+    # weak-new-password 406 lock, verified fresh this
+    # run, not assumed.
+    # Function-name grep count 0 for
+    # password_reset_confirmation_overlong_tenant_id_with_zero_width_space_nbsp_ascii_space_mixed_weak_new_password
+    # before appending. This is the first lock using a
+    # WEAK core inside the ZWSP + NBSP + ASCII-space
+    # padding: the predecessor with the same three-part
+    # padding wrapped a strong core, so a future
+    # normalization that strips padding and then applies
+    # the password policy would behave differently here
+    # (a stripped "weak" core fails the policy, while a
+    # stripped strong core passes it), distinguishing
+    # this lock from the predecessor even though both
+    # currently return the same 406.
+    # Verified fresh from account_endpoint.py (as in prior
+    # locks): password_reset_confirm takes token, user_id
+    # and tenant_id as Query params with no max_length,
+    # the handler strips token and user_id but explicitly
+    # does NOT trim the new password, and it never passes
+    # tenant_id to change_password (it is only logged via
+    # _safe_log_value, which merely flattens carriage
+    # returns and newlines and imposes no length limit),
+    # so an overlong tenant_id cannot change the outcome
+    # and the padded password reaches change_password
+    # verbatim. Verified fresh from auth_service.py (as in
+    # prior locks): change_password first calls
+    # retrieve_password_reset_data_by_user_id, which
+    # returns None for a fresh test DB with no
+    # UserPasswordReset document for this user id, and
+    # raises InvalidOperationException before any JWT
+    # verification, password update, or notification
+    # email - so a garbage token is enough and the test
+    # depends on neither the JWT secret nor any seeded
+    # record, and the weak core is never policy-checked
+    # on this path. The central ApiBaseException handler
+    # maps InvalidOperationException to 406 with body
+    # {"error": ..., "code": 406} plus no-store headers.
+    # The 406 (rather than a 422) is itself the lock: had
+    # the padded weak password been rejected, FastAPI
+    # validation would have returned 422 before the
+    # handler ran. The three plausible normalizations
+    # give three different passwords, verified fresh this
+    # run: NBSP and the ASCII space are category Zs and
+    # isspace() is True, but ZWSP is category Cf and
+    # isspace() is False, so a whitespace-only trim
+    # leaves the 10-character string unchanged because
+    # both ends are U+200B, a U+200B-only strip leaves
+    # an NBSP-and-ASCII-space-padded weak password
+    # (length 8), and stripping all three codepoints
+    # recovers the clean weak core (length 4). No
+    # refresh cookie is set on this path: the handler
+    # returns a plain DTO only on success, and this path
+    # raises before any token minting. The endpoint has
+    # no permission gate and no CurrentUser dependency,
+    # and its dependency (get_auth_service) merely
+    # resolves a container object, so nothing can mask
+    # the 406. The token/user_id/tenant_id must ride the
+    # query string, not the JSON body, or FastAPI 422s
+    # for a different reason and masks this lock.
+    # The password is built with chr(0x200B) and
+    # chr(0x00A0) rather than literal characters so this
+    # test region stays ASCII-only.
+    overlong_tenant_id = "a" * 5000
+    zero_width_space_nbsp_ascii_space_mixed_weak_new_password = (
+        chr(0x200B) + chr(0x00A0) + " " + "weak" + " " + chr(0x00A0) + chr(0x200B)
+    )
+    response = await client.post(
+        f"/account/password_reset_confirmation?token=garbage-token&user_id=000000000000000000000000&tenant_id={overlong_tenant_id}",
+        json={"new_password": zero_width_space_nbsp_ascii_space_mixed_weak_new_password},
+    )
+    assert response.status_code == 406
+    assert response.json()["code"] == 406
+    assert "Invalid or expired password reset token" in response.json()["error"]
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    # Error responses must not be cached either: a cached 406
+    # could be served to a different user after an account switch
+    # on a shared machine, and a cached success on this flow
+    # would replay a consumed reset link's token set.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    # Same security-headers lock as the other account tests: the
+    # pure-ASGI middleware stamps every HTTP response with no path
+    # exclusions, so this 406 must carry the same headers.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the password-reset-confirmation extra-field
+    # 406 lock, using substring checks so later additions
+    # to the list do not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
