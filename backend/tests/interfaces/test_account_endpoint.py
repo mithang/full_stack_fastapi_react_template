@@ -54410,3 +54410,81 @@ async def test_account_email_magic_link_validate_whitespace_only_user_id_returns
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+async def test_account_email_magic_link_login_whitespace_only_email_returns_422_with_security_headers(client: AsyncClient):
+    """
+        The account email magic link login POST with a whitespace-only email value:
+    """
+    # The magic link login whitespace-only-email branch, not yet
+    # locked: function-name grep count 0 for
+    # email_magic_link_login_whitespace_only_email (verified fresh
+    # this run); the existing magic link login locks cover the
+    # unknown-email generic 200, the invalid-email 422, the
+    # non-string-email 422 and the missing-body 422, not a
+    # whitespace-only email. The endpoint takes a bare EmailStr
+    # body param (account_endpoint.py: email: EmailStr =
+    # Body(...)), and the unknown-email lock already sends the
+    # email as a bare JSON string, so the request below mirrors
+    # real client usage. A value of only spaces fails FastAPI
+    # request validation before the handler body runs:
+    # find_by_email never runs and create_magic_link is never
+    # called, so no magic-link record is written and no email
+    # is sent, making this lock deterministic even though the
+    # success path needs a known user plus a live email send.
+    # The outcome is the same whether or not the value is
+    # stripped first: stripped it becomes "" which still fails
+    # EmailStr, unstripped it fails as-is, so no assumption
+    # about email-validator whitespace handling is baked in.
+    # A whitespace-padded real email is deliberately NOT locked
+    # here: stripping would change its outcome to the generic
+    # 200, so that case needs a live run to settle. This
+    # endpoint has no permission gate and no CurrentUser
+    # dependency, and its dependencies
+    # (get_email_magic_link_service, get_auth_service) merely
+    # resolve container objects, so nothing can mask the 422.
+    # The loc assertion is deliberately loose (a bare body
+    # param reports loc ["body"], not ["body", "email"]), so
+    # the email-shape check pins the validation message
+    # instead, mirroring the invalid-email 422 lock.
+    # Deliberately no exact error-type assertion and no
+    # Cache-Control/Pragma assertion: a 422 is FastAPI request
+    # validation, not an ApiBaseException, so the central
+    # handler's no-store headers do not apply to it. The
+    # security headers ARE locked: the pure-ASGI middleware
+    # stamps every HTTP response, including validation
+    # errors, with no path exclusions.
+    response = await client.post(
+        "/account/email_magic_link_login",
+        json="   ",
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert isinstance(detail, list) and detail
+    assert any(
+        "email" in str(err.get("msg", "")).lower() for err in detail
+    )
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the invalid-email 422 lock, using substring
+    # checks so later additions to the list do not break
+    # this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
