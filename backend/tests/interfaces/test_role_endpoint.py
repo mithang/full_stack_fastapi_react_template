@@ -2420,3 +2420,67 @@ async def test_update_role_duplicate_name_raises_conflict_at_repository(client: 
     )
     assert target is not None
     assert target.name == "Other Role"
+
+
+@pytest.mark.asyncio
+async def test_create_role_duplicate_name_raises_conflict_at_repository(client: AsyncClient):
+    """
+        The role create DuplicateKeyError backstop, not yet locked:
+        function-name grep count 0 for
+        create_role_duplicate_name_raises_conflict_at_repository in
+        this file (verified fresh this run). The endpoint-level 409
+        lock (test_create_duplicate_role...) covers the service
+        check in role_service.create_role, but two concurrent
+        creates with the same name can both pass that
+        single_or_none check before either writes, so the second
+        insert hits Role.name's unique index inside the repository's
+        doc.insert() - and without a backstop that DuplicateKeyError
+        escaped as a 500. The fix maps it in
+        RoleRepository.create to RoleAlreadyExistsException
+        (core/exceptions.py:40-42), which subclasses
+        ConflictException with the message "Role with identifier
+        <name> already exists." (common/exceptions.py:26-38), so
+        the central handler returns the same 409 the service check
+        returns. The repository is called directly here, bypassing
+        the service guard on purpose: the guard would return 409
+        before the repository is reached, so only a direct call
+        exercises the DuplicateKeyError path deterministically (a
+        concurrent-POST test would be timing-dependent). The client
+        fixture is only used to initialise the per-test database
+        (conftest.py:24-44, db.drop() after); no HTTP call is made.
+        Name is the only unique index on Role (domain/entities/
+        role.py:7, no Settings.indexes), so any DuplicateKeyError
+        from this create is a name collision. A future change that
+        drops the repository catch would break this lock while
+        leaving the endpoint-level create 409 lock and the update
+        repository backstop lock green, so the layers are locked
+        separately.
+    """
+    from beanie import PydanticObjectId
+
+    from api.core.exceptions import RoleAlreadyExistsException
+    from api.domain.entities.role import Role
+    from api.infrastructure.persistence.repositories.role_repository_impl import RoleRepository
+
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b392"),
+        name="Test Role",
+        description="A role for testing purposes",
+        permissions=[Permission.ROLE_VIEW_ONLY],
+    ).insert()
+
+    repository = RoleRepository()
+    with pytest.raises(RoleAlreadyExistsException) as excinfo:
+        await repository.create(
+            data=CreateRoleDto(
+                name="Test Role",
+                description="A role for testing purposes",
+            ),
+        )
+    assert excinfo.value.message == "Role with identifier Test Role already exists."
+
+    # Postcondition: the failed insert left no trace - still exactly
+    # one "Test Role" row (the seeded holder, id ...392).
+    duplicates = await Role.find(Role.name == "Test Role").to_list()
+    assert len(duplicates) == 1
+    assert duplicates[0].id == PydanticObjectId("68c302ef6bf7a039b7e9b392")

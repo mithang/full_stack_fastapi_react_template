@@ -52,7 +52,22 @@ class RoleRepository(BaseRepository[Role], AuditLogRepository):
            description=data.description,
            tenant_id=data.tenant_id
         )
-        result = await super().create(new_role.model_dump())
+        try:
+            result = await super().create(new_role.model_dump())
+        except DuplicateKeyError:
+            # Race backstop for the service-level duplicate-name guard
+            # (role_service.create_role): two concurrent creates with
+            # the same name can both pass the single_or_none check
+            # before either writes, so the second insert hits Role.name's
+            # unique index. Map it to the same 409 the service check
+            # returns instead of letting it escape as a 500 (the
+            # central handler maps only ApiBaseException /
+            # StarletteHTTPException). Name is the only unique index on
+            # Role, so any DuplicateKeyError here is a name collision,
+            # and data.name is the colliding name (the DTO requires it
+            # and trims it via its model validator).
+            logger.warning(f"Duplicate role name on create: {_safe_log_value(data.name)}")
+            raise RoleAlreadyExistsException(name=data.name)
         await self.add_audit_log(AuditLogDto(
             action="create",
             changes={"Info": f"Create new role with name {data.name} and id {result.id}"},
