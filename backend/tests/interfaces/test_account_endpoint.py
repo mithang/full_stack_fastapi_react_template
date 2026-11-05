@@ -51828,3 +51828,86 @@ async def test_account_activate_expired_token_returns_406_with_cache_and_securit
     assert still_inactive.activated_at is None
     assert still_inactive.first_name == "Activate"
     assert still_inactive.last_name == "Expired"
+
+
+async def test_account_activate_malformed_token_returns_406_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The account activation POST for a correctly signed,
+        unexpired activation token whose payload is missing
+        its email field.
+    """
+    # The activate malformed-payload branch, verified fresh this
+    # run, not assumed: function-name grep count 0 for
+    # test_account_activate_malformed_token before appending, and
+    # the only existing activate locks are the garbage-token 406
+    # (bad signature, raising InvalidTokenError before any
+    # payload-shape check), the 200 success lock (complete
+    # payload), the already-active 406 lock, the email-mismatch
+    # 403 lock, the unknown-user 404 lock, the wrong-type 406
+    # lock (type check, also InvalidTokenError) and the expired
+    # 406 lock (ExpiredSignatureError). None of them exercises
+    # the ValidationError branch. verify_activation_token
+    # (jwt_token_service.py) decodes the token, passes the
+    # type "activation" check, then builds
+    # VerifyEmailTokenPayloadDto (token_dto.py), whose user_id
+    # and email fields are both required -- so a payload with
+    # no email raises ValidationError, caught and re-raised as
+    # InvalidOperationException ("Invalid activation token")
+    # before any user lookup, activation write, or email. The
+    # central ApiBaseException handler maps
+    # InvalidOperationException to 406 with body {"error": ...,
+    # "code": 406} and Cache-Control: no-store plus Pragma:
+    # no-cache (api/__init__.py), and the pure-ASGI
+    # security-headers middleware stamps every HTTP response with
+    # no path exclusions. No user row is seeded: verification
+    # raises before the lookup, so the user_id in the token is
+    # never resolved, and no email is sent and no Celery task is
+    # enqueued on this path. The conftest fixture drops the
+    # test DB after the test, so nothing here can leak into
+    # other tests.
+    import jwt
+    from datetime import datetime, timedelta, timezone
+
+    from api.common.security import ALGORITHM, JWT_SECRET
+
+    malformed_token = jwt.encode(
+        {
+            "user_id": "68c302ef6bf7a039b7e9b3a6",
+            "type": "activation",
+            "exp": datetime.now(timezone.utc) + timedelta(hours=1),
+        },
+        JWT_SECRET,
+        algorithm=ALGORITHM,
+    )
+    response = await client.post(
+        "/account/activate",
+        json={"token": malformed_token},
+    )
+    assert response.status_code == 406
+    assert response.json()["code"] == 406
+    assert response.json()["error"] == "Invalid activation token"
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the activate success lock, using substring checks
+    # so later additions to the list do not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
