@@ -51996,3 +51996,91 @@ async def test_account_activate_malformed_token_missing_user_id_returns_406_with
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+async def test_account_activate_malformed_token_invalid_email_returns_406_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The account activation POST for a correctly signed,
+        unexpired activation token whose payload carries an
+        email field that is not a valid email address.
+    """
+    # The activate malformed-payload branch, verified fresh this
+    # run, not assumed: function-name grep count 0 for
+    # test_account_activate_malformed_token_invalid_email
+    # before appending, and user-id grep count 0 for
+    # 68c302ef6bf7a039b7e9b3a7. The only existing activate
+    # locks are the garbage-token 406 (bad signature, raising
+    # InvalidTokenError before any payload-shape check), the
+    # 200 success lock (complete payload), the already-active
+    # 406 lock, the email-mismatch 403 lock, the unknown-user
+    # 404 lock, the wrong-type 406 lock (type check, also
+    # InvalidTokenError), the expired 406 lock
+    # (ExpiredSignatureError), the missing-email 406 lock
+    # (ValidationError on a missing email field) and the
+    # missing-user_id 406 lock (ValidationError on a missing
+    # user_id field). None of them exercises the
+    # ValidationError branch for a present-but-malformed email
+    # value. verify_activation_token (jwt_token_service.py)
+    # decodes the token, passes the type "activation" check,
+    # then builds VerifyEmailTokenPayloadDto (token_dto.py),
+    # whose email field is EmailStr -- so a payload with email
+    # "not-an-email" raises ValidationError, caught and
+    # re-raised as InvalidOperationException ("Invalid activation
+    # token") before any user lookup, activation write, or email.
+    # The central ApiBaseException handler maps
+    # InvalidOperationException to 406 with body {"error": ...,
+    # "code": 406} and Cache-Control: no-store plus Pragma:
+    # no-cache (api/__init__.py), and the pure-ASGI
+    # security-headers middleware stamps every HTTP response with
+    # no path exclusions. No user row is seeded: verification
+    # raises before the lookup, so the malformed email is
+    # never resolved, and no email is sent and no Celery task is
+    # enqueued on this path. The conftest fixture drops the
+    # test DB after the test, so nothing here can leak into
+    # other tests.
+    import jwt
+    from datetime import datetime, timedelta, timezone
+
+    from api.common.security import ALGORITHM, JWT_SECRET
+
+    malformed_token = jwt.encode(
+        {
+            "user_id": "68c302ef6bf7a039b7e9b3a7",
+            "email": "not-an-email",
+            "type": "activation",
+            "exp": datetime.now(timezone.utc) + timedelta(hours=1),
+        },
+        JWT_SECRET,
+        algorithm=ALGORITHM,
+    )
+    response = await client.post(
+        "/account/activate",
+        json={"token": malformed_token},
+    )
+    assert response.status_code == 406
+    assert response.json()["code"] == 406
+    assert response.json()["error"] == "Invalid activation token"
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the activate success lock, using substring checks
+    # so later additions to the list do not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
