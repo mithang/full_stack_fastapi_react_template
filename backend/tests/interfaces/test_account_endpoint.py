@@ -57840,3 +57840,105 @@ async def test_account_email_magic_link_validate_space_padded_token_returns_200_
         UserMagicLink.user_id == PydanticObjectId(user_id)
     )
     assert remaining_link is None
+
+
+@pytest.mark.asyncio
+async def test_account_passkey_has_passkeys_with_passkey_returns_200_with_security_headers(client: AsyncClient):
+    """
+        The passkey has_passkeys POST success path for a user with a
+        registered passkey:
+    """
+    # The has_passkeys 200 branch, not yet locked: function-name
+    # grep count 0 for passkey_has_passkeys_with_passkey (verified
+    # fresh this run), and no existing has_passkeys lock reaches
+    # the success path at all (the six existing locks all fail
+    # earlier: malformed-string email 422, non-string email 422,
+    # missing-body 422, null email 422, empty-string email 422,
+    # whitespace-only email 422). The endpoint takes a bare
+    # EmailStr body param (account_endpoint.py:461, email:
+    # EmailStr = Body(...)), so the request is the bare JSON
+    # string "passkey-holder@example.com" - not an {"email": ...}
+    # object, which would 422 and mask the 200 - mirroring the
+    # register_options/login_options locks in this file, which
+    # post the same bare-string shape. The service
+    # (passkey_service.py:273-278) looks the record up with
+    # single_or_none(user_email=email) and returns True when
+    # the record exists and len(credentials) > 0, so a seeded
+    # UserPasskey with one Credential must answer
+    # {"has_passkeys": true}; no challenge is consulted, no
+    # webauthn verification runs, and no token or refresh cookie
+    # is issued on this read-only path. The endpoint has no
+    # permission gate and no CurrentUser dependency, and its
+    # only dependency, get_passkey_service, merely resolves a
+    # container object, so nothing can mask the 200; no User
+    # row is needed, since the lookup is by email on the
+    # user_passkeys collection alone. UserPasskey is added to
+    # the conftest model set this run so the collection is
+    # initialized; without it the seed insert would fail with
+    # a document-not-initialized error, which is why this 200
+    # path was previously deferred as non-deterministic. No
+    # X-Tenant-ID header is sent, so the seed and the service
+    # read both use the host test DB, and the conftest fixture
+    # drops the test DB after the test, so the row cannot leak
+    # into other tests. Postconditions are asserted directly,
+    # not just the response: the read is side-effect free, so
+    # the seeded record is still there with its one credential.
+    # Deliberately no Cache-Control/Pragma assertion: the
+    # endpoint returns a plain DTO and sets no cache headers
+    # (account_endpoint.py:459-464), mirroring the
+    # password-reset-request generic 200 lock. A future change
+    # that requires a User row, or that answers True for an
+    # empty credentials list, would break this lock while
+    # leaving the 422 locks green, so the two paths are locked
+    # separately.
+    from api.common.utils import get_utc_now
+    from api.domain.entities.user_passkey import Credential, UserPasskey
+
+    await UserPasskey(
+        user_email="passkey-holder@example.com",
+        credentials=[
+            Credential(
+                credential_id="credential-id-1",
+                public_key="public-key-1",
+                sigin_count=0,
+                created_at=get_utc_now(),
+            ),
+        ],
+    ).insert()
+    response = await client.post(
+        "/account/passkey/has_passkeys",
+        json="passkey-holder@example.com",
+    )
+    assert response.status_code == 200
+    assert response.json() == {"has_passkeys": True}
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the has_passkeys 422 locks, using substring
+    # checks so later additions to the list do not break this
+    # test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+    # Postcondition: the read is side-effect free - the seeded
+    # record is still there with its one credential.
+    stored = await UserPasskey.find_one(
+        UserPasskey.user_email == "passkey-holder@example.com"
+    )
+    assert stored is not None
+    assert len(stored.credentials) == 1
