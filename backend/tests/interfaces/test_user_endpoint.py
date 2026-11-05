@@ -3817,3 +3817,110 @@ async def test_put_user_update_profile_picture_with_unconfigured_s3_returns_502_
     assert stored_settings.aws_secret_key == ""
     assert stored_settings.aws_bucket_name == "test-bucket"
     await mongo_client.close()
+
+
+@pytest.mark.asyncio
+async def test_create_duplicate_user_returns_409_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The user create duplicate-email error path:
+    """
+    # The user create 409 branch, not yet locked: function-name
+    # grep count 0 for create_duplicate_user and grep count 0 for
+    # "already exists" across this file (verified fresh this run).
+    # The suite's only 409 lock so far is the role create one
+    # (test_role_endpoint.py), so the central handler's
+    # ConflictException -> 409 mapping (api/__init__.py:89-90) had
+    # no lock on the user route. Deleting the duplicate check in
+    # user_service.create_user would previously have gone uncaught,
+    # and a second user with the same email would then be planted
+    # (or fail later on the unique email index with a 500 instead
+    # of the clean 409). The duplicate check runs in the service
+    # before any write, so this lock needs no broker or mail care:
+    # create_user does a single_or_none(email=...) lookup and
+    # raises EmailAlreadyExistsException (user_service.py:118-122),
+    # which subclasses ConflictException with the message "User
+    # with identifier <email> already exists."
+    # (core/exceptions.py:9-11, common/exceptions.py:26-38), and
+    # the central handler maps it to 409 with {"error": ...,
+    # "code": 409} plus the no-store/Pragma error headers
+    # (api/__init__.py:89-90, 121-133). The create handler itself
+    # (user_endpoint.py:115-128) runs the
+    # USER_READ_AND_WRITE_ONLY permission dependency and
+    # _assert_create_scope before the service call, and the shared
+    # conftest mock is a host caller (tenant_id None), so both pass
+    # with no X-Tenant-ID header, exactly as the create 201 helper
+    # proves. The activation email send in create_user is commented
+    # out (user_service.py:137-147), so the duplicate path sends no
+    # email and enqueues no Celery task - the 409 fires before the
+    # commented-out send site is even reached. The same valid body
+    # the create helper posts (email test@example.com, password
+    # Test@123!) is posted twice, so no 422 can mask the 409. A
+    # future change that drops the duplicate check would break this
+    # lock while leaving the create 201 lock and the create 403
+    # lock green, so the paths are locked separately.
+    # Setup: create the user through the real 201 path first.
+    await create_user(client)
+
+    new_user = CreateUserDto(
+        email="test@example.com",
+        first_name="Test",
+        last_name="User",
+        gender=Gender.OTHER,
+        password="Test@123!",
+    )
+    response = await client.post("/users/", json=new_user.model_dump())
+    assert response.status_code == 409
+    body = response.json()
+    assert body["code"] == 409
+    assert body["error"] == "User with identifier test@example.com already exists."
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    # The 409 must still carry the error-response headers: the
+    # handler sets no-store only after the guard, so on this path
+    # they come from the central ApiBaseException handler, and a
+    # cached 409 could otherwise be served to a different user
+    # after an account switch on a shared machine.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+
+    # Same security-headers lock as the user list 200 and create
+    # 201 tests: the pure-ASGI middleware stamps every HTTP
+    # response with no path exclusions, so the user create 409
+    # must carry the same headers as the authenticated GETs,
+    # including the exception-handler responses.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Presence alone would not catch the value being weakened: lock
+    # the twelve most sensitive directives as disabled, mirroring
+    # the user list locks, using substring checks so later
+    # additions to the list do not break this test. Each directive
+    # is safe to lock here for the same reasons as on the other
+    # user routes: the SPA has no camera, microphone, geolocation,
+    # payment, clipboard-read, display-capture, fullscreen,
+    # motion-sensor, compass, XR, or idle-detection flow
+    # (verified by grep in the earlier sweeps).
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+
+    # Postcondition: the duplicate check fires before any write,
+    # so the request is side-effect free - listing users still
+    # shows exactly one user, the one created by the setup call.
+    response = await client.get("/users/?skip=0&limit=10")
+    assert response.status_code == 200
+    data = UserListDto.model_validate(response.json())
+    assert data.total == 1
+    assert data.users[0].email == "test@example.com"
