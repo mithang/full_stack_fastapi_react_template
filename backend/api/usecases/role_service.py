@@ -106,6 +106,22 @@ class RoleService:
             # before any write), so probing another tenant's id reveals
             # nothing and cannot overwrite its name or permissions.
             raise RoleNotFoundException(role_id=role_id)
+        # Duplicate-name guard, mirroring create_role: Role.name
+        # carries a unique index, but without this check a rename
+        # onto another role's name escaped the service as an
+        # unhandled DuplicateKeyError from the repository's
+        # doc.update() (BaseRepository.update catches nothing, and
+        # the central handler only maps ApiBaseException /
+        # StarletteHTTPException) - a 500 instead of the clean 409
+        # create returns. The lookup is global, matching create_role
+        # (roles are unique by name across tenants); the name is
+        # already trimmed by the DTO validator, so stored and
+        # incoming values compare exactly, and re-supplying the
+        # role's own name is allowed (same id).
+        if role_data.name is not None:
+            name_holder = await self.role_repository.single_or_none(name=role_data.name)
+            if name_holder is not None and str(name_holder.id) != str(existing.id):
+                raise RoleAlreadyExistsException(name=role_data.name)
         # Pin the tenant stamp server-side, mirroring the create path
         # (iteration 870): UpdateRoleDto inherits the client-supplied
         # tenant_id from CreateRoleDto, and the repository applies

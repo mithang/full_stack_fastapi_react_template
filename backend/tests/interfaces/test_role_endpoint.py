@@ -2209,3 +2209,141 @@ async def test_create_duplicate_role_returns_409_with_cache_and_security_headers
     )
     assert stored is not None
     assert stored.permissions == [Permission.ROLE_READ_AND_WRITE_ONLY]
+
+
+async def test_update_duplicate_role_returns_409_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The role update duplicate-name error path:
+    """
+    # The role update 409 branch, not yet locked: function-name
+    # grep count 0 for update_duplicate_role and grep count 0 for
+    # "already exists" on a PUT in this file (verified fresh this
+    # run). create_role already guards the name (role_service.py:
+    # 95-98) and the create 409 lock covers it, but update_role
+    # had no duplicate check at all - so renaming a role onto
+    # another role's name escaped the service and hit Role.name's
+    # unique index inside the repository's doc.update()
+    # (BaseRepository.update catches nothing, and the central
+    # handler only maps ApiBaseException / StarletteHTTPException),
+    # surfacing as an unhandled DuplicateKeyError - a 500 instead
+    # of the clean 409 create returns. The fix mirrors create_role
+    # in update_role: single_or_none(name=...) before any write,
+    # raising RoleAlreadyExistsException (exceptions.py:40-42),
+    # which subclasses ConflictException with the message "Role
+    # with identifier <name> already exists."
+    # (common/exceptions.py:26-38), and the central handler maps
+    # it to 409 with {"error": ..., "code": 409} plus the
+    # no-store/Pragma error headers (api/__init__.py:89-90,
+    # 121-133). The PUT handler itself (role_endpoint.py:230-242)
+    # runs the ROLE_READ_AND_WRITE_ONLY permission dependency and
+    # _assert_update_scope before the service call, so the gate
+    # must be satisfied first: the shared conftest mock is a host
+    # caller (tenant_id None, role id 68c302ef6bf7a039b7e9b386 with
+    # no row in the fresh test database), so seeding that exact id
+    # carrying ROLE_READ_AND_WRITE_ONLY, mirroring the create 409
+    # lock's seed precedent, lets the dependency pass -
+    # get_role_detail calls get_role_by_id(role_id) with no tenant
+    # filter (user_access_management.py:36-39) - and the host
+    # caller passes _assert_update_scope with no X-Tenant-ID
+    # header. A second seeded role is the rename target ("Other
+    # Role") and a third carries the duplicate name "Test Role",
+    # the same valid body the update helper puts (name 2-20,
+    # description left None, trimmed by the model validator), so
+    # no 422 can mask the 409. A future change that drops the
+    # duplicate check would break this lock while leaving the
+    # create 409 lock and the update 200/403 locks green, so the
+    # paths are locked separately.
+    from beanie import PydanticObjectId
+
+    from api.domain.entities.role import Role
+
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b386"),
+        name="Tenant role writer",
+        description="Role carrying ROLE_READ_AND_WRITE_ONLY for the mocked caller",
+        permissions=[Permission.ROLE_READ_AND_WRITE_ONLY],
+    ).insert()
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b387"),
+        name="Other Role",
+        description="The role being renamed in this test",
+        permissions=[Permission.ROLE_VIEW_ONLY],
+    ).insert()
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b389"),
+        name="Test Role",
+        description="A role for testing purposes",
+        permissions=[Permission.ROLE_VIEW_ONLY],
+    ).insert()
+
+    response = await client.put(
+        "/roles/68c302ef6bf7a039b7e9b387",
+        json=UpdateRoleDto(
+            name="Test Role",
+        ).model_dump(),
+    )
+    assert response.status_code == 409
+    body = response.json()
+    assert body["code"] == 409
+    assert body["error"] == "Role with identifier Test Role already exists."
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    # The 409 must still carry the error-response headers: the
+    # handler sets no-store only after the guard, so on this path
+    # they come from the central ApiBaseException handler, and a
+    # cached 409 could otherwise be served to a different user
+    # after an account switch on a shared machine.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+
+    # Same security-headers lock as the role list 200 and 404
+    # tests: the pure-ASGI middleware stamps every HTTP response
+    # with no path exclusions, so the role update 409 must carry
+    # the same headers as the authenticated GETs, including the
+    # exception-handler responses.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Presence alone would not catch the value being weakened: lock
+    # the twelve most sensitive directives as disabled, mirroring
+    # the role list locks, using substring checks so later
+    # additions to the list do not break this test. Each directive
+    # is safe to lock here for the same reasons as on the other
+    # role routes: the SPA has no camera, microphone, geolocation,
+    # payment, clipboard-read, display-capture, fullscreen,
+    # motion-sensor, compass, XR, or idle-detection flow
+    # (verified by grep in the earlier sweeps).
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+    # Postcondition: the duplicate check fires before any write,
+    # so the request is side-effect free - still exactly one
+    # "Test Role" row (the seeded holder, id ...389), the rename
+    # target still carries its old name, and the seeded
+    # permission role is still there with its permission.
+    duplicates = await Role.find(Role.name == "Test Role").to_list()
+    assert len(duplicates) == 1
+    assert duplicates[0].id == PydanticObjectId("68c302ef6bf7a039b7e9b389")
+    assert duplicates[0].permissions == [Permission.ROLE_VIEW_ONLY]
+    target = await Role.find_one(
+        Role.id == PydanticObjectId("68c302ef6bf7a039b7e9b387")
+    )
+    assert target is not None
+    assert target.name == "Other Role"
+    stored = await Role.find_one(
+        Role.id == PydanticObjectId("68c302ef6bf7a039b7e9b386")
+    )
+    assert stored is not None
+    assert stored.permissions == [Permission.ROLE_READ_AND_WRITE_ONLY]
