@@ -186,6 +186,24 @@ class UserService:
         existing.first_name = user_data.first_name or existing.first_name
         existing.last_name = user_data.last_name or existing.last_name
         existing.gender = user_data.gender or existing.gender
+        if user_data.is_active is not None:
+            # PUT /users/{id} accepts an is_active field
+            # (UpdateUserDto.is_active) but never applied it, so a
+            # client sending is_active=false got a 200 back with the
+            # user still active - the same silent-no-op class as the
+            # changed-email field, which the 400 above now rejects
+            # instead. Unlike email there is no dedicated
+            # activate/deactivate endpoint - activation only ever
+            # sets the flag True - so the field is applied here
+            # rather than rejected: it is the admin's only API path
+            # to deactivate (or reactivate) a user, and the flag is
+            # what the user table, the resend-activation guard and
+            # the token payload all read. The guard is an explicit
+            # `is not None`, not `or`: `or` would swallow False and
+            # make deactivation impossible. None still means "leave
+            # unchanged", so the internal role-only / image-only
+            # callers (which pass neither) are unaffected.
+            existing.is_active = user_data.is_active
         if user_data.role_id:
             try:
                 existing.role_id = PydanticObjectId(user_data.role_id)

@@ -4024,3 +4024,101 @@ async def test_put_user_with_changed_email_returns_400_with_cache_and_security_h
     response = await client.get(f"/users/{new_user_response.id}")
     assert response.status_code == 200
     assert UserDto.model_validate(response.json()).email == "test@example.com"
+
+
+@pytest.mark.asyncio
+async def test_put_user_with_changed_is_active_applies_it_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The PUT /users/{id} is_active path:
+        UpdateUserDto carries an is_active field and the PUT
+        endpoint accepts it, but UserService.update_user
+        never applied it - first_name / last_name / gender /
+        role_id / image_url were the only fields written - so
+        a client sending is_active=false got a 200 back with
+        the user still active, a silent no-op (function-name
+        grep count 0 for put_user_with_changed_is_active,
+        verified fresh this run). It is the same accepted-field-
+        silently-ignored class as the changed-email 400 lock,
+        but unlike email there is no dedicated
+        activate/deactivate endpoint - activation only ever
+        sets the flag True - so the service now applies the
+        field instead of rejecting it: it is the admin's only
+        API path to deactivate (or reactivate) a user, and the
+        flag is what the user table, the resend-activation
+        guard and the token payload all read. The created user
+        starts inactive (UserRepository.create sets
+        is_active=False), so the lock flips False -> True and
+        then back True -> False: the second flip is what pins
+        the explicit `is not None` guard, since a bare `or`
+        would swallow False and make deactivation impossible.
+        None still means "leave unchanged", so the internal
+        role-only / image-only callers pass neither and are
+        unaffected, and the full-DTO echo test still passes
+        because it echoes the fetched (inactive) value. The
+        two PUTs make no Celery or email call, so the lock
+        needs no broker or SMTP care. A future change that
+        drops the service assignment would break this lock
+        while leaving the update-user 200 echo and the
+        changed-email 400 locks green, so the paths are
+        locked separately.
+    """
+    new_user_response = await create_user(client)
+    response = await client.get(f"/users/{new_user_response.id}")
+    assert response.status_code == 200
+    data = UserDto.model_validate(response.json())
+    assert data.is_active is False
+
+    # Flip the flag on: the old code returned 200 and stored
+    # nothing, so the caller believed the user was active.
+    payload = data.model_dump()
+    payload["is_active"] = True
+    updated_data = UpdateUserDto(**payload)
+    response = await client.put(f"/users/{new_user_response.id}", json=updated_data.model_dump())
+    assert response.status_code == 200
+    # Same security-headers lock as the update-user 200 echo
+    # in this file: the middleware stamps every HTTP response,
+    # so it stamps this PUT response too, but until now only
+    # its status and body were asserted on this path - deleting
+    # the middleware registration would have gone uncaught here.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Presence alone would not catch the value being weakened: lock
+    # the twelve most sensitive directives as disabled, mirroring
+    # the single-user GET lock in this file (iteration 1897),
+    # using substring checks so later additions to the list do not
+    # break this test. The full value lives in _SECURITY_HEADERS.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+    assert UserDto.model_validate(response.json()).is_active is True
+
+    # Flip the flag back off: this is the deactivation direction
+    # a bare `or` guard would silently drop, so it must be locked
+    # separately from the activation above.
+    payload = UserDto.model_validate(response.json()).model_dump()
+    payload["is_active"] = False
+    updated_data = UpdateUserDto(**payload)
+    response = await client.put(f"/users/{new_user_response.id}", json=updated_data.model_dump())
+    assert response.status_code == 200
+    assert UserDto.model_validate(response.json()).is_active is False
+
+    # Postcondition: a follow-up GET shows the stored value
+    # persisted - had the assignment been dropped, the GET would
+    # still show the user active after the first PUT.
+    response = await client.get(f"/users/{new_user_response.id}")
+    assert response.status_code == 200
+    assert UserDto.model_validate(response.json()).is_active is False
