@@ -688,3 +688,187 @@ async def test_post_prices_outside_tenant_scope_returns_403_with_cache_and_secur
     )
     assert stored_tenant is not None
     assert stored_tenant.features == [Feature(name=FeatureEnum.STRIPE, enabled=True)]
+
+
+@pytest.mark.asyncio
+async def test_patch_prices_outside_tenant_scope_returns_403_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The prices PATCH update scope-guard error path:
+    """
+    # The PATCH /prices/{price_id} update scope-guard branch, not
+    # yet locked: function-name grep count 0 for
+    # patch_prices_outside_tenant_scope (verified fresh this
+    # run), and no test in this file asserts a 403 with an
+    # "outside your tenant's scope" message on PATCH - the only
+    # scope locks here cover the GET list and the POST create.
+    # Deleting _assert_create_scope (prices_endpoint.py:16-35)
+    # would previously have gone uncaught on this route: the
+    # POST lock would stay green while a tenant caller updating
+    # on the host DB would then update a price in the HOST
+    # Stripe account (the guard's own comment: the tenant
+    # Stripe resolver reads the singleton settings record in
+    # the current DB with no tenant filter) - polluting the
+    # host catalog and hiding the object from the caller's own
+    # tenant Stripe account. The guard runs first in the
+    # handler body, before any pricing-service call, so no
+    # price is updated. It cannot be reached the way the
+    # notification banner locks reach their guard
+    # (tenant-scoped caller, no X-Tenant-ID header): the
+    # prices router is feature-gated, and
+    # check_feature_access looks the tenant up by
+    # request.state.tenant_id before the handler runs, so
+    # with no header the lookup gets None,
+    # BaseRepository.get returns None, and get_tenant_by_id
+    # raises TenantNotFoundException - a 404 from the gate,
+    # never the scope 403. The lock therefore uses the
+    # mismatched scope the guard is written for, mirroring
+    # the POST prices scope lock: the caller is tenant-scoped
+    # to 68c302ef6bf7a039b7e9b387 while the request carries
+    # X-Tenant-ID 68c302ef6bf7a039b7e9b388, a seeded tenant
+    # with the STRIPE feature enabled, so the feature gate
+    # passes (Tenant stays bound to the host DB - init_db
+    # excludes it from the tenant-DB models, mongodb.py:53-56
+    # - so the lookup finds the seeded row) and the guard
+    # raises ForbiddenException before any update. Like the
+    # POST route, the PATCH route carries a
+    # MANAGE_PRODUCTS_AND_PRICING permission dependency,
+    # which runs before the handler body, so the seeded role
+    # (id 68c302ef6bf7a039b7e9b386) must carry
+    # MANAGE_PRODUCTS_AND_PRICING: get_role_detail calls
+    # get_role_by_id with no tenant argument
+    # (user_access_management.py), so _caller_may_access
+    # sees a None caller tenant and returns True
+    # (role_service.py:18-19), and the seeded row is
+    # visible regardless of the caller's tenant scope -
+    # the same mechanism the POST prices scope lock relies
+    # on. The override's RoleDto carries the same
+    # permission, and the caller override mirrors the POST
+    # lock's pattern (per-test MeResponseDto, restored in
+    # finally). The body is {"active": true} on purpose, not
+    # {}: UpdatePricingDto.active is a required bool
+    # (metadata and tax_behavior are optional), so an empty
+    # body would fail validation with 422 and could mask the
+    # 403 depending on validation-vs-dependency ordering; a
+    # valid body makes the guard error deterministic either
+    # way. The price_id is the arbitrary plain string
+    # "price_test123" (the :path converter captures it as a
+    # string), which cannot mask the error. The central
+    # ApiBaseException handler maps ForbiddenException to 403
+    # (api/__init__.py:98-103) with {"error": ..., "code":
+    # 403} and the no-store/Pragma error headers. A future
+    # change that drops the guard would break this lock while
+    # leaving the GET and POST scope locks and the
+    # feature-disabled PATCH 403 lock green, so the four
+    # paths are locked separately.
+    from beanie import PydanticObjectId
+
+    from api.domain.entities.role import Role
+    from api.domain.entities.tenant import Feature, Tenant
+    from api.domain.enum.feature import Feature as FeatureEnum
+    from api.domain.enum.permission import Permission
+
+    await Tenant(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b388"),
+        name="prices-scope-tenant",
+        subdomain="prices-scope.fsrapp.com",
+        features=[Feature(name=FeatureEnum.STRIPE, enabled=True)],
+    ).insert()
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b386"),
+        name="Tenant pricing viewer",
+        description="Role carrying MANAGE_PRODUCTS_AND_PRICING for the mocked caller",
+        permissions=[Permission.MANAGE_PRODUCTS_AND_PRICING],
+    ).insert()
+
+    async def override_get_current_user_tenant_scoped():
+        return MeResponseDto(
+            first_name="Admin",
+            last_name="User",
+            id="68c302ef6bf7a039b7e9b385",
+            email="admin@example.com",
+            gender=Gender.OTHER,
+            is_active=True,
+            role_id="68c302ef6bf7a039b7e9b386",
+            tenant_id="68c302ef6bf7a039b7e9b387",
+            created_at="2024-10-01T00:00:00Z",
+            updated_at="2024-10-01T00:00:00Z",
+            role=RoleDto(
+                id="68c302ef6bf7a039b7e9b386",
+                name="Tenant pricing viewer",
+                description="Role carrying MANAGE_PRODUCTS_AND_PRICING for the mocked caller",
+                created_at="2024-10-01T00:00:00Z",
+                updated_at="2024-10-01T00:00:00Z",
+                permissions=[Permission.MANAGE_PRODUCTS_AND_PRICING],
+            ),
+            subscription=None,
+        )
+
+    original_override = app.dependency_overrides.get(get_current_user)
+    app.dependency_overrides[get_current_user] = override_get_current_user_tenant_scoped
+    try:
+        response = await client.patch(
+            "/prices/price_test123",
+            headers={"X-Tenant-ID": "68c302ef6bf7a039b7e9b388"},
+            json={"active": True},
+        )
+    finally:
+        if original_override is None:
+            app.dependency_overrides.pop(get_current_user, None)
+        else:
+            app.dependency_overrides[get_current_user] = original_override
+    assert response.status_code == 403
+    body = response.json()
+    assert body["code"] == 403
+    assert "outside your tenant's scope" in body["error"]
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    # The 403 must still carry the error-response headers: the
+    # handler sets no-store only after the guard, so on this path
+    # they come from the central ApiBaseException handler, and a
+    # cached 403 could otherwise be served to a different user
+    # after an account switch on a shared machine.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+
+    # Same security-headers lock as the prices feature-disabled
+    # tests: the pure-ASGI middleware stamps every HTTP response
+    # with no path exclusions, so the prices 403 must carry the
+    # same headers as the authenticated GETs, including the
+    # exception-handler responses.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Presence alone would not catch the value being weakened:
+    # lock the twelve most sensitive directives as disabled,
+    # mirroring the prices GET lock, using substring checks
+    # so later additions to the list do not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+    # Postconditions: the guard fires before any pricing-service
+    # call, so the update is side-effect free - the seeded role
+    # is still there with MANAGE_PRODUCTS_AND_PRICING and the
+    # seeded tenant is still there with the STRIPE feature
+    # enabled.
+    stored_role = await Role.find_one(
+        Role.id == PydanticObjectId("68c302ef6bf7a039b7e9b386")
+    )
+    assert stored_role is not None
+    assert stored_role.permissions == [Permission.MANAGE_PRODUCTS_AND_PRICING]
+    stored_tenant = await Tenant.find_one(
+        Tenant.id == PydanticObjectId("68c302ef6bf7a039b7e9b388")
+    )
+    assert stored_tenant is not None
+    assert stored_tenant.features == [Feature(name=FeatureEnum.STRIPE, enabled=True)]
