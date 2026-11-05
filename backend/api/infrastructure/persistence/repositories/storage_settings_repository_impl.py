@@ -110,13 +110,6 @@ class StorageSettingsRepository(BaseRepository[StorageSettings], AuditLogReposit
             result.append(serializable)
         return result
 
-    async def get_storage_by_provider(self, provider: StorageProvider) -> StorageSettings | None:
-        setting: StorageSettings | None = await super().single_or_none(provider=provider.value)
-        if setting is None:
-            logger.warning(f"No storage setting found for provider: {provider.value}")
-        return setting
-
-
     async def reset_storage(self, id: str, data: StorageSettings) -> None:
         result = await super().update(id=id, data=data.model_dump())
         logger.info(f"Reset storage setting with ID: {id}. Update result: {result.id} document(s) modified.")
