@@ -87,23 +87,3 @@ class SubscriptionPlanRepository(BaseRepository[SubscriptionPlan], AuditLogRepos
             tenant_id=str(subscription_plan.tenant_id) if subscription_plan.tenant_id else None
         ))
         return result.id
-
-    async def delete_subscription_plan(self, subscription_id: str) -> None:
-        exisiting =  await self.get_subscription_plan_by_id(subscription_id)
-        if exisiting is None:
-            await self.add_audit_log(AuditLogDto(
-                action="delete",
-                entity="SubscriptionPlan",
-                user_id=None,
-                changes={"Info": "Attempted to delete non-existing subscription plan with id " + subscription_id},
-                tenant_id=None
-            ))
-            return
-        await super().delete(subscription_id)
-        await self.add_audit_log(AuditLogDto(
-            action="delete",
-            entity="SubscriptionPlan",
-            user_id=str(exisiting.user_id) if exisiting.user_id else None,
-            changes={"Info": "Deleted subscription plan with id " + subscription_id},
-            tenant_id=str(exisiting.tenant_id) if exisiting.tenant_id else None
-        ))
