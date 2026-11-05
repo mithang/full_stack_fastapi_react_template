@@ -55739,3 +55739,81 @@ async def test_account_password_reset_request_empty_string_email_returns_422_wit
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+@pytest.mark.asyncio
+async def test_account_change_email_request_empty_string_new_email_returns_422_with_security_headers(client: AsyncClient):
+    """
+        The account change-email-request PATCH with an empty-string new_email value:
+    """
+    # The change-email-request empty-string-new_email branch was
+    # not yet locked: function-name grep count 0 for
+    # test_account_change_email_request_empty_string_new_email
+    # (verified fresh this run); the existing
+    # change-email-request locks cover the same-email 406, the
+    # email-already-in-use 406, the invalid-email 422, the
+    # non-string-new_email 422, the missing-new_email 422 and
+    # the whitespace-only-new_email 422, not an empty-string
+    # value. ChangeEmailRequestDto.new_email is a required
+    # EmailStr field with no default and no model validator
+    # (auth_dto.py:19-20), so an empty string fails FastAPI
+    # request validation before the handler body runs: the
+    # service's same-email check, email-existence check, user
+    # lookup, token minting, and confirmation email send never
+    # execute, so no DB row and no SMTP call can affect the
+    # outcome, and no refresh cookie is set. The outcome is
+    # deterministic under any email-validator version: "" has
+    # no "@" and stripping changes nothing ("" stripped is
+    # still ""), so no assumption about whitespace handling is
+    # baked in, mirroring the password-reset-request
+    # empty-string-email 422 lock. The endpoint takes
+    # CurrentUser, which conftest overrides to the mocked user,
+    # and a FrontendHost dependency that merely resolves the
+    # frontend host, and the invalid-email lock already proves
+    # validation precedes any auth failure, so nothing can mask
+    # the 422. Deliberately no exact error-type assertion and
+    # no Cache-Control/Pragma assertion: a 422 is FastAPI
+    # request validation, not an ApiBaseException, so the
+    # central handler's no-store headers do not apply to it,
+    # mirroring the change-email-request invalid-email 422
+    # lock. The security headers ARE locked: the pure-ASGI
+    # middleware stamps every HTTP response, including
+    # validation errors, with no path exclusions.
+    response = await client.patch(
+        "/account/change_email_request",
+        json={"new_email": ""},
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert isinstance(detail, list) and detail
+    assert any(
+        "new_email" in [str(part) for part in err.get("loc", [])]
+        for err in detail
+    )
+    assert any(
+        "email" in str(err.get("msg", "")).lower() for err in detail
+    )
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the change-email-request whitespace-only lock,
+    # using substring checks so later additions to the list do
+    # not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
