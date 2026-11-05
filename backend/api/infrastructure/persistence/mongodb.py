@@ -62,9 +62,6 @@ class Database:
     async def init_models(self) -> None:
         await init_beanie(self.db, document_models=self.models)
 
-    async def get_database(self) -> AsyncDatabase:
-        return self.db
-
     async def close(self) -> None:
         await self.client.close()
         logger.warning("Database connection has been closed.")

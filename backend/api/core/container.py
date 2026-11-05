@@ -184,9 +184,6 @@ def get_deps(dep_type: Type[DT]) -> Callable:
 ## Dependency resolver functions
 ## Todo: Remove these functions and use generic get_deps instead
 
-def get_database() -> Database:
-    return container.resolve(Database)
-
 def get_tenant_service() -> TenantService:
     return container.resolve(TenantService)
 
