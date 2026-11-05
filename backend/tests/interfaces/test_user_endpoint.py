@@ -2111,3 +2111,166 @@ async def test_delete_user_outside_tenant_scope_returns_403_with_cache_and_secur
         User.id == PydanticObjectId("68c302ef6bf7a039b7e9b388")
     )
     assert target is None
+
+
+async def test_get_user_profile_image_outside_tenant_scope_returns_403_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The user profile-image scope-guard error path:
+    """
+    # The user profile-image scope-guard branch, not yet locked:
+    # function-name grep count 0 for
+    # get_user_profile_image_outside_tenant_scope (verified fresh
+    # this run), and no test in this file asserts a 403 on GET
+    # /users/profile/{image_key} - the profile-image locks cover
+    # only the missing-role 404, while the users list/create/get/
+    # update/delete scope guards have their 403 locks in this
+    # file. Deleting _assert_profile_image_scope
+    # (user_endpoint.py) would previously have gone uncaught,
+    # and a tenant caller minting on the host DB (no
+    # X-Tenant-ID/subdomain) could then mint presigned URLs for
+    # objects in the shared bucket that host callers resolve with
+    # no tenant scope. The guard runs first in the handler body,
+    # after the USER_VIEW_ONLY permission dependency, so the gate
+    # must be satisfied first: the shared conftest mock points at
+    # role id 68c302ef6bf7a039b7e9b386 with no row in the fresh
+    # test database. Seeding that exact id carrying
+    # USER_VIEW_ONLY, mirroring the users list/create/get/update/
+    # delete 403 seed precedent, lets the dependency pass: the
+    # profile-image route's required list is [USER_VIEW_ONLY]
+    # with no self-access allowance (role_checker.py defaults
+    # allow_self_access=False), so USER_VIEW_ONLY is the sole
+    # permission; get_role_by_id is called with no tenant filter
+    # (user_access_management.py), and _caller_may_access
+    # returns True when the caller tenant is None
+    # (role_service.py:13-19), so the seeded row is visible
+    # regardless of the caller's tenant scope. The caller is
+    # then made tenant-scoped by swapping in a per-test
+    # MeResponseDto override (tenant_id set), mirroring the
+    # users list/create/get/update/delete 403 locks' override
+    # pattern, and restored in finally so no other test's mock
+    # is affected. With no X-Tenant-ID header the tenant
+    # middleware resolves host scope, so request_tenant_id is
+    # None and the guard raises ForbiddenException before the
+    # ownership check or any storage call runs - no presigned
+    # URL is minted for the key, so no user needs seeding and
+    # no existence signal leaks via the 404. The GET carries no
+    # body, so no payload validation can 422 before the guard.
+    # The central ApiBaseException handler maps
+    # ForbiddenException to 403 (api/__init__.py) with
+    # {"error": ..., "code": 403} and the no-store/Pragma error
+    # headers, since the handler sets them only after the guard.
+    # A future change that drops the guard would break this lock
+    # while leaving the profile-image 404 lock green, so the two
+    # paths are locked separately.
+    from beanie import PydanticObjectId
+
+    from api import app
+    from api.common.enums.gender import Gender
+    from api.domain.dtos.auth_dto import MeResponseDto
+    from api.domain.dtos.role_dto import RoleDto
+    from api.domain.entities.role import Role
+    from api.domain.entities.user import User
+    from api.domain.enum.permission import Permission
+    from api.infrastructure.security.current_user import get_current_user
+
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b386"),
+        name="Tenant profile image viewer",
+        description="Role carrying USER_VIEW_ONLY for the mocked caller",
+        permissions=[Permission.USER_VIEW_ONLY],
+    ).insert()
+
+    async def override_get_current_user_tenant_scoped():
+        return MeResponseDto(
+            first_name="Admin",
+            last_name="User",
+            id="68c302ef6bf7a039b7e9b385",
+            email="admin@example.com",
+            gender=Gender.OTHER,
+            is_active=True,
+            role_id="68c302ef6bf7a039b7e9b386",
+            tenant_id="68c302ef6bf7a039b7e9b387",
+            created_at="2024-10-01T00:00:00Z",
+            updated_at="2024-10-01T00:00:00Z",
+            role=RoleDto(
+                id="68c302ef6bf7a039b7e9b386",
+                name="Tenant profile image viewer",
+                description="Role carrying USER_VIEW_ONLY for the mocked caller",
+                created_at="2024-10-01T00:00:00Z",
+                updated_at="2024-10-01T00:00:00Z",
+                permissions=[Permission.USER_VIEW_ONLY],
+            ),
+            subscription=None,
+        )
+
+    original_override = app.dependency_overrides.get(get_current_user)
+    app.dependency_overrides[get_current_user] = override_get_current_user_tenant_scoped
+    try:
+        response = await client.get(
+            "/users/profile/123e4567-e89b-12d3-a456-426614174000-avatar.png",
+        )
+    finally:
+        if original_override is None:
+            app.dependency_overrides.pop(get_current_user, None)
+        else:
+            app.dependency_overrides[get_current_user] = original_override
+    assert response.status_code == 403
+    body = response.json()
+    assert body["code"] == 403
+    assert "outside your tenant's scope" in body["error"]
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    # The 403 must still carry the error-response headers: the
+    # handler sets no-store only after the guard, so on this path
+    # they come from the central ApiBaseException handler, and a
+    # cached 403 could otherwise be served to a different user
+    # after an account switch on a shared machine.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+
+    # Same security-headers lock as the users list 403 test: the
+    # pure-ASGI middleware stamps every HTTP response with no path
+    # exclusions, so the profile-image 403 must carry the same headers
+    # as the authenticated GETs, including the exception-handler
+    # responses.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Presence alone would not catch the value being weakened: lock
+    # the twelve most sensitive directives as disabled, mirroring
+    # the users list locks, using substring checks so later
+    # additions to the list do not break this test. Each directive
+    # is safe to lock here for the same reasons as on the other
+    # user routes: the SPA has no camera, microphone, geolocation,
+    # payment, clipboard-read, display-capture, fullscreen,
+    # motion-sensor, compass, XR, or idle-detection flow
+    # (verified by grep in the earlier sweeps).
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+    # Postconditions: the guard fires before the ownership check
+    # and any storage call, so the request is side-effect free -
+    # the seeded role is still there with its permission, and no
+    # user row stores the requested key as a profile picture, so
+    # no presigned URL could have been minted for it.
+    stored = await Role.find_one(
+        Role.id == PydanticObjectId("68c302ef6bf7a039b7e9b386")
+    )
+    assert stored is not None
+    assert stored.permissions == [Permission.USER_VIEW_ONLY]
+    owner = await User.find_one(
+        User.image_url == "123e4567-e89b-12d3-a456-426614174000-avatar.png"
+    )
+    assert owner is None
