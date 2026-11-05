@@ -54053,3 +54053,92 @@ async def test_account_email_magic_link_validate_empty_token_returns_403_with_ca
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+async def test_account_email_magic_link_validate_whitespace_only_token_returns_403_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The account magic-link validate GET with a whitespace-only
+        token query param:
+    """
+    # The magic-link validate whitespace-only-token branch, not
+    # yet locked: function-name grep count 0 for
+    # email_magic_link_validate_whitespace_only_token
+    # (verified fresh this run); the existing validate locks
+    # cover the invalid-link 403, the missing-token 422, the
+    # missing-user_id 422 and the empty-token 403, not a token
+    # with no non-space core. The endpoint takes two required
+    # Query params (account_endpoint.py: token: str =
+    # Query(...), user_id: str = Query(...)), and httpx sends
+    # "   " as token=%20%20%20, so FastAPI validation passes
+    # and the handler runs: unquote decodes the %20s back to
+    # spaces and .strip() leaves "", and validate_magic_link
+    # (magic_link_service.py) looks up (user_id, token="") -
+    # no record can carry an empty token, so it returns False
+    # (and any lookup exception is caught broadly and also
+    # returns False). The handler therefore raises
+    # ForbiddenException("Invalid or expired magic link.")
+    # before login_with_magic_link runs, so no token set is
+    # issued and no refresh cookie is set, exactly as in the
+    # empty-token 403 lock. A future change dropping the strip
+    # would leave this lock green only if the lookup still
+    # failed on the raw spaces, while a future change trimming
+    # and then rejecting empty tokens at validation with 422
+    # would break this lock while leaving the empty-token 403
+    # lock green, so the two inputs are locked separately.
+    # The central ApiBaseException handler maps
+    # ForbiddenException to 403 with body {"error": ...,
+    # "code": 403} plus Cache-Control: no-store and Pragma:
+    # no-cache, and the pure-ASGI middleware stamps every
+    # response with the security headers. The user_id is a
+    # well-formed ObjectId hex (the mocked user's id) so the
+    # 403 comes from the record lookup, not from a
+    # malformed-id shortcut. This lock is deterministic on a
+    # fresh DB: no seeded row is needed, and no live service
+    # or email send runs on this path.
+    response = await client.get(
+        "/account/email_magic_link_validate",
+        params={
+            "token": "   ",
+            "user_id": "68c302ef6bf7a039b7e9b385",
+        },
+    )
+    assert response.status_code == 403
+    assert response.json()["code"] == 403
+    assert "Invalid or expired magic link" in response.json()["error"]
+    # A whitespace-only token must not mint a session: no
+    # refresh cookie.
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    # Error responses must not be cached either: a cached 403
+    # could be served to a different user after an account
+    # switch on a shared machine, and a cached success on
+    # this single-use flow would replay a consumed link's
+    # token set.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    # Same security-headers lock as the other account tests:
+    # the pure-ASGI middleware stamps every HTTP response
+    # with no path exclusions, so this 403 must carry the
+    # same headers.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the invalid-link 403 lock, using substring
+    # checks so later additions to the list do not break
+    # this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
