@@ -1117,3 +1117,196 @@ async def test_get_product_by_id_outside_tenant_scope_returns_403_with_cache_and
     )
     assert stored_tenant is not None
     assert stored_tenant.features == [Feature(name=FeatureEnum.STRIPE, enabled=True)]
+
+
+@pytest.mark.asyncio
+async def test_patch_product_outside_tenant_scope_returns_403_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The products PATCH update scope-guard error path: the five
+        feature-disabled 403 locks cover the gate, and the POST
+        create-scope 403 lock covers the create route, but no test
+        asserted a 403 on PATCH /products/{id} via the create scope
+        guard - function-name grep count 0 for
+        patch_product_outside_tenant_scope, verified fresh this
+        run. Deleting _assert_create_scope
+        (product_endpoint.py:16-35) would previously have gone
+        uncaught on the update route, and a tenant caller updating
+        on the host DB would then update a product in the HOST
+        Stripe account (the guard's own comment: the tenant Stripe
+        resolver reads the singleton settings record in the current
+        DB with no tenant filter) - polluting the host catalog and
+        hiding the object from the caller's own tenant Stripe
+        account. The guard runs first in the handler body,
+        before any product-service call, so no product is
+        updated. It cannot be reached the way the notification
+        banner locks reach their guard (tenant-scoped caller,
+        no X-Tenant-ID header): the products router is
+        feature-gated, and check_feature_access looks the
+        tenant up by request.state.tenant_id before the handler
+        runs, so with no header the lookup gets None,
+        BaseRepository.get returns None, and get_tenant_by_id
+        raises TenantNotFoundException - a 404 from the gate,
+        never the scope 403. The lock therefore uses the
+        mismatched scope the guard is written for, mirroring
+        the POST products scope lock: the caller is tenant-scoped
+        to 68c302ef6bf7a039b7e9b387 while the request carries
+        X-Tenant-ID 68c302ef6bf7a039b7e9b388, a seeded tenant
+        with the STRIPE feature enabled, so the feature gate
+        passes (Tenant stays bound to the host DB - init_db
+        excludes it from the tenant-DB models, mongodb.py:53-56
+        - so the lookup finds the seeded row) and the guard
+        raises ForbiddenException before any update. Like the
+        POST route, the products PATCH route carries a
+        MANAGE_PRODUCTS_AND_PRICING permission dependency,
+        which runs before the handler body, so the seeded role
+        (id 68c302ef6bf7a039b7e9b386) must carry
+        MANAGE_PRODUCTS_AND_PRICING: get_role_detail calls
+        get_role_by_id with no tenant argument
+        (user_access_management.py), so _caller_may_access
+        sees a None caller tenant and returns True
+        (role_service.py:18-19), and the seeded row is
+        visible regardless of the caller's tenant scope -
+        the same mechanism the POST scope lock relies on.
+        The override's RoleDto carries the same permission,
+        and the caller override mirrors the POST lock's
+        pattern (per-test MeResponseDto, restored in finally).
+        The body is valid on purpose, not {}: update_product
+        reuses CreateProductDto, which requires name and
+        description (min_length=1, non-blank after strip, via
+        the model validator), while tax_code is optional and
+        active defaults to True - an invalid body would fail
+        validation with 422 and could mask the 403 depending
+        on validation-vs-dependency ordering; a valid body
+        makes the guard error deterministic either way. The
+        path param is a plain string ({product_id:path},
+        "prod_test123" as in the feature-disabled PATCH lock),
+        so no 422 can mask the 403 from the path. The central
+        ApiBaseException handler maps ForbiddenException to 403
+        (api/__init__.py:98-103) with {"error": ..., "code":
+        403} and the no-store/Pragma error headers. A future
+        change that drops the guard would break this lock
+        while leaving the feature-disabled PATCH 403 lock and
+        the POST/GET scope 403 locks green, so the paths are
+        locked separately.
+    """
+    from beanie import PydanticObjectId
+
+    from api.domain.entities.role import Role
+    from api.domain.entities.tenant import Feature, Tenant
+    from api.domain.enum.feature import Feature as FeatureEnum
+    from api.domain.enum.permission import Permission
+
+    await Tenant(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b388"),
+        name="products-scope-tenant",
+        subdomain="products-scope.fsrapp.com",
+        features=[Feature(name=FeatureEnum.STRIPE, enabled=True)],
+    ).insert()
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b386"),
+        name="Tenant product manager",
+        description="Role carrying MANAGE_PRODUCTS_AND_PRICING for the mocked caller",
+        permissions=[Permission.MANAGE_PRODUCTS_AND_PRICING],
+    ).insert()
+
+    async def override_get_current_user_tenant_scoped():
+        return MeResponseDto(
+            first_name="Admin",
+            last_name="User",
+            id="68c302ef6bf7a039b7e9b385",
+            email="admin@example.com",
+            gender=Gender.OTHER,
+            is_active=True,
+            role_id="68c302ef6bf7a039b7e9b386",
+            tenant_id="68c302ef6bf7a039b7e9b387",
+            created_at="2024-10-01T00:00:00Z",
+            updated_at="2024-10-01T00:00:00Z",
+            role=RoleDto(
+                id="68c302ef6bf7a039b7e9b386",
+                name="Tenant product manager",
+                description="Role carrying MANAGE_PRODUCTS_AND_PRICING for the mocked caller",
+                created_at="2024-10-01T00:00:00Z",
+                updated_at="2024-10-01T00:00:00Z",
+                permissions=[Permission.MANAGE_PRODUCTS_AND_PRICING],
+            ),
+            subscription=None,
+        )
+
+    original_override = app.dependency_overrides.get(get_current_user)
+    app.dependency_overrides[get_current_user] = override_get_current_user_tenant_scoped
+    try:
+        response = await client.patch(
+            "/products/prod_test123",
+            headers={"X-Tenant-ID": "68c302ef6bf7a039b7e9b388"},
+            json={"name": "Test Product", "description": "A test product"},
+        )
+    finally:
+        if original_override is None:
+            app.dependency_overrides.pop(get_current_user, None)
+        else:
+            app.dependency_overrides[get_current_user] = original_override
+    assert response.status_code == 403
+    body = response.json()
+    assert body["code"] == 403
+    assert "outside your tenant's scope" in body["error"]
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    # The 403 must still carry the error-response headers: the
+    # handler sets no-store only after the guard, so on this path
+    # they come from the central ApiBaseException handler, and a
+    # cached 403 could otherwise be served to a different user
+    # after an account switch on a shared machine.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+
+    # Same security-headers lock as the products feature-disabled
+    # tests: the pure-ASGI middleware stamps every HTTP response
+    # with no path exclusions, so the products PATCH 403 must carry
+    # the same headers as the authenticated GETs, including the
+    # exception-handler responses.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Presence alone would not catch the value being weakened:
+    # lock the twelve most sensitive directives as disabled,
+    # mirroring the products POST scope lock, using substring
+    # checks so later additions to the list do not break this
+    # test. The full value lives in _SECURITY_HEADERS. Each
+    # directive is safe to lock here for the same reasons as on
+    # the other routes: the SPA has no camera, microphone,
+    # geolocation, payment, clipboard-read, display-capture,
+    # fullscreen, motion-sensor, compass, XR, or idle-detection
+    # flow (verified by grep in the earlier sweeps and re-verified
+    # fresh this run: zero case-insensitive idle matches across
+    # frontend/app/src, and the remaining flows verified absent).
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+    # Postconditions: the guard fires before any product-service
+    # call, so the update is side-effect free - the seeded role
+    # is still there with MANAGE_PRODUCTS_AND_PRICING and the
+    # seeded tenant is still there with the STRIPE feature
+    # enabled. Products are Stripe objects, not DB rows, so the
+    # tenant row is the observable postcondition.
+    stored_role = await Role.find_one(
+        Role.id == PydanticObjectId("68c302ef6bf7a039b7e9b386")
+    )
+    assert stored_role is not None
+    assert stored_role.permissions == [Permission.MANAGE_PRODUCTS_AND_PRICING]
+    stored_tenant = await Tenant.find_one(
+        Tenant.id == PydanticObjectId("68c302ef6bf7a039b7e9b388")
+    )
+    assert stored_tenant is not None
+    assert stored_tenant.features == [Feature(name=FeatureEnum.STRIPE, enabled=True)]
