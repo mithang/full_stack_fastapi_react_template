@@ -298,3 +298,93 @@ async def test_no_build_404_returns_no_store_headers(client: AsyncClient, monkey
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+@pytest.mark.asyncio
+async def test_wrong_method_on_known_api_route_returns_no_store_405(client: AsyncClient):
+    """
+        A known /api/v1 path called with an undefined method:
+    """
+    # DELETE on the tenant collection: the tenant router defines only
+    # GET / (list) and POST / (create) there -- DELETE exists only as
+    # /{id} -- so no handler matches, while the path itself does.
+    # Starlette therefore raises its 405 (not the catch-all's 404:
+    # react_router is @app.get only, so a DELETE cannot be swallowed
+    # into the SPA shell or the "API route not found" 404; it only
+    # adds GET to the partial-match set). The 405 must carry the
+    # {"detail": "Method Not Allowed"} body in the same shape as the
+    # unknown-route 404, or a web/mobile client calling a route with
+    # the wrong method fails opaquely instead of seeing the mismatch.
+    # Absolute URL, mirroring the unknown-route 404 lock above, so
+    # this does not depend on how httpx merges the shared client's
+    # /api/v1 base_url with a relative path.
+    response = await client.delete("http://test/api/v1/tenants/")
+    assert response.status_code == 405
+    assert response.json() == {"detail": "Method Not Allowed"}
+    # The Allow header is Starlette's list of the methods the path
+    # does support: GET (list) and POST (create) from the tenant
+    # router (plus GET from the GET-only catch-all, already covered).
+    # DELETE must not appear -- it is not defined on this path.
+    allow = response.headers["allow"]
+    assert "GET" in allow
+    assert "POST" in allow
+    assert "DELETE" not in allow
+    # The 405 is raised by Starlette routing, so it goes through the
+    # central StarletteHTTPException handler (api/__init__.py), which
+    # copies the raised headers and adds no-store plus Pragma -- the
+    # same cache hardening as the ApiBaseException handler and the
+    # unknown-route 404: without this lock, a cached 405 could keep
+    # answering the collection after a method is added, or be served
+    # to a different user after an account switch on a shared machine.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    # Same security-headers lock as the other tests in this file: the
+    # middleware is pure ASGI, so it also applies to this routing
+    # 405 response. Deleting the middleware registration would have
+    # gone uncaught on this route too.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Presence alone would not catch the value being weakened: lock
+    # the twelve most sensitive directives as disabled, mirroring the
+    # other locks in this file, using substring checks so later
+    # additions to the list do not break this test. The full value
+    # lives in _SECURITY_HEADERS. The fifth, clipboard-read, is safe
+    # to lock: the SPA only writes to the clipboard, never reads it
+    # (only writeText calls, verified by grep this run). The sixth,
+    # display-capture, is safe to lock here: the SPA has no
+    # screen-sharing flow (zero getDisplayMedia calls, verified by
+    # grep this run). The seventh, fullscreen, is safe to lock here:
+    # the SPA has no fullscreen flow (zero requestFullscreen calls,
+    # verified by grep this run). The eighth, accelerometer, is safe
+    # to lock here: the SPA has no motion-sensor flow (zero
+    # DeviceMotion/DeviceOrientation/Accelerometer/Gyroscope/
+    # Magnetometer matches, verified by grep this run). The ninth,
+    # gyroscope, is safe to lock here for the same reason: the SPA
+    # has no gyroscope flow (zero Gyroscope/DeviceOrientation
+    # matches, verified by grep this run). The tenth, magnetometer,
+    # is safe to lock here for the same reason: the SPA has no
+    # compass flow (zero Magnetometer matches, verified by grep
+    # this run). The eleventh, xr-spatial-tracking, is safe to lock
+    # here for the same reason: the SPA has no XR flow (zero
+    # navigator.xr/XRSession/immersive-ar/immersive-vr matches,
+    # verified by grep this run). The twelfth, idle-detection, is safe
+    # to lock here for the same reason: the SPA has no idle-detection
+    # flow (zero IdleDetector/requestIdleCallback matches and zero
+    # case-insensitive idle matches, verified by grep this run).
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
