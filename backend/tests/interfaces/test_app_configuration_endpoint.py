@@ -201,3 +201,194 @@ async def test_app_configuration_as_logged_out_visitor(client: AsyncClient, mock
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+@pytest.mark.asyncio
+async def test_get_app_configuration_with_branded_logo_and_unconfigured_s3_returns_502_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The app-configuration GET S3 502 path for a stored logo
+        with unconfigured S3 credentials:
+    """
+    # The app-configuration GET S3 502 branch for blank
+    # credentials, not yet locked: function-name grep count 0
+    # for get_app_configuration_with_branded_logo_and_
+    # unconfigured_s3 (verified fresh this run), and grep count
+    # 0 for "502" across test_app_configuration_endpoint.py.
+    # The S3 502 mapping is locked for the profile-image GET
+    # read path, the profile-picture upload path, and the
+    # branding logo upload path, but GET /app_configuration/
+    # reaches the same fail-closed constructor through a
+    # different caller: BrandingService.get_branding()
+    # (branding_service.py:46) resolves a stored logo_url
+    # through file_service.get_file_url whenever a branding
+    # record carries one, and the app-configuration handler
+    # calls get_branding() on every page load (including the
+    # public login page), so a branding with a logo plus a
+    # misconfigured storage provider 502s the whole page load
+    # instead of serving the config. Deleting the fail-closed
+    # blank-key raise in S3Storage.__init__ would previously
+    # have gone uncaught on this path - boto3 would silently
+    # resolve ambient credentials (env vars, shared config,
+    # IAM role) and presign the logo URL under the
+    # deployment's credentials, hiding a misconfiguration
+    # from the client fallbacks that only trigger on
+    # rejection. The 502 here is deterministic with no network
+    # and no live S3 call: the blank check runs before any
+    # boto3 client construction or HTTP request
+    # (s3_storage.py:12-23), so no credential resolution,
+    # signing, or request happens. The handler chain is: no
+    # Authorization header, so current_user_optional resolves
+    # to None (current_user.py:47-60, exceptions swallowed to
+    # None) and the user-preference/passkey lookups are
+    # skipped; no X-Tenant-ID header, so get_tenant_id returns
+    # None (tenant_middleware.py:138-139) and get_tenant
+    # returns None without a service call; then
+    # get_only_enabled_providers() runs before get_branding()
+    # (app_configuration_endpoint.py:76-78) - SSOSettings is
+    # outside the conftest model set, so the test initializes
+    # it on the test DB alongside Branding and
+    # StorageSettings, making the whole chain self-contained
+    # regardless of which tests ran first in the session
+    # (the empty collection returns no providers, and
+    # re-initializing a model is a no-op per the branding
+    # tests' beanie 2.2.0 verification); branding_service
+    # .get_branding() finds the seeded record and, because
+    # it carries a logo_url, calls file_service.get_file_url
+    # -> FileRetrieval.generate_read_url, which finds the
+    # enabled S3 row and constructs S3Storage, which raises;
+    # the retrieval try catches only
+    # StorageNotEnabledException, so the exception propagates,
+    # and the central handler maps AwsException to 502
+    # (api/__init__.py:110-117) with {"error": ..., "code":
+    # 502} and the no-store/Pragma error headers. The seeded
+    # branding carries an explicit tenant_id stamp: BrandingDto
+    # .tenant_id is a required str, so a None-stamped record
+    # would fail DTO validation inside get_branding() and 500
+    # before ever reaching the file service - the stamp is
+    # never scope-checked on this read path, so any value
+    # keeps the DTO valid (mirroring the PATCH 406 lock's
+    # foreign-stamp seed). StorageSettings is outside the
+    # conftest model set (conftest.py:25), so the test
+    # initializes it on the test DB first: init_beanie on the
+    # same URI/db name the conftest fixture uses
+    # (mongodb://localhost:27012/test_db, api_test_db), in the
+    # same call as Branding, mirroring the branding tests'
+    # second-init precedent and the S3/Azure 502 locks. The
+    # 502 fires inside get_branding(), so no config is
+    # returned and no file is written to storage. A future
+    # change that drops the blank fail-closed raise, or that
+    # lets blank S3 keys fall through to ambient boto3
+    # credentials on this path, would break this lock while
+    # leaving the profile-image S3 502 lock, the
+    # profile-picture upload S3 502 lock, the branding PUT
+    # /logo S3 502 lock, and the app-configuration 200 lock
+    # green, so the paths are locked separately.
+    from beanie import PydanticObjectId, init_beanie
+    from pymongo import AsyncMongoClient
+
+    from api.domain.entities.branding import Branding
+    from api.domain.entities.sso_settings import SSOSettings
+    from api.domain.entities.storage_settings import StorageProvider, StorageSettings
+
+    mongo_client = AsyncMongoClient("mongodb://localhost:27012/test_db")
+    await init_beanie(
+        mongo_client["api_test_db"],
+        document_models=[Branding, StorageSettings, SSOSettings],
+    )
+
+    await Branding(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b38a"),
+        tenant_id=PydanticObjectId("68c302ef6bf7a039b7e9b389"),
+        logo_url="logo.png",
+        logo_type="image/png",
+    ).insert()
+
+    await StorageSettings(
+        provider=StorageProvider.AWS_S3,
+        is_enabled=True,
+        region="eu-central-1",
+        aws_access_key="",
+        aws_secret_key="",
+        aws_bucket_name="test-bucket",
+    ).insert()
+
+    # No Authorization header and no X-Tenant-ID header: the
+    # public login-page fetch, exactly as the frontend sends it
+    # on every page load.
+    response = await client.get("/app_configuration/")
+    assert response.status_code == 502
+    body = response.json()
+    assert body["code"] == 502
+    # S3StorageException prefixes its message ("S3 Storage Error:
+    # ..."), so assert on the fail-closed reason itself.
+    assert "S3 storage credentials are not configured." in body["error"]
+    assert "S3 Storage Error: " in body["error"]
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    # The 502 must still carry the error-response headers: the
+    # handler sets no-store only on the success path, so on this
+    # path they come from the central ApiBaseException handler,
+    # and a cached 502 could otherwise be served to a different
+    # user after an account switch on a shared machine.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+
+    # Same security-headers lock as the app-configuration 200
+    # test: the pure-ASGI middleware stamps every HTTP response
+    # with no path exclusions, so the app-configuration 502
+    # must carry the same headers as the authenticated calls,
+    # including the exception-handler responses.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Presence alone would not catch the value being weakened:
+    # lock the twelve most sensitive directives as disabled,
+    # mirroring the app-configuration 200 lock, using substring
+    # checks so later additions to the list do not break this
+    # test. Each directive is safe to lock here for the same
+    # reasons as on the other routes: the SPA has no camera,
+    # microphone, geolocation, payment, clipboard-read,
+    # display-capture, fullscreen, motion-sensor, compass, XR,
+    # or idle-detection flow (verified by grep in the earlier
+    # sweeps and re-verified fresh this run: zero
+    # case-insensitive idle matches and zero
+    # IdleDetector/requestIdleCallback matches across
+    # frontend/app/src).
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+    # Postconditions: the 502 fires inside get_branding()
+    # before any config is returned, so the request is
+    # side-effect free - the seeded branding record is still
+    # there with its logo_url (the constructor raises before
+    # any read URL is minted), and the storage row is still
+    # the enabled S3 row with blank keys and bucket
+    # "test-bucket" (the constructor raises before any write
+    # or upload).
+    stored_branding = await Branding.find_one(
+        Branding.id == PydanticObjectId("68c302ef6bf7a039b7e9b38a")
+    )
+    assert stored_branding is not None
+    assert stored_branding.logo_url == "logo.png"
+    assert stored_branding.tenant_id == PydanticObjectId("68c302ef6bf7a039b7e9b389")
+    stored_settings = await StorageSettings.find_one(
+        StorageSettings.is_enabled == True
+    )
+    assert stored_settings is not None
+    assert stored_settings.provider == StorageProvider.AWS_S3
+    assert stored_settings.aws_access_key == ""
+    assert stored_settings.aws_secret_key == ""
+    assert stored_settings.aws_bucket_name == "test-bucket"
+    await mongo_client.close()
