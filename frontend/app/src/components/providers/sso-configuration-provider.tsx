@@ -102,7 +102,12 @@ export default function SSOConfigurationProvider({ children }: SSOConfigurationP
             toast.success("SSO configuration created successfully", { richColors: true, position: "top-right" });
             await refreshSSOConfigurations();
         } catch (error) {
-            console.error("Failed to create SSO configuration:", error);
+            // Log only the server's message, not the raw ApiError: its
+            // .request.body carries the submitted client_secret, which
+            // must never reach the browser console (same class as the
+            // worker-token and new-user-password console logs removed
+            // earlier). The toast below already surfaces the same message.
+            console.error("Failed to create SSO configuration:", extractErrorMessage(error));
             // A backend response (ApiError, which carries a numeric status)
             // means the server answered; a failure with no status is a
             // network error, not a failed SSO creation, and must not send
@@ -198,7 +203,9 @@ export default function SSOConfigurationProvider({ children }: SSOConfigurationP
             toast.success("SSO configuration updated successfully", { richColors: true, position: "top-right" });
             await refreshSSOConfigurations();
         } catch (error) {
-            console.error("Failed to update SSO configuration:", error);
+            // Same as the create catch above: the raw ApiError's
+            // .request.body carries the submitted client_secret.
+            console.error("Failed to update SSO configuration:", extractErrorMessage(error));
             // A backend response (ApiError, which carries a numeric status)
             // means the server answered; a failure with no status is a
             // network error, not a failed SSO update, and must not send
