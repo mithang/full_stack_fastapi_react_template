@@ -52084,3 +52084,99 @@ async def test_account_activate_malformed_token_invalid_email_returns_406_with_c
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+async def test_account_activate_malformed_token_invalid_user_id_returns_404_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The account activation POST for a correctly signed,
+        unexpired activation token whose payload carries a
+        user_id value that is not a valid ObjectId.
+    """
+    # The activate malformed-user_id branch, verified fresh this
+    # run, not assumed: function-name grep count 0 for
+    # test_account_activate_malformed_token_invalid_user_id,
+    # malformed-id grep count 0 for
+    # activate-malformed-userid and email grep count 0 for
+    # activate-malformed-badid@example.com before appending.
+    # The only existing activate locks are the garbage-token 406
+    # (bad signature, raising InvalidTokenError before any
+    # payload-shape check), the 200 success lock (complete
+    # payload with a real ObjectId), the already-active 406
+    # lock, the email-mismatch 403 lock, the unknown-user 404
+    # lock (a well-formed but unseeded 24-hex ObjectId),
+    # the wrong-type 406 lock (type check, also
+    # InvalidTokenError), the expired 406 lock
+    # (ExpiredSignatureError), the missing-email 406 lock
+    # (ValidationError on a missing email field), the
+    # missing-user_id 406 lock (ValidationError on a missing
+    # user_id field) and the invalid-email 406 lock
+    # (ValidationError on a present-but-malformed email value).
+    # None of them exercises the path where user_id is present
+    # but not ObjectId-shaped. VerifyEmailTokenPayloadDto
+    # (token_dto.py) declares user_id as plain str, so a
+    # present-but-malformed value passes DTO validation and
+    # verify_activation_token (jwt_token_service.py) returns
+    # it unchanged; only then does activate_account
+    # (auth_service.py) call get_user_by_id (user_service.py),
+    # whose repository.get (common/base_repository.py) strips
+    # the id, fails the PydanticObjectId conversion and returns
+    # None instead of escaping as a 500, so the service raises
+    # UserNotFoundException ("User with identifier <id> not
+    # found."). The central ApiBaseException handler maps
+    # NotFoundException to 404 with body {"error": ...,
+    # "code": 404} and Cache-Control: no-store plus Pragma:
+    # no-cache (api/__init__.py), and the pure-ASGI
+    # security-headers middleware stamps every HTTP response with
+    # no path exclusions. No user row is seeded: the lookup
+    # raises before any activation write, and no email is sent
+    # and no Celery task is enqueued on this path. The conftest
+    # fixture drops the test DB after the test, so nothing here
+    # can leak into other tests.
+    import jwt
+    from datetime import datetime, timedelta, timezone
+
+    from api.common.security import ALGORITHM, JWT_SECRET
+
+    malformed_user_id = "activate-malformed-userid"
+    malformed_token = jwt.encode(
+        {
+            "user_id": malformed_user_id,
+            "email": "activate-malformed-badid@example.com",
+            "type": "activation",
+            "exp": datetime.now(timezone.utc) + timedelta(hours=1),
+        },
+        JWT_SECRET,
+        algorithm=ALGORITHM,
+    )
+    response = await client.post(
+        "/account/activate",
+        json={"token": malformed_token},
+    )
+    assert response.status_code == 404
+    assert response.json()["code"] == 404
+    assert response.json()["error"] == f"User with identifier {malformed_user_id} not found."
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the activate success lock, using substring checks
+    # so later additions to the list do not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
