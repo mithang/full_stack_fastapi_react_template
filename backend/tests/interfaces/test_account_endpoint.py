@@ -53442,3 +53442,82 @@ async def test_account_change_email_confirmation_tab_newline_padded_token_return
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+@pytest.mark.asyncio
+async def test_account_change_email_confirmation_whitespace_only_token_returns_400_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The account change-email-confirmation PATCH with a
+        whitespace-only token:
+    """
+    # The whitespace-only-token branch was deliberately NOT
+    # locked by the space-padded-token lock (a padded live
+    # token, which verifies after the strip), the
+    # tab/newline-padded-token lock (the same, with a
+    # different whitespace class), the invalid-token lock (a
+    # non-JWT string with a non-space core, which fails
+    # jwt.decode before any trim could matter), the expired,
+    # wrong-type, missing-type, and wrong-shape locks (all
+    # minted JWTs with a non-space core), the other-user and
+    # malformed-user_id locks (unpadded tokens, same reason),
+    # or the success lock (an unpadded live token, which
+    # verifies verbatim and never exercises the trim), and is
+    # locked here, verified fresh this run, not assumed:
+    # function-name grep count 0 for
+    # test_account_change_email_confirmation_whitespace_only_token
+    # before appending. The request DTO strips the token
+    # before verification (ChangeEmailConfirmRequestDto.normalize_token
+    # in auth_dto.py, a model_validator that calls .strip() on
+    # a string token), so a whitespace-only token becomes the
+    # empty string; token is a plain str with no min_length,
+    # so the empty string passes request validation and
+    # reaches verification, where jwt.decode("") raises
+    # InvalidTokenError, which verify_change_email_token
+    # converts to InvalidOperationException("Invalid change
+    # email token") before any user lookup, email-existence
+    # check, email update, or notification email, and the
+    # endpoint converts that to HTTPException 400 with the
+    # generic detail "Email change confirmation failed.", so
+    # the failure reveals nothing about the token or any
+    # account. No row is seeded and no email is sent on this
+    # path. The Starlette HTTPException handler returns body
+    # {"detail": ...} with Cache-Control: no-store plus
+    # Pragma: no-cache (api/__init__.py), and the pure-ASGI
+    # security-headers middleware stamps every HTTP response
+    # with no path exclusions. A future change that rejected
+    # empty tokens at DTO validation with 422, or that
+    # defaulted an empty token to a valid token, would break
+    # this lock while leaving the invalid-token lock green,
+    # so the two inputs are locked separately.
+    response = await client.patch(
+        "/account/change_email_confirmation",
+        json={"token": "   \t\n  "},
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Email change confirmation failed."
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the invalid-token lock, using substring
+    # checks so later additions to the list do not break
+    # this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
