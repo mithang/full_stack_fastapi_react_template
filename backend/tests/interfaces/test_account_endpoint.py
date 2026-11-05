@@ -51601,3 +51601,118 @@ async def test_account_activate_unknown_user_returns_404_with_cache_and_security
     # still unseeded after the 404 (the handler raises before
     # any write).
     assert await User.find_one(User.id == PydanticObjectId(unknown_user_id)) is None
+
+
+async def test_account_activate_wrong_token_type_returns_406_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The account activation POST for a correctly signed token whose
+        type is not "activation" (a password-reset token replayed at
+        /activate).
+    """
+    # The activate wrong-token-type branch, verified fresh this run,
+    # not assumed: function-name grep count 0 for
+    # test_account_activate_wrong_token_type, user-id grep count 0
+    # for 68c302ef6bf7a039b7e9b3a4 and seed-email grep count 0
+    # for activate-wrong-type@example.com before appending, and
+    # the only existing activate locks are the garbage-token 406
+    # (which raises inside verify_activation_token on a bad
+    # signature before any type check), the 200 success lock
+    # (type "activation"), the already-active 406 lock (type
+    # "activation", raising on is_active), the email-mismatch
+    # 403 lock (type "activation", raising on the email check)
+    # and the unknown-user 404 lock (type "activation", raising
+    # on the user lookup). None of them exercises the type
+    # check itself. The handler takes only the AuthService
+    # dependency plus an optional tenant query param (which the
+    # service ignores), so no permission gate or CurrentUser
+    # lookup can interfere. activate_account (auth_service.py)
+    # first verifies the token with JWT_SECRET / ALGORITHM and
+    # requires type "activation" (jwt_token_service.py
+    # verify_activation_token raises InvalidOperationException
+    # ("Invalid activation token") on a type mismatch, before
+    # any user lookup), so a correctly signed token of another
+    # type cannot activate an account and cannot leak whether
+    # the user exists. The central ApiBaseException handler maps
+    # InvalidOperationException to 406 with body {"error": ...,
+    # "code": 406} and Cache-Control: no-store plus Pragma:
+    # no-cache (api/__init__.py), and the pure-ASGI
+    # security-headers middleware stamps every HTTP response with
+    # no path exclusions. No email is sent and no Celery task is
+    # enqueued on this path -- unlike the resend 202 success
+    # branch, which stays deliberately NOT locked because its
+    # raise_on_failure=True send needs a live mail server. The
+    # conftest fixture drops the test DB after the test, so the
+    # seeded row cannot leak into other tests.
+    import jwt
+    from datetime import datetime, timedelta, timezone
+
+    from beanie import PydanticObjectId
+
+    from api.common.enums.gender import Gender
+    from api.common.security import ALGORITHM, JWT_SECRET, hash_it
+    from api.domain.entities.user import User
+
+    await User(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b3a4"),
+        first_name="Activate",
+        last_name="WrongType",
+        email="activate-wrong-type@example.com",
+        gender=Gender.OTHER,
+        is_active=False,
+        # Activation never verifies the password, so any hash works;
+        # the user id doubles as the hash input to keep the seed free
+        # of a throwaway password literal.
+        password=hash_it("68c302ef6bf7a039b7e9b3a4"),
+    ).insert()
+    wrong_type_token = jwt.encode(
+        {
+            "user_id": "68c302ef6bf7a039b7e9b3a4",
+            "email": "activate-wrong-type@example.com",
+            "type": "password_reset_confirmation",
+            "exp": datetime.now(timezone.utc) + timedelta(hours=1),
+        },
+        JWT_SECRET,
+        algorithm=ALGORITHM,
+    )
+    response = await client.post(
+        "/account/activate",
+        json={"token": wrong_type_token},
+    )
+    assert response.status_code == 406
+    assert response.json()["code"] == 406
+    assert response.json()["error"] == "Invalid activation token"
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the activate success lock, using substring checks
+    # so later additions to the list do not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+    # Postcondition: the seeded user was not activated -- still
+    # inactive, still without an activation stamp (the handler
+    # raises inside token verification, before any user lookup
+    # or write).
+    still_inactive = await User.find_one(User.email == "activate-wrong-type@example.com")
+    assert still_inactive is not None
+    assert still_inactive.is_active is False
+    assert still_inactive.activated_at is None
+    assert still_inactive.first_name == "Activate"
+    assert still_inactive.last_name == "WrongType"
