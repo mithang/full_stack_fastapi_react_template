@@ -56,7 +56,8 @@ class UserRepository(BaseRepository[User], AuditLogRepository):
             password=data.password,
             is_active=False,
             role_id=data.role_id,
-            tenant_id=data.tenant_id
+            tenant_id=data.tenant_id,
+            sso_provider_id=data.sso_provider_id
         )
         d = new_user.model_dump()
         result = await super().create(data=d)

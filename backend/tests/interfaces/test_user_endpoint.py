@@ -4220,3 +4220,53 @@ async def test_put_user_with_changed_is_active_applies_it_with_cache_and_securit
     response = await client.get(f"/users/{new_user_response.id}")
     assert response.status_code == 200
     assert UserDto.model_validate(response.json()).is_active is False
+
+
+@pytest.mark.asyncio
+async def test_create_user_with_sso_provider_id_persists_it_at_repository(client: AsyncClient):
+    """
+        The user create sso_provider_id drop, not yet locked:
+        function-name grep count 0 for
+        create_user_with_sso_provider_id_persists_it_at_repository
+        and grep count 0 for "sso_provider_id" in this file
+        (verified fresh this run). CreateUserDto carries
+        sso_provider_id (domain/dtos/user_dto.py:15, inherited by
+        CreateUserDto) and the User entity stores it
+        (domain/entities/user.py:19), but UserRepository.create
+        built the User without it, so any caller passing the field
+        had it silently dropped. No live caller passes it today:
+        login_with_sso builds the CreateUserDto without it and sets
+        the flag on the re-fetched user afterwards
+        (usecases/auth_service.py:221-249), so the drop was latent
+        rather than a live defect - but the next caller to supply
+        it (or a future SSO signup that passes it at creation)
+        would have lost the linkage with no error. The repository
+        is called directly here, bypassing the endpoint on purpose:
+        the endpoint path never sends sso_provider_id, so only a
+        direct call exercises the passthrough deterministically.
+        The client fixture is only used to initialise the per-test
+        database (conftest.py:24-44, db.drop() after); no HTTP call
+        is made. A future change that drops the field from the
+        User(...) construction would break this lock while leaving
+        the create 201 and duplicate-email 409 locks green, so the
+        layer is locked separately.
+    """
+    from api.domain.entities.user import User
+    from api.infrastructure.persistence.repositories.user_repository_impl import UserRepository
+
+    repository = UserRepository()
+    user_id = await repository.create(
+        CreateUserDto(
+            email="test@example.com",
+            first_name="Test",
+            last_name="User",
+            gender=Gender.OTHER,
+            password="Test@123!",
+            sso_provider_id="google",
+        )
+    )
+    assert user_id is not None
+
+    stored = await User.find_one(User.email == "test@example.com")
+    assert stored is not None
+    assert stored.sso_provider_id == "google"
