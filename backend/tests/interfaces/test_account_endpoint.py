@@ -57030,3 +57030,80 @@ async def test_account_passkey_register_whitespace_only_email_returns_422_with_s
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+@pytest.mark.asyncio
+async def test_account_passkey_has_passkeys_whitespace_only_email_returns_422_with_security_headers(client: AsyncClient):
+    """
+        The passkey has_passkeys POST with a whitespace-only email value:
+    """
+    # The has_passkeys whitespace-only-email branch, not yet locked:
+    # function-name grep count 0 for
+    # passkey_has_passkeys_whitespace_only_email (verified fresh
+    # this run); the existing has_passkeys locks cover the
+    # malformed-string email 422, the non-string email 422, the
+    # missing-body 422, the null-email 422 and the empty-string
+    # email 422, not a whitespace-only body, and the passkey
+    # login_options whitespace-only-email lock does not cover
+    # this endpoint. The endpoint takes a bare EmailStr body param
+    # (account_endpoint.py: email: EmailStr = Body(...)), so a
+    # whitespace-only string has no @-sign and cannot be a valid
+    # email under any Pydantic/email-validator version, and
+    # stripping changes nothing ("   " stripped is still not an
+    # address), so it fails FastAPI request validation before the
+    # handler body runs. This endpoint has no permission gate and
+    # no CurrentUser dependency, and its only dependency,
+    # get_passkey_service, merely resolves a container object,
+    # so nothing can mask the 422. Validation fails before
+    # passkey_service.has_passkeys runs, so no UserPasskey lookup
+    # runs, making this lock deterministic even though the 200
+    # path was previously deferred as non-deterministic without
+    # model initialization -- no user or passkey record is
+    # consulted here. The loc assertion pins ["body"]: a bare
+    # body param reports that loc, not ["body", "email"],
+    # mirroring the has_passkeys empty-string 422 lock. A future
+    # strip-then-accept email change would break this lock while
+    # leaving the empty-string email lock green, so the two inputs
+    # are locked separately, mirroring the login_options
+    # whitespace-only email lock. Deliberately no exact
+    # error-type assertion and no Cache-Control/Pragma assertion:
+    # a 422 is FastAPI request validation, not an ApiBaseException,
+    # so the central handler's no-store headers do not apply to
+    # it. The security headers ARE locked: the pure-ASGI
+    # middleware stamps every HTTP response, including validation
+    # errors, with no path exclusions.
+    response = await client.post(
+        "/account/passkey/has_passkeys",
+        json="   ",
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert isinstance(detail, list) and detail
+    assert any(
+        err.get("loc") == ["body"]
+        for err in detail
+    )
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the has_passkeys empty-string-email 422 lock,
+    # using substring checks so later additions to the list do
+    # not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
