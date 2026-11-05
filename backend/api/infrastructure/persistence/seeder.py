@@ -30,6 +30,13 @@ async def seed_initial_data():
     if settings.mongo_db_name == "myapp":
         logger.warning("Using default database name 'myapp'. Please change it in production environments.")
 
+    if settings.admin_password == "Test@123!":
+        # fastapi_env defaults to "development", so a deployment that
+        # forgets to set it seeds a host admin with the template's
+        # publicly documented default password. Same visibility as the
+        # default-database warning above: warn, do not block local dev.
+        logger.warning("Seeding the admin user with the template's default admin password. Set ADMIN_PASSWORD to a strong unique value before exposing this deployment.")
+
     if os.path.exists(create_temp_file(LOCK_FILE)):
         logger.info("Seeding has already been completed. Skipping...")
         return
