@@ -209,3 +209,18 @@ async def test_list_permissions_from_tenant(client: AsyncClient):
     expected = [perm.value for perm in Permission if not perm.value.startswith("host:")]
     assert [item.name for item in data] == expected
     assert "host:manage_tenants" not in [item.name for item in data]
+
+
+def test_permission_dto_extends_pydantic_base_model():
+    """
+    Regression test: PermissionDto must extend pydantic's BaseModel
+    directly, not openai.BaseModel (fixed in the 06:14 run — the
+    OpenAI SDK's BaseModel is its API-response model class, so the
+    permissions DTO was needlessly coupled to the OpenAI SDK).
+    openai.BaseModel itself subclasses pydantic's BaseModel, so an
+    issubclass check would not catch a revert — the direct-bases
+    check below does.
+    """
+    from pydantic import BaseModel as PydanticBaseModel
+
+    assert PermissionDto.__bases__ == (PydanticBaseModel,)
