@@ -40,13 +40,20 @@ class NotificationBannerRepository(BaseRepository[NotificationBannerSetting], Au
                 user_id=None  # Todo: Need to add a new property in role.. to determine who updated it.
             ))
             raise NotFoundException("NotificationBannerSetting", id)
+        # Snapshot the pre-update state BEFORE mutating the fetched
+        # row: the audit entry's "old" must record what the banner
+        # was, and the two assignments below overwrite this row in
+        # place, so dumping it afterwards would log the new values
+        # as "old" and the prior values would be lost from the
+        # trail - the same class fixed for user preferences.
+        old_setting = exisiting_setting.model_dump(exclude_none=True)
         exisiting_setting.is_enabled = is_enabled
         exisiting_setting.message = message
 
         updated_setting = await self.update(id, exisiting_setting.model_dump(exclude_none=True))
         await self.add_audit_log(AuditLogDto(
             action="update",
-            changes={"new": updated_setting.model_dump(exclude_none=True), "old": exisiting_setting.model_dump(exclude_none=True)},
+            changes={"new": updated_setting.model_dump(exclude_none=True), "old": old_setting},
             entity="NotificationBannerSetting",
             tenant_id=str(exisiting_setting.tenant_id) if exisiting_setting.tenant_id else None,
             user_id=None  # Todo: Need to add a new property in role.. to determine who updated it.

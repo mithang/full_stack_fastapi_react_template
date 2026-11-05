@@ -564,3 +564,89 @@ async def test_put_notification_banner_outside_tenant_scope_returns_403_with_cac
     assert stored.permissions == [Permission.FULL_ACCESS]
     assert await NotificationBannerSetting.find_one() is None
     await mongo_client.close()
+
+
+@pytest.mark.asyncio
+async def test_update_banner_setting_audit_log_records_prior_values(client: AsyncClient):
+    """
+        The notification-banner audit-log "old" value, not yet locked:
+        function-name grep count 0 for
+        update_banner_setting_audit_log_records_prior_values
+        (verified fresh this run). NotificationBannerRepository
+        .update_banner_setting fetched the row, then mutated it in
+        place (is_enabled/message) and only afterwards dumped it as
+        the audit entry's "old", so "old" recorded the post-update
+        values and the prior banner was lost from the trail - the
+        same class as the user-preference audit fix, while the role
+        repository logs a genuinely pre-update snapshot. The
+        repository is called directly here, bypassing the endpoint
+        on purpose: only a direct call seeds a row with known prior
+        values deterministically. The client fixture is only used to
+        initialise the per-test database (conftest.py, db.drop()
+        after); no HTTP call is made. The seeded row carries no
+        tenant_id, so capture_audit_log writes to the host file
+        audit_logs_forhost_<YYYYMMDD>.jsonl in the temp dir; the
+        entry is isolated by its distinctive prior message, since
+        other tests may share the same day's file. The old code
+        would have logged "old" as the new {is_enabled: True,
+        message: "New message"}; the fix snapshots the row before
+        mutating it, so "old" is {is_enabled: False, message:
+        "Old message"} and "new" is the updated banner.
+    """
+    import json
+    import tempfile
+    from pathlib import Path
+
+    from beanie import init_beanie
+    from pymongo import AsyncMongoClient
+
+    from api.common.utils import get_utc_now
+    from api.domain.entities.notification_settings import NotificationBannerSetting
+    from api.infrastructure.persistence.repositories.notification_banner_repository_impl import (
+        NotificationBannerRepository,
+    )
+
+    mongo_client = AsyncMongoClient("mongodb://localhost:27012/test_db")
+    await init_beanie(
+        mongo_client["api_test_db"], document_models=[NotificationBannerSetting]
+    )
+
+    repository = NotificationBannerRepository()
+    seeded = await repository.create_banner_setting(
+        is_enabled=False, message="Old message", tenant_id=None
+    )
+
+    updated = await repository.update_banner_setting(
+        str(seeded.id), True, "New message"
+    )
+    assert updated is not None
+    assert updated.is_enabled is True
+    assert updated.message == "New message"
+
+    stored = await NotificationBannerSetting.find_one()
+    assert stored is not None
+    assert stored.is_enabled is True
+    assert stored.message == "New message"
+
+    audit_file = Path(tempfile.gettempdir()) / (
+        f"audit_logs_forhost_{get_utc_now().strftime('%Y%m%d')}.jsonl"
+    )
+    assert audit_file.exists()
+    entries = [
+        json.loads(line)
+        for line in audit_file.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    ours = [
+        entry
+        for entry in entries
+        if entry.get("entity") == "NotificationBannerSetting"
+        and entry.get("action") == "update"
+        and entry.get("changes", {}).get("old", {}).get("message") == "Old message"
+    ]
+    assert len(ours) == 1
+    assert ours[0]["changes"]["old"]["is_enabled"] is False
+    assert ours[0]["changes"]["old"]["message"] == "Old message"
+    assert ours[0]["changes"]["new"]["is_enabled"] is True
+    assert ours[0]["changes"]["new"]["message"] == "New message"
+    await mongo_client.close()
