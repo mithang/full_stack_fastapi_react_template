@@ -1,8 +1,13 @@
 import pytest
 from httpx import AsyncClient
 
+from api import app
+from api.common.enums.gender import Gender
+from api.domain.dtos.auth_dto import MeResponseDto
 from api.domain.dtos.permission_dto import PermissionDto
+from api.domain.dtos.role_dto import RoleDto
 from api.domain.enum.permission import Permission
+from api.infrastructure.security.current_user import get_current_user
 
 
 @pytest.mark.asyncio
@@ -91,3 +96,116 @@ async def test_list_permissions_from_host(client: AsyncClient):
 
     # Host caller (tenant_id None): the full enum, unfiltered.
     assert [item.name for item in data] == [perm.value for perm in Permission]
+
+
+@pytest.mark.asyncio
+async def test_list_permissions_from_tenant(client: AsyncClient):
+    """
+        List permissions for a tenant user:
+    """
+    # The host branch is locked above, but the tenant branch of
+    # permissions_endpoint.py:24-30 was not: a tenant caller must
+    # get every permission except the host-level ones, and deleting
+    # the filter (or the tenant_id check) would previously have
+    # gone uncaught - a tenant admin would then see
+    # "host:manage_tenants" in the role-permission picker even
+    # though assigning it can never grant anything on a tenant.
+    # The shared conftest override returns a host user
+    # (tenant_id None), so this test swaps in a tenant-scoped
+    # override, mirroring the dashboard 403 lock's override
+    # pattern, and restores the original in finally so no other
+    # test's mock is affected. The endpoint has no permission
+    # check and no database use, so no fixture or seeded row is
+    # needed beyond the override.
+    async def override_get_current_user_tenant_scoped():
+        return MeResponseDto(
+            first_name="Admin",
+            last_name="User",
+            id="68c302ef6bf7a039b7e9b385",
+            email="admin@example.com",
+            gender=Gender.OTHER,
+            is_active=True,
+            role_id="68c302ef6bf7a039b7e9b386",
+            tenant_id="68c302ef6bf7a039b7e9b387",
+            created_at="2024-10-01T00:00:00Z",
+            updated_at="2024-10-01T00:00:00Z",
+            role=RoleDto(
+                id="68c302ef6bf7a039b7e9b386",
+                name="Tenant admin",
+                created_at="2024-10-01T00:00:00Z",
+                updated_at="2024-10-01T00:00:00Z",
+                permissions=[],
+            ),
+            subscription=None,
+        )
+
+    original_override = app.dependency_overrides.get(get_current_user)
+    app.dependency_overrides[get_current_user] = override_get_current_user_tenant_scoped
+    try:
+        response = await client.get("/permissions/")
+    finally:
+        if original_override is None:
+            app.dependency_overrides.pop(get_current_user, None)
+        else:
+            app.dependency_overrides[get_current_user] = original_override
+    assert response.status_code == 200
+    # Same no-store lock as the host test: the list is
+    # scope-dependent, so a cached 200 could show the host list
+    # to a tenant user after an account switch on a shared machine.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+
+    # Same security-headers lock as the host test: the pure-ASGI
+    # middleware stamps every HTTP response with no path
+    # exclusions, so the tenant 200 must carry the same headers
+    # as the host 200.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Presence alone would not catch the value being weakened:
+    # lock the twelve most sensitive directives as disabled,
+    # mirroring the host lock, using substring checks so later
+    # additions to the list do not break this test. The full
+    # value lives in _SECURITY_HEADERS. Each directive is safe
+    # to lock here for the same reasons as on the host lock:
+    # the SPA has no camera, microphone, geolocation, payment,
+    # clipboard-read, display-capture, fullscreen, motion-sensor,
+    # compass, XR, or idle-detection flow (verified by grep in
+    # the earlier sweeps).
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+
+    # This GET sets no cookie: the endpoint only sets the two
+    # cache headers above, and the middleware stamps headers
+    # only. A refresh cookie here would mean the response
+    # carried an auth side effect it must not have.
+    assert "set-cookie" not in response.headers
+
+    data = [PermissionDto.model_validate(item) for item in response.json()]
+
+    # Tenant caller: the full enum in definition order, minus
+    # every host-level permission. Exactly one enum member
+    # starts with "host:" today (HOST_MANAGE_TENANTS =
+    # "host:manage_tenants", verified fresh from
+    # permission.py), so the filtered list has 18 entries; the
+    # comprehension below keeps the lock correct if a second
+    # host permission is ever added, and the explicit
+    # host:manage_tenants exclusion catches a regression that
+    # drops the filter while keeping the list shape.
+    expected = [perm.value for perm in Permission if not perm.value.startswith("host:")]
+    assert [item.name for item in data] == expected
+    assert "host:manage_tenants" not in [item.name for item in data]
