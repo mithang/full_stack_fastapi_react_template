@@ -54715,3 +54715,94 @@ async def test_account_change_email_request_missing_new_email_returns_422_with_s
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+@pytest.mark.asyncio
+async def test_account_change_email_request_email_already_in_use_returns_406_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The account change-email-request PATCH for a new email that
+        already belongs to another account:
+    """
+    # The change-email-request already-in-use branch was
+    # deliberately NOT locked by the same-email 406 lock (a valid
+    # EmailStr equal to the caller's current address that reaches
+    # the service's first check and raises before any DB read),
+    # the invalid-email 422 lock, the non-string-new_email 422
+    # lock, or the missing-new_email 422 lock (all fail FastAPI
+    # request validation before the handler body runs), and is
+    # locked here, verified fresh this run, not assumed:
+    # function-name grep count 0 for
+    # test_account_change_email_request_email_already_in_use
+    # before appending. The endpoint takes CurrentUser, which
+    # conftest overrides to the mocked user admin@example.com,
+    # so PATCHing with a different, valid new_email passes the
+    # service's same-email check and reaches check_email_exists
+    # (auth_service.py:492), which does a plain
+    # user_repository.single_or_none(email=...) with no tenant
+    # filter (base_repository.py:22-24). The seeded second user
+    # row below makes that lookup return a document, so the
+    # service raises InvalidOperationException("The email
+    # 'taken@example.com' is already in use by another
+    # account.") before the user lookup, token minting, or any
+    # email send runs, so no SMTP call can affect the outcome.
+    # The central ApiBaseException handler maps
+    # InvalidOperationException to 406 with body {"error": ...,
+    # "code": 406} and Cache-Control: no-store plus Pragma:
+    # no-cache (api/__init__.py lines 84-132), and the pure-ASGI
+    # security-headers middleware stamps every HTTP response
+    # with no path exclusions. The seeded password is hashed
+    # with the app's own hash_it, never stored in plaintext,
+    # and the conftest fixture drops the test DB after the
+    # test, so the row cannot leak into other tests. No
+    # X-Tenant-ID header is sent, so both the seed and the
+    # lookup read the host test DB. Deliberately NOT locked:
+    # a free new_email, which would reach the user lookup and
+    # the confirmation email send.
+    from api.common.enums.gender import Gender
+    from api.common.security import hash_it
+    from api.domain.entities.user import User
+
+    await User(
+        first_name="Taken",
+        last_name="Email",
+        email="taken@example.com",
+        gender=Gender.OTHER,
+        is_active=True,
+        password=hash_it("TakenPassword123!"),
+    ).insert()
+    response = await client.patch(
+        "/account/change_email_request",
+        json={"new_email": "taken@example.com"},
+    )
+    assert response.status_code == 406
+    assert response.json()["code"] == 406
+    assert (
+        response.json()["error"]
+        == "The email 'taken@example.com' is already in use by another account."
+    )
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the change-email-request same-email lock,
+    # using substring checks so later additions to the list do
+    # not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
