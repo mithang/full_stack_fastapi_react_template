@@ -170,7 +170,11 @@ export function TenantsProvider({ children }: TenantsProviderProps) {
             });
             await fetchTenants();
         } catch (error) {
-            console.error("Failed to create tenant", error);
+            // Log only the extracted message: the raw ApiError carries the
+            // submitted request body (CreateTenantDto.admin_password) in
+            // error.request.body, so logging it would expose the new tenant
+            // admin's plaintext password in the browser console.
+            console.error("Failed to create tenant", extractErrorMessage(error));
             // A backend response (ApiError, which carries a numeric status)
             // means the server answered; a failure with no status is a
             // network error, not a failed tenant creation, and must not
