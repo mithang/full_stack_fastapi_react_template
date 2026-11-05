@@ -1,8 +1,10 @@
 from typing import Optional
 from beanie import PydanticObjectId
+from pymongo.errors import DuplicateKeyError
 from api.common.audit_logs_repository import AuditLogRepository
 from api.common.base_repository import BaseRepository
 from api.common.utils import get_logger
+from api.core.exceptions import RoleAlreadyExistsException
 from api.domain.dtos.audit_logs_dto import AuditLogDto
 from api.domain.dtos.role_dto import CreateRoleDto, RoleListDto, UpdateRoleDto
 from api.domain.entities.role import Role
@@ -64,7 +66,22 @@ class RoleRepository(BaseRepository[Role], AuditLogRepository):
     async def update(self, role_id: str, data: UpdateRoleDto) -> Optional[Role]:
         existing_role = await super().get(role_id)
 
-        updated_role = await super().update(id=role_id, data=data.model_dump(exclude_unset=True))
+        try:
+            updated_role = await super().update(id=role_id, data=data.model_dump(exclude_unset=True))
+        except DuplicateKeyError:
+            # Race backstop for the service-level duplicate-name guard
+            # (role_service.update_role): two concurrent renames onto
+            # the same name can both pass the single_or_none check
+            # before either writes, so the second write hits Role.name's
+            # unique index. Map it to the same 409 the service check
+            # returns instead of letting it escape as a 500 (the
+            # central handler maps only ApiBaseException /
+            # StarletteHTTPException). Name is the only unique index on
+            # Role, so any DuplicateKeyError here is a name collision,
+            # and data.name is the colliding name (the DTO requires it,
+            # and the update carries no name change when it is unset).
+            logger.warning(f"Duplicate role name on update: {_safe_log_value(data.name)}")
+            raise RoleAlreadyExistsException(name=data.name)
         if updated_role:
             existing_role_doc = await existing_role.to_serializable_dict()
             await self.add_audit_log(AuditLogDto(
