@@ -58160,3 +58160,93 @@ async def test_account_me_returns_200_with_cache_and_security_headers(client: As
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+@pytest.mark.asyncio
+async def test_account_sso_login_new_user_persists_sso_provider_id_at_creation(client: AsyncClient):
+    """
+        The SSO signup linkage, not yet locked: function-name grep
+        count 0 for sso_login_new_user_persists_sso_provider_id_at_creation
+        (verified fresh this run). AuthService.login_with_sso created
+        a first-time SSO user via UserService.create_user with a
+        CreateUserDto that never carried sso_provider_id, even though
+        the DTO inherits the field (user_dto.py BaseUserDto) and
+        UserRepository.create persists it (iteration 02:14 fix). The
+        linkage landed only through the re-fetch-and-set block after
+        creation, gated on is_active is False, which a freshly
+        created user always satisfies today (repository.create
+        hardcodes is_active=False), so the linkage worked, but only
+        via a second write, and any future path that creates the user
+        active would silently drop it. The fix passes
+        sso_provider_id=provider_name at the create call site; the
+        activation block below still re-asserts the same value
+        idempotently. The test calls login_with_sso directly (the
+        endpoint callback needs a live IdP code exchange, so no HTTP
+        call is made): a GUEST role is seeded (find_by_name resolves
+        RoleType.GUEST, "guest"), the OpenID carries a fresh email,
+        and tenant_id None keeps the host test DB and the host audit
+        file. No Celery task is enqueued and no email is sent
+        (create_user's activation send is commented out). The
+        distinguishing lock is the User create audit entry, read back
+        from the host JSONL file: its "new" dict is the CreateUserDto
+        dumped exclude_none, so it carries sso_provider_id only when
+        the call site supplied it; the stored-row assertion alone
+        would also pass on the old code via the re-fetch block, but
+        the audit entry would not. The token set is asserted as well,
+        so the flow proves end-to-end (role lookup, token issue).
+    """
+    import json
+    import tempfile
+    from pathlib import Path
+
+    from beanie import PydanticObjectId
+    from fastapi_sso import OpenID
+
+    from api.common.utils import get_utc_now
+    from api.core.container import get_auth_service
+    from api.domain.entities.role import Role
+    from api.domain.entities.user import User
+
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b393"),
+        name="guest",
+        description="Guest role for the SSO user",
+        permissions=[],
+    ).insert()
+
+    auth_service = get_auth_service()
+    token_set = await auth_service.login_with_sso(
+        provider_name="google",
+        user_info=OpenID(
+            email="sso-new@example.com",
+            first_name="Sso",
+            last_name="User",
+            display_name="Sso User",
+        ),
+        tenant_id=None,
+    )
+    assert isinstance(token_set.access_token, str) and len(token_set.access_token) > 0
+
+    stored = await User.find_one(User.email == "sso-new@example.com")
+    assert stored is not None
+    assert stored.sso_provider_id == "google"
+    assert stored.is_active is True
+
+    audit_file = Path(tempfile.gettempdir()) / (
+        f"audit_logs_forhost_{get_utc_now().strftime('%Y%m%d')}.jsonl"
+    )
+    assert audit_file.exists()
+    entries = [
+        json.loads(line)
+        for line in audit_file.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    ours = [
+        entry
+        for entry in entries
+        if entry.get("entity") == "User"
+        and entry.get("action") == "create"
+        and entry.get("user_id") == str(stored.id)
+    ]
+    assert len(ours) == 1
+    assert ours[0]["changes"]["new"]["sso_provider_id"] == "google"

@@ -232,6 +232,19 @@ class AuthService:
                     gender="prefer_not_to_say",
                     role_id=role.id if role else None,
                     tenant_id=tenant_id if tenant_id else None,
+                    # Carry the SSO linkage on the created row itself:
+                    # UserRepository.create persists sso_provider_id
+                    # (iteration 02:14 fix), but this call site never
+                    # supplied it, so the linkage depended entirely on
+                    # the re-fetch-and-set block below, gated on
+                    # is_active is False. A freshly created user always
+                    # satisfies that guard today (create hardcodes
+                    # is_active=False), so the linkage landed, but only
+                    # via a second write, and any future path that
+                    # creates the user active would silently drop it.
+                    # The block below still activates the user and
+                    # re-asserts the same value idempotently.
+                    sso_provider_id=provider_name,
                 ),
                 # Skip policy validation for this random SSO password (see
                 # UserService.create_user): it need not match the policy.
