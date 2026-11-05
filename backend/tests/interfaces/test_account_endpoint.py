@@ -58030,3 +58030,133 @@ async def test_account_passkey_has_passkeys_without_passkey_returns_200_with_sec
         UserPasskey.user_email == "never-registered@example.com"
     )
     assert stored is None
+
+
+async def test_account_me_returns_200_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The account /me GET success path:
+    """
+    # The /me 200, not yet locked: function-name grep count 0 for
+    # test_account_me_returns_200 (verified fresh this run), and no
+    # existing lock in this file reaches the /me success path - the
+    # logout lock at the top of this file notes the reason: the
+    # shared conftest override returns a bare UserDto, but
+    # MeResponseDto (auth_dto.py:42-44) requires role: RoleDto,
+    # so under the shared mock the response_model validation
+    # cannot yield a 200. The endpoint itself
+    # (account_endpoint.py:221-234) is a plain read: it sets
+    # Cache-Control no-store and Pragma no-cache, then returns
+    # the resolved current user, issuing no token and no refresh
+    # cookie. A per-test local override returning a full
+    # MeResponseDto unlocks the 200 without touching the shared
+    # conftest mock that the other 600+ tests rely on,
+    # mirroring the dashboard 403 test's local-override pattern
+    # in test_dashboard_endpoint.py (override, save original,
+    # restore in finally). The mocked identity mirrors the
+    # conftest user (admin@example.com, id
+    # 68c302ef6bf7a039b7e9b385, role_id
+    # 68c302ef6bf7a039b7e9b386), with the role carrying that
+    # same id; description is passed explicitly as None
+    # because RoleDto declares it without a default
+    # (role_dto.py:11), and subscription is None, matching
+    # the dashboard override. No DB seed is needed: the
+    # dependency is overridden, so no User, Role, or
+    # subscription lookup runs, and the read is side-effect
+    # free. Deliberately no tenant scope: the mocked user
+    # carries no tenant_id, mirroring the conftest user, so
+    # no X-Tenant-ID header is sent. A future change that
+    # drops the no-store headers, or that stops returning
+    # the role/subscription block, would break this lock
+    # while leaving the logout 200 lock green, so the two
+    # paths are locked separately.
+    from api import app
+    from api.common.enums.gender import Gender
+    from api.domain.dtos.auth_dto import MeResponseDto
+    from api.domain.dtos.role_dto import RoleDto
+    from api.infrastructure.security.current_user import get_current_user
+
+    async def override_get_current_user_me():
+        return MeResponseDto(
+            first_name="Admin",
+            last_name="User",
+            id="68c302ef6bf7a039b7e9b385",
+            email="admin@example.com",
+            gender=Gender.OTHER,
+            is_active=True,
+            role_id="68c302ef6bf7a039b7e9b386",
+            created_at="2024-10-01T00:00:00Z",
+            updated_at="2024-10-01T00:00:00Z",
+            role=RoleDto(
+                id="68c302ef6bf7a039b7e9b386",
+                name="Admin",
+                description=None,
+                permissions=[],
+                created_at="2024-10-01T00:00:00Z",
+                updated_at="2024-10-01T00:00:00Z",
+            ),
+            subscription=None,
+        )
+
+    original_override = app.dependency_overrides.get(get_current_user)
+    app.dependency_overrides[get_current_user] = override_get_current_user_me
+    try:
+        response = await client.get("/account/me")
+    finally:
+        if original_override is None:
+            app.dependency_overrides.pop(get_current_user, None)
+        else:
+            app.dependency_overrides[get_current_user] = original_override
+    assert response.status_code == 200
+    body = response.json()
+    assert body["id"] == "68c302ef6bf7a039b7e9b385"
+    assert body["email"] == "admin@example.com"
+    assert body["first_name"] == "Admin"
+    assert body["last_name"] == "User"
+    assert body["gender"] == "other"
+    assert body["is_active"] is True
+    assert body["role_id"] == "68c302ef6bf7a039b7e9b386"
+    assert body["created_at"] == "2024-10-01T00:00:00Z"
+    assert body["updated_at"] == "2024-10-01T00:00:00Z"
+    assert body["role"]["id"] == "68c302ef6bf7a039b7e9b386"
+    assert body["role"]["name"] == "Admin"
+    assert body["role"]["description"] is None
+    assert body["role"]["permissions"] == []
+    assert body["role"]["tenant_id"] is None
+    assert body["subscription"] is None
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    # This GET returns the authenticated user's identity, role,
+    # and subscription, and is fetched on every protected
+    # navigation, so it must never be served from a browser or
+    # proxy cache: a cached 200 could serve the previous user's
+    # identity after logout or an account switch, or a stale
+    # role after a role change. The handler sets both headers
+    # before returning, so they hold on this path.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    # Same security-headers lock as the logout 200 lock: the
+    # pure-ASGI middleware stamps every HTTP response with no
+    # path exclusions, so the /me GET must carry the same
+    # headers as the authenticated GETs.
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the has_passkeys 200 locks, using substring
+    # checks so later additions to the list do not break this
+    # test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
