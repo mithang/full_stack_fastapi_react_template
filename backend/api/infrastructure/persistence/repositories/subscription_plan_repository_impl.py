@@ -88,16 +88,6 @@ class SubscriptionPlanRepository(BaseRepository[SubscriptionPlan], AuditLogRepos
         ))
         return result.id
 
-    async def update_subscription_plan(self, subscription_id: str, update_data: SubscriptionPlan) -> None:
-        await super().update(subscription_id, update_data.model_dump(exclude_none=True))
-        await self.add_audit_log(AuditLogDto(
-            action="update",
-            entity="SubscriptionPlan",
-            user_id=str(update_data.user_id),
-            changes={"Info": "Updated subscription plan with id " + subscription_id},
-            tenant_id=str(update_data.tenant_id) if update_data.tenant_id else None
-        ))
-
     async def delete_subscription_plan(self, subscription_id: str) -> None:
         exisiting =  await self.get_subscription_plan_by_id(subscription_id)
         if exisiting is None:
