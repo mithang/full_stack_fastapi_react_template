@@ -198,7 +198,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 position: "top-right"
             });
         } catch (error) {
-            console.error("Failed to resend activation email:", error);
+            // Log only the extracted message: the raw ApiError stringifies
+            // ApiError.request.body, which holds the user's email (PII) —
+            // same class as the magic-link-login fix (fdd29b0e).
+            console.error("Failed to resend activation email:", extractErrorMessage(error));
             // A backend response (ApiError, which carries a numeric status)
             // means the server answered and rejected the resend; a failure
             // with no status is a network error, not a failed resend, and
