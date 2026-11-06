@@ -66100,3 +66100,101 @@ async def test_account_activate_missing_body_returns_422_with_security_headers(c
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+async def test_account_resend_activation_email_missing_body_returns_422_with_security_headers(client: AsyncClient):
+    """
+        The account resend-activation-email POST with no request body at all:
+    """
+    # The next resend-activation-email validation branch, verified
+    # fresh this run, not assumed: function-name grep count 0 for
+    # resend_activation_email_missing_body before appending. The
+    # register, password-reset-request, password-reset-confirmation,
+    # activate, and change-email-confirmation body-shape sweeps are
+    # complete (missing, array, string, numeric, boolean, null,
+    # malformed JSON each locked); resend-activation-email had the
+    # array-body (11:19), string-body (11:24), numeric-body (11:29),
+    # boolean-body (11:34), null-body (11:39), and malformed-JSON
+    # (11:44) locks, so a POST with no body at all is the last
+    # remaining shape in that family and this completes the sweep.
+    # The endpoint takes a required `req:
+    # UserResendActivationEmailRequestDto` body parameter
+    # (account_endpoint.py:297-299) whose fields email, id, and
+    # first_name are required (user_dto.py:142-146), so a request
+    # carrying no body fails FastAPI request validation before the
+    # handler body runs: AuthService.send_activation_email never
+    # runs, so no user lookup, no token minting, and no SMTP send
+    # -- no live mail server is needed, unlike the 202 success
+    # branch, which stays deliberately NOT locked. No body and no
+    # content type are sent, so the failure is a missing body, not
+    # a content-type rejection. This is distinct from the
+    # missing-field locks (an object body with a field absent),
+    # from the non-string-field locks (an object body with one
+    # mistyped field), and from the scalar-body locks (valid JSON
+    # of the wrong type): here there is no body to parse at all,
+    # so the failure is a missing required body whose detail loc
+    # is still ["body"], mirroring the activate missing-body 422
+    # lock. The endpoint is permission-gated
+    # (USER_READ_AND_WRITE_ONLY and FULL_ACCESS, any_permission=
+    # False), and FastAPI solves sub-dependencies before validating
+    # the endpoint's own body, so the mocked caller's role must be
+    # seeded first -- otherwise the permission gate's
+    # RoleNotFoundException 404 would mask the 422, exactly as in
+    # the invalid-email 422 lock. The role is seeded with the mocked
+    # user's exact role_id (68c302ef6bf7a039b7e9b386, conftest.py)
+    # and both required permissions, mirroring the malformed-JSON
+    # lock, so the gate passes; the FrontendHost dependency only
+    # reads request state with no DB lookup, and get_auth_service
+    # merely resolves a container object. Deliberately no exact
+    # error-type assertion, mirroring the activate non-object-body
+    # 422 lock. Deliberately no Cache-Control/Pragma assertion: a
+    # 422 is FastAPI request validation, not an ApiBaseException, so
+    # the central handler's no-store headers do not apply to it,
+    # mirroring the register missing-body 422 lock. The security
+    # headers ARE locked: the pure-ASGI middleware stamps every
+    # HTTP response, including validation errors, with no path
+    # exclusions.
+    from beanie import PydanticObjectId
+
+    from api.domain.entities.role import Role
+    from api.domain.enum.permission import Permission
+
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b386"),
+        name="Admin",
+        description="Administrator role for the mocked caller",
+        permissions=[Permission.USER_READ_AND_WRITE_ONLY, Permission.FULL_ACCESS],
+    ).insert()
+    response = await client.post(
+        "/account/resend_activation_email",
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert any(
+        "body" in [str(part) for part in err.get("loc", [])]
+        for err in detail
+    )
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the activate non-object-body 422 lock, using
+    # substring checks so later additions to the list do not
+    # break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
