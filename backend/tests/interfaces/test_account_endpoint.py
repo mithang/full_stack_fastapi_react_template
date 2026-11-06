@@ -62037,3 +62037,72 @@ async def test_account_email_magic_link_login_boolean_body_returns_422_with_secu
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+async def test_account_email_magic_link_login_null_body_returns_422_with_security_headers(client: AsyncClient):
+    """
+        The account email magic link login POST with a null JSON body:
+    """
+    # The next email-magic-link-login validation branch, verified
+    # fresh this run, not assumed: function-name grep count 0 for
+    # email_magic_link_login_null_body before appending. The
+    # endpoint takes a bare `email: EmailStr = Body(...)` parameter
+    # (account_endpoint.py:485-488), so a JSON null body cannot
+    # be coerced to EmailStr and fails FastAPI request validation
+    # before the handler body runs: user_service.find_by_email
+    # never runs and create_magic_link is never called, so no
+    # magic-link record is written and no email is sent -- no live
+    # mail server is needed, unlike the 200 success branch, which
+    # stays deliberately NOT locked. This is distinct from the
+    # array-body lock (json list), the numeric-body lock
+    # (json 12345), the boolean-body lock (json True), and the
+    # missing-body lock (no body at all): here the whole body is
+    # a JSON null, so the detail loc is ["body"], mirroring those
+    # 422 locks for this same endpoint. The remaining body-shape
+    # error branch is malformed JSON, one per run. This endpoint
+    # has no permission gate and no CurrentUser dependency, and
+    # its dependencies (get_email_magic_link_service,
+    # get_auth_service) merely resolve container objects, so
+    # nothing can mask the 422. Deliberately no exact error-type
+    # assertion (no non-object-body error-type precedent for this
+    # endpoint) and no Cache-Control/Pragma assertion: a 422 is
+    # FastAPI request validation, not an ApiBaseException, so the
+    # central handler's no-store headers do not apply to it. The
+    # security headers ARE locked: the pure-ASGI middleware stamps
+    # every HTTP response, including validation errors, with no
+    # path exclusions.
+    response = await client.post(
+        "/account/email_magic_link_login",
+        json=None,
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert isinstance(detail, list) and detail
+    assert any(
+        err.get("loc") == ["body"]
+        for err in detail
+    )
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the magic link login missing-body 422 lock,
+    # using substring checks so later additions to the list do
+    # not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
