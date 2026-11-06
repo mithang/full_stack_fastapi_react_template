@@ -35,11 +35,18 @@ def is_production_environment() -> bool:
     return get_app_environment() == "production"
 
 
-# The {8,} and $ anchor matter: without them the pattern matched any
+# The {8,} and \Z anchor matter: without them the pattern matched any
 # string whose first character was in the allowed set, so a 4-character
 # password like "Aa1!" — and one with trailing disallowed characters —
 # passed even though the error message promises "at least 8 characters".
-PASSWORD_REGEX = re.compile(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$")
+# \Z (not $) anchors at the absolute end of the string: Python's $
+# also matches just before a trailing newline, so with $ a password
+# like "Password1!\n" passed even though "\n" is outside the allowed
+# character class. validate_password is the single password-strength
+# gate for register, tenant-admin, user-create and password-reset
+# (account_endpoint.py:187, tenant_service.py:88,
+# user_service.py:119 and :277), so this one anchor fixes all four.
+PASSWORD_REGEX = re.compile(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}\Z")
 def validate_password(password: str) -> str:
     """Validate password strength. Raises InvalidOperationException if invalid."""
     if not PASSWORD_REGEX.match(password):
