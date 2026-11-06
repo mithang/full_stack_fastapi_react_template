@@ -4031,3 +4031,119 @@ async def test_create_role_whitespace_description_returns_422_with_security_head
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+async def test_create_role_missing_description_returns_201_with_security_headers(client: AsyncClient):
+    """
+    The role-create POST with `description` omitted entirely:
+    `description` is an optional `str` field with default None
+    (min_length=10, max_length=200), so a body carrying only a
+    valid `name` must succeed with 201 and persist the role with
+    description None -- the success branch of the optional-field
+    sweep, distinct from the 422 locks that reject a present-but
+    blank description.
+    """
+    # The ninth per-field validation branch of the role sweep,
+    # verified fresh this run, not assumed: function-name grep
+    # count 0 for create_role_missing_description before
+    # appending. The role body-shape sweep is complete (missing
+    # body, non-object, string, numeric, boolean, null,
+    # malformed JSON locked in iterations 2578-2584) and the
+    # per-field sweep continued with the missing-name lock
+    # (iteration 2585), the non-string-name lock (iteration
+    # 2586), the object-name lock (iteration 2587), the
+    # float-name lock (iteration 2588), the too-short-name lock
+    # (iteration 2589), the too-long-name lock (iteration 2590),
+    # the whitespace-only-name lock (iteration 2591) and the
+    # whitespace-only-description lock (iteration 2592), so the
+    # omitted description is next here with POST /roles/. The
+    # endpoint takes a required `data: CreateRoleDto` body
+    # parameter (role_endpoint.py:178-189) whose description
+    # field is an optional str with default None, min_length=10
+    # and max_length=200 (role_dto.py:27-30; name is required,
+    # tenant_id optional), so omitting it leaves description
+    # None: the DTO's mode="after"
+    # normalize_name_and_description validator only strips a
+    # description when it is a str, and None passes through
+    # untouched. The service path confirms the success branch
+    # end to end (role_service.py:94-98): create_role checks
+    # for a duplicate name -- "Test Role" is fresh in the
+    # per-test database, which the conftest fixture drops after
+    # each test -- then repository.create persists the DTO as
+    # given, so the stored role carries description None
+    # (role.py:8, description is Optional[str] | None). This is
+    # distinct from the whitespace-only-description lock
+    # (iteration 2592), which exercised only the validator's
+    # blank-description rejection: here no description is sent
+    # at all, so the request must succeed. The endpoint is
+    # permission-gated (ROLE_READ_AND_WRITE_ONLY), and FastAPI
+    # solves sub-dependencies before validating the endpoint's
+    # own body, so the mocked caller's role must be seeded first
+    # -- otherwise the permission gate's RoleNotFoundException
+    # 404 would mask the 201, exactly as in the tenant
+    # missing-field locks. The role is seeded with the mocked
+    # user's exact role_id (68c302ef6bf7a039b7e9b386,
+    # conftest.py) and the route's ROLE_READ_AND_WRITE_ONLY
+    # permission. The default conftest mock is a host caller
+    # (tenant_id None), so the handler's _assert_create_scope
+    # check cannot fire. Deliberately no Cache-Control /Pragma
+    # assertion: a 201 is a create response, not a cacheable
+    # list/get, and the central handler's no-store headers do
+    # not apply to it, mirroring the create_role helper's 201
+    # lock at the top of this file. The security headers ARE
+    # locked: the pure-ASGI middleware stamps every HTTP
+    # response, including create responses, with no path
+    # exclusions.
+    from beanie import PydanticObjectId
+
+    from api.domain.entities.role import Role
+    from api.domain.enum.permission import Permission
+
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b386"),
+        name="Host administrator",
+        description="Role carrying ROLE_READ_AND_WRITE_ONLY for the mocked caller",
+        permissions=[Permission.ROLE_READ_AND_WRITE_ONLY],
+    ).insert()
+    response = await client.post(
+        "/roles/",
+        json={
+            "name": "Test Role",
+        },
+    )
+    assert response.status_code == 201
+    created_id = response.json()["id"]
+    assert isinstance(created_id, str) and created_id
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the other role locks in this file, using
+    # substring checks so later additions to the list do not
+    # break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+    # Postcondition: the role was actually persisted with the
+    # omitted description stored as None, not defaulted to an
+    # empty string or dropped by the create path.
+    stored = await Role.find_one(
+        Role.id == PydanticObjectId(created_id)
+    )
+    assert stored is not None
+    assert stored.name == "Test Role"
+    assert stored.description is None
