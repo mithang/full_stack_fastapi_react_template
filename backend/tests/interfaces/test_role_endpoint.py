@@ -3918,3 +3918,116 @@ async def test_create_role_whitespace_name_returns_422_with_security_headers(cli
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+async def test_create_role_whitespace_description_returns_422_with_security_headers(client: AsyncClient):
+    """
+    The role-create POST with a whitespace-only `description`
+    ("          "): `description` is an optional `str` field
+    with min_length=10, so the 10-space string passes the
+    field check and only the DTO's mode="after" validator
+    rejects the blank value with 422 before the handler
+    body runs.
+    """
+    # The eighth per-field validation branch of the role sweep,
+    # verified fresh this run, not assumed: function-name grep
+    # count 0 for create_role_whitespace_description before
+    # appending. The role body-shape sweep is complete (missing
+    # body, non-object, string, numeric, boolean, null,
+    # malformed JSON locked in iterations 2578-2584) and the
+    # per-field sweep continued with the missing-name lock
+    # (iteration 2585), the non-string-name lock (iteration
+    # 2586), the object-name lock (iteration 2587), the
+    # float-name lock (iteration 2588), the too-short-name lock
+    # (iteration 2589), the too-long-name lock (iteration 2590)
+    # and the whitespace-only-name lock (iteration 2591), so
+    # the whitespace-only description is next here with POST
+    # /roles/. The endpoint takes a required `data:
+    # CreateRoleDto` body parameter (role_endpoint.py:178-189)
+    # whose description field is an optional str with
+    # min_length=10 and max_length=200 (role_dto.py:27-30;
+    # name is required, tenant_id optional), so a body with
+    # description="          " (10 spaces) passes the
+    # field-level min_length check and only fails in the DTO's
+    # mode="after" normalize_name_and_description validator,
+    # which strips the value to "" and raises ValueError
+    # "description must not be blank". That is still FastAPI
+    # request validation, so it fails before the handler body
+    # runs: RoleService.create_role never runs, so no role
+    # record is created -- no duplicate-name check, no
+    # repository write. This is distinct from the
+    # whitespace-only-name lock (iteration 2591), which
+    # exercised only the validator's name branch: here the
+    # name is a valid "Test Role" string and only the
+    # description branch rejects the blank value. The
+    # assertion reads the validator message rather than the
+    # error loc: a model_validator error is located at the
+    # body, not at the field, so its loc carries no
+    # "description" part, mirroring the register
+    # blank-first_name 422 lock and the whitespace-name lock.
+    # The endpoint is permission-gated
+    # (ROLE_READ_AND_WRITE_ONLY), and FastAPI solves
+    # sub-dependencies before validating the endpoint's own
+    # body, so the mocked caller's role must be seeded first
+    # -- otherwise the permission gate's RoleNotFoundException
+    # 404 would mask the 422, exactly as in the tenant
+    # missing-field locks. The role is seeded with the mocked
+    # user's exact role_id (68c302ef6bf7a039b7e9b386,
+    # conftest.py) and the route's ROLE_READ_AND_WRITE_ONLY
+    # permission. The default conftest mock is a host caller
+    # (tenant_id None), so the handler's _assert_create_scope
+    # check cannot fire. Deliberately no Cache-Control /Pragma
+    # assertion: a 422 is FastAPI request validation, not an
+    # ApiBaseException, so the central handler's no-store
+    # headers do not apply to it, mirroring the tenant and
+    # role 422 locks. The security headers ARE locked: the
+    # pure-ASGI middleware stamps every HTTP response,
+    # including validation errors, with no path exclusions.
+    from beanie import PydanticObjectId
+
+    from api.domain.entities.role import Role
+    from api.domain.enum.permission import Permission
+
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b386"),
+        name="Host administrator",
+        description="Role carrying ROLE_READ_AND_WRITE_ONLY for the mocked caller",
+        permissions=[Permission.ROLE_READ_AND_WRITE_ONLY],
+    ).insert()
+    response = await client.post(
+        "/roles/",
+        json={
+            "name": "Test Role",
+            "description": "          ",
+        },
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert any(
+        "description must not be blank" in str(err.get("msg", ""))
+        for err in detail
+    )
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the other role locks in this file, using
+    # substring checks so later additions to the list do not
+    # break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
