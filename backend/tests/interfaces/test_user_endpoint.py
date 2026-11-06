@@ -6506,3 +6506,112 @@ async def test_create_user_missing_email_returns_422_with_security_headers(clien
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+async def test_create_user_non_string_email_returns_422_with_security_headers(client: AsyncClient):
+    """
+        The user-create POST with a non-string email value:
+    """
+    # The third field of the user per-field sweep, verified
+    # fresh this run, not assumed: function-name grep count 0 for
+    # create_user_non_string_email and grep count 0 for
+    # "non_string_email" in this file before appending. The
+    # first_name sweep is complete (missing, non-string, object,
+    # float, empty, whitespace-only - iterations 2607-2612), the
+    # last_name sweep is complete (missing, non-string, object,
+    # float, empty, whitespace-only - iterations 2613-2618) and
+    # the email sweep opened with its missing-field branch
+    # (iteration 2619), so the per-field sweep continues with
+    # email's non-string branch, mirroring the non-string
+    # first_name and non-string last_name locks. The endpoint
+    # takes a required `data: CreateUserDto` body parameter
+    # (user_endpoint.py:115-128) whose email is a required
+    # EmailStr, alongside required first_name, last_name and
+    # gender and a required password on CreateUserDto
+    # (user_dto.py:8-44), so a numeric email fails FastAPI
+    # request validation before the handler body runs:
+    # UserService.create_user never runs, so no user record is
+    # created -- no duplicate-email check, no GUEST role lookup,
+    # no repository write. The DTO's mode="after"
+    # normalize_names validator only runs after valid field
+    # parsing, so it cannot mask the 422. This is distinct from
+    # the missing-email lock (iteration 2619, field omitted) and
+    # from the scalar-body locks (body itself of the wrong type):
+    # here the body is a valid object with every other required
+    # field present and valid, so the failure is a type error
+    # whose detail loc is ["body", "email"], mirroring the role
+    # non-string-name 422 lock and the user non-string
+    # first_name and non-string last_name locks. The endpoint
+    # is permission-gated (USER_READ_AND_WRITE_ONLY), and
+    # FastAPI solves sub-dependencies before validating the
+    # endpoint's own body, so the mocked caller's role must be
+    # seeded first -- otherwise the permission gate's
+    # RoleNotFoundException 404 would mask the 422, exactly as
+    # in the role non-string-name lock. The role is seeded with
+    # the mocked user's exact role_id
+    # (68c302ef6bf7a039b7e9b386, conftest.py) and the route's
+    # USER_READ_AND_WRITE_ONLY permission, mirroring the user
+    # missing-email lock, so the permission gate cannot mask
+    # the 422 with a 404; the default conftest mock is a host
+    # caller (tenant_id None), so _assert_create_scope cannot
+    # fire. Deliberately no exact error-type assertion,
+    # mirroring the tenant, account and role non-string 422
+    # locks. Deliberately no Cache-Control/Pragma assertion: a
+    # 422 is FastAPI request validation, not an
+    # ApiBaseException, so the central handler's no-store
+    # headers do not apply to it, mirroring the tenant,
+    # account and role non-string 422 locks. The security
+    # headers ARE locked: the pure-ASGI middleware stamps
+    # every HTTP response, including validation errors, with
+    # no path exclusions.
+    from beanie import PydanticObjectId
+
+    from api.domain.entities.role import Role
+    from api.domain.enum.permission import Permission
+
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b386"),
+        name="Host user creator",
+        description="Role carrying USER_READ_AND_WRITE_ONLY for the mocked caller",
+        permissions=[Permission.USER_READ_AND_WRITE_ONLY],
+    ).insert()
+    response = await client.post(
+        "/users/",
+        json={
+            "first_name": "Test",
+            "last_name": "User",
+            "email": 123,
+            "gender": "other",
+            "password": "Password123!",
+        },
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert any(
+        err.get("loc") == ["body", "email"]
+        for err in detail
+    )
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the other user locks in this file, using
+    # substring checks so later additions to the list do not
+    # break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
