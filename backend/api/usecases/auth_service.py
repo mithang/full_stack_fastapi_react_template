@@ -1,4 +1,5 @@
 import secrets
+from datetime import timedelta, timezone
 
 from beanie import PydanticObjectId
 from fastapi_mail import MessageType
@@ -50,6 +51,16 @@ def _safe_log_value(value) -> str:
 # random value, so no supplied password can ever match it, and the
 # result is always discarded.
 _DUMMY_PASSWORD_HASH = hash_it(secrets.token_hex(32))
+
+# Minimum gap between password-reset emails for the same user. Each
+# reset request rotates the single stored token_secret and re-signs the
+# JWT with it, so without a cooldown an unbounded caller could both
+# flood the victim's inbox and invalidate the reset link the victim
+# already holds. Five minutes bounds an attacker to 12 emails/hour
+# while a legitimate user waiting on a delayed email can re-request
+# after a short wait; the endpoint always answers the generic "If the
+# email exists..." 200, so throttling reveals nothing about the account.
+PASSWORD_RESET_REQUEST_COOLDOWN = timedelta(minutes=5)
 
 class AuthService:
     def __init__(self,
@@ -393,6 +404,32 @@ class AuthService:
             Raises InvalidOperationException if the user with the provided email does not exist.
             Sends a password reset email with a link to reset the password.
         """
+        # Throttle repeat requests for the same user before rotating
+        # anything: request_password_reset() rotates the single stored
+        # token_secret on every call, so a second request within the
+        # cooldown window would both send another email and invalidate
+        # the reset link the user already holds. Return silently
+        # instead — the endpoint always answers the generic "If the
+        # email exists..." 200, so this reveals nothing about the
+        # account, and the already-issued link stays valid. A
+        # re-request after the window rotates and re-sends as before.
+        # The unknown-email failure is mapped exactly as
+        # request_password_reset() used to raise it, so that path is
+        # unchanged. reset_secret_updated_at is stored by Mongo as
+        # naive UTC, so normalise it before comparing with
+        # get_utc_now()'s aware value.
+        try:
+            user = await self.user_service.find_by_email(email=email)
+        except UserNotFoundException:
+            raise InvalidOperationException(message="Failed to set password reset.") from None
+        existing = await self.user_service.retrieve_password_reset_data_by_user_id(user_id=str(user.id))
+        if existing is not None:
+            updated_at = existing.reset_secret_updated_at
+            if updated_at.tzinfo is None:
+                updated_at = updated_at.replace(tzinfo=timezone.utc)
+            if get_utc_now() - updated_at < PASSWORD_RESET_REQUEST_COOLDOWN:
+                logger.info(f"Password reset request for user {user.id} throttled: a reset link was already sent within the cooldown window; the existing link stays valid.")
+                return
         reset_data = await self.user_service.request_password_reset(email)
         data = ActivationTokenPayloadDto(
             user_id=str(reset_data.user_id),
