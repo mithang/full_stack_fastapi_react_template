@@ -59299,3 +59299,93 @@ async def test_account_change_password_missing_new_password_returns_422_with_sec
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+async def test_account_change_password_empty_new_password_returns_406_with_security_headers(client: AsyncClient):
+    """
+        The account change-password POST with an empty new_password:
+    """
+    # The change-password locks covered the wrong-current-password
+    # 401, the success 200, the five-failure lockout 401, the stale
+    # failures 200, the success-clears-login-lockout 200, the
+    # non-string-new_password 422, the non-string-
+    # current_password 422, the missing-current_password 422 and
+    # the missing-new_password 422 — no empty-new_password case.
+    # Verified fresh this run: function-name grep count 0 for
+    # test_account_change_password_empty_new_password
+    # before appending. ChangePasswordRequestDto.new_password
+    # is a required plain str with no min_length and no model
+    # validator (auth_dto.py:16-18, re-read this run), so an empty
+    # string passes FastAPI request validation and reaches the
+    # service: the correct current password passes verify_password,
+    # then update_user_password calls validate_password, whose
+    # PASSWORD_REGEX requires 8+ characters with upper, lower,
+    # digit and special (utils.py:42-47), so "" raises
+    # InvalidOperationException and the central ApiBaseException
+    # handler maps it to 406 with body {"error": ..., "code":
+    # 406} and Cache-Control: no-store plus Pragma: no-cache —
+    # the same 406 shape the reset path already relies on. The
+    # raise happens before any password write or notification
+    # email, so the stored hash is unchanged (re-read below) and
+    # no failure-record write can occur. The endpoint takes
+    # CurrentUser, which conftest overrides to the mocked user,
+    # and get_auth_service merely resolves a container object, so
+    # nothing can mask the 406. Deliberately no Cache-Control
+    # omission: unlike the 422 locks, a 406 IS an
+    # ApiBaseException, so the central handler's no-store headers
+    # do apply. The security headers ARE locked: the pure-ASGI
+    # middleware stamps every HTTP response, including errors,
+    # with no path exclusions.
+    from beanie import PydanticObjectId
+
+    from api.common.enums.gender import Gender
+    from api.common.security import hash_it, verify_password
+    from api.domain.entities.user import User
+
+    await User(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b385"),
+        first_name="Admin",
+        last_name="User",
+        email="admin@example.com",
+        gender=Gender.OTHER,
+        is_active=True,
+        password=hash_it("Test@123!"),
+    ).insert()
+    response = await client.post(
+        "/account/change-password",
+        json={"current_password": "Test@123!", "new_password": ""},
+    )
+    assert response.status_code == 406
+    assert response.json()["code"] == 406
+    assert response.json()["error"] == "Password must be at least 8 characters long, include uppercase and lowercase letters, a number, and a special character."
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the change-password wrong-current-password 401 lock,
+    # using substring checks so later additions to the list do not
+    # break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+
+    stored = await User.find_one(User.email == "admin@example.com")
+    assert stored is not None
+    assert verify_password("Test@123!", stored.password) is True
+    assert verify_password("", stored.password) is False
