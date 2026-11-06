@@ -59,7 +59,9 @@ export function MagicLinkLogin() {
 
             });
         } catch (error) {
-            console.error("Error sending magic link:", error);
+            // Log only the extracted message: the raw ApiError carries
+            // request.body, which holds the submitted email address.
+            console.error("Error sending magic link:", extractErrorMessage(error));
             // A backend response (ApiError, which carries a numeric
             // status) means the server answered and rejected the request;
             // a failure with no status is a network error, not a failed
