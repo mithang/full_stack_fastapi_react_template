@@ -40,7 +40,12 @@ export function BrandingProvider({ children }: BrandingProviderProps) {
                 console.warn("Failed to refresh app config after branding update", error);
             });
         } catch (error) {
-            console.error("Failed to update branding", error);
+            // Log only the server's message, not the raw ApiError: its
+            // .request.body carries the submitted contact info, including
+            // support_email, phone and address (PII), which must never
+            // reach the browser console — same class as the SSO
+            // client_secret and magic-link email fixes.
+            console.error("Failed to update branding", extractErrorMessage(error));
             // A backend response (ApiError, which carries a numeric status)
             // means the server answered; a failure with no status is a
             // network error, not a failed branding update, and must not send
