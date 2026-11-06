@@ -160,7 +160,11 @@ export function UsersProvider({ children }: UsersProviderProps) {
                     position: "top-right",
                 });
             } catch (e) {
-                console.error("Failed to resend user email", e);
+                // Log only the message, not the raw ApiError: it carries the
+                // request options, including the submitted user email, in
+                // console — same class as the resend-activation email log
+                // fixed in auth-provider.tsx.
+                console.error("Failed to resend user email", extractErrorMessage(e));
                 // A backend response (ApiError, which carries a numeric status)
                 // means the server answered and rejected the resend; a failure
                 // with no status is a network error, not a failed resend, and
