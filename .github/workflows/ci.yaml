@@ -1,0 +1,97 @@
+# CI: test/lint gate for pull requests (previously only a release-only
+# docker.yaml existed, so PRs merged with no automated checks).
+#
+# Backend tests need MongoDB on localhost:27012 (see tests/conftest.py,
+# TEST_MONGO_URI) and the required Settings fields (see
+# backend/api/core/config.py). The env values below are dummy placeholders
+# for the isolated test database only — never real credentials. No test
+# sends real email, payments, or notifications.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+
+    services:
+      mongo:
+        image: mongo:latest
+        ports:
+          - 27012:27017
+        options: >-
+          --health-cmd "mongosh --eval 'db.adminCommand(\"ping\")'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      JWT_SECRET: ci-test-jwt-secret
+      REFRESH_TOKEN_SECRET: ci-test-refresh-secret
+      SMTP_HOST: localhost
+      SMTP_PORT: "1023"
+      SMTP_USER: ""
+      SMTP_PASSWORD: ""
+      SMTP_MAIL_FROM: noreply@example.com
+      COOLIFY_API_URL: https://example.invalid/api/v1
+      COOLIFY_API_KEY: ci-test
+      COOLIFY_APPLICATION_ID: ci-test
+      AWS_ACCESS_KEY_ID: ci-test
+      AWS_SECRET_ACCESS_KEY: ci-test
+      STRIPE_API_KEY: sk_test_ci
+      STRIPE_SECRET_KEY: sk_test_ci
+      STRIPE_WEBHOOK_SECRET: whsec_ci
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up uv and Python 3.13
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        working-directory: backend
+        run: uv sync --frozen
+
+      - name: Run tests
+        working-directory: backend
+        run: uv run pytest
+
+  frontend:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: frontend/app/pnpm-lock.yaml
+
+      - name: Install dependencies
+        working-directory: frontend/app
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        working-directory: frontend/app
+        run: pnpm lint
+
+      - name: Type-check and build
+        working-directory: frontend/app
+        run: pnpm build
