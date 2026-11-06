@@ -1,13 +1,30 @@
+from datetime import timedelta, timezone
+
 from beanie import PydanticObjectId
 from fastapi_mail import MessageType
 from api.common.exceptions import ApiBaseException
-from api.common.utils import get_email_sharing_link, get_host_main_domain_name
+from api.common.utils import get_email_sharing_link, get_host_main_domain_name, get_logger, get_utc_now
 from api.domain.dtos.user_dto import UserDto
 from api.domain.interfaces.email_service import IEmailService
 from api.infrastructure.persistence.repositories.user_magic_link_repository_impl import UserMagicLinkRepository
 from api.interfaces.email_templates.magic_link_login_template_html import magic_link_login_template
 from api.usecases.tenant_service import TenantService
 from api.common.security import hash_it, JWT_SECRET, validate_hashed_value
+
+logger = get_logger(__name__)
+
+# Minimum gap between magic-link emails for the same user. The
+# repository already caps outstanding links at 4 with a 15-minute TTL,
+# but without a time gap an unbounded caller could still fire all 4 in
+# a burst and repeat every 15 minutes (16 identical emails/hour to the
+# victim). Five minutes bounds an attacker to 12 emails/hour with no
+# burst, matching the password-reset, activation-email and
+# change-email cooldowns; the endpoint always answers the generic "If
+# the email exists..." 200, so throttling reveals nothing about the
+# account, and the already-issued link stays valid (the token is
+# deterministic per user, so a re-request inside the window would
+# have sent the identical link anyway).
+MAGIC_LINK_REQUEST_COOLDOWN = timedelta(minutes=5)
 
 
 class EmailMagicLinkService:
@@ -29,6 +46,25 @@ class EmailMagicLinkService:
             user_dto (UserDto): The user data transfer object containing user information.
         """
         try:
+            # Throttle repeat requests for the same user before creating
+            # (and emailing) another link: the token is deterministic
+            # per user, so a re-request inside the window would send
+            # the identical link again. Return silently instead — the
+            # endpoint always answers the generic "If the email
+            # exists..." 200, so this reveals nothing about the
+            # account, and the already-issued link stays valid. A
+            # re-request after the window creates and sends as before.
+            # created_at is stored by Mongo as naive UTC, so normalise
+            # it before comparing with get_utc_now()'s aware value.
+            existing = await self.user_magic_link_repo.search({"user_id": PydanticObjectId(user_dto.id)})
+            now = get_utc_now()
+            for link in existing:
+                sent_at = link.created_at
+                if sent_at.tzinfo is None:
+                    sent_at = sent_at.replace(tzinfo=timezone.utc)
+                if now - sent_at < MAGIC_LINK_REQUEST_COOLDOWN:
+                    logger.info(f"Magic link request for user {user_dto.id} throttled: a magic link was already sent within the cooldown window; the existing link stays valid.")
+                    return
             token = hash_it(user_dto.id + JWT_SECRET)
             record = await self.user_magic_link_repo.create_magic_link(user_id=user_dto.id, token=token)
             domain = get_host_main_domain_name()
