@@ -37,10 +37,11 @@ import {
     Calendar,
     Edit3,
     X,
+    KeyRound,
 } from 'lucide-react'
 import { useAuthContext } from '@/components/providers/auth-provider'
 import { toast } from 'sonner'
-import { extractErrorMessage, getApiClient, getTenant } from '@/lib/utils'
+import { extractErrorMessage, getApiBaseUrl, getApiClient, getTenant } from '@/lib/utils'
 import { useAppConfig } from '@/components/providers/app-config-provider'
 import { ManageSecurity } from '@/components/shared/manage-security'
 
@@ -62,11 +63,33 @@ const profileSchema = z.object({
 
 type ProfileFormData = z.infer<typeof profileSchema>
 
+// Password rules mirror password_reset_confirmation.tsx (and the
+// backend validate_password policy): the same 8+ chars, mixed case,
+// digit and symbol requirements, so a password accepted here is
+// accepted by POST /account/change-password.
+const changePasswordSchema = z.object({
+    current_password: z.string()
+        .min(1, { message: "Please enter your current password" }),
+    new_password: z.string()
+        .min(8, { message: "Password must be at least 8 characters" })
+        .regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/, {
+            message: "Password must contain at least 1 lowercase letter, 1 uppercase letter, 1 number, and 1 symbol"
+        }),
+    confirmPassword: z.string()
+        .min(1, { message: "Please confirm your password" })
+}).refine((data) => data.new_password === data.confirmPassword, {
+    message: "Passwords must match",
+    path: ["confirmPassword"]
+});
+
+type ChangePasswordFormData = z.infer<typeof changePasswordSchema>
+
 export function Profile() {
     const { user, onUpdateProfile, refreshCurrentUser, accessToken } = useAuthContext()
 
     const [isEditing, setIsEditing] = useState(false)
     const [isLoading, setIsLoading] = useState(false)
+    const [isChangingPassword, setIsChangingPassword] = useState(false)
     const [uploadingImage, setUploadingImage] = useState(false)
     const [imagePreview, setImagePreview] = useState<string | null>(null)
     const fileInputRef = useRef<HTMLInputElement>(null)
@@ -95,6 +118,15 @@ export function Profile() {
             })
         }
     }, [user, form, isEditing])
+
+    const changePasswordForm = useForm<ChangePasswordFormData>({
+        resolver: zodResolver(changePasswordSchema),
+        defaultValues: {
+            current_password: '',
+            new_password: '',
+            confirmPassword: '',
+        },
+    })
 
     // Reset form values when entering edit mode
     useEffect(() => {
@@ -182,6 +214,58 @@ export function Profile() {
         });
         setIsLoading(false);
 
+    }
+
+    // Authenticated password change (POST /account/change-password).
+    // The generated AccountService predates the endpoint, so this calls
+    // it with a hand-written fetch, following the ai-chat precedent:
+    // getApiBaseUrl() + Bearer token + X-Tenant-ID. The current
+    // password is never logged. A wrong current password is a 401 with
+    // the server's own message; a fetch rejection (offline / backend
+    // down) is a network failure, not a wrong password.
+    const onChangePasswordSubmit = async (data: ChangePasswordFormData) => {
+        setIsChangingPassword(true)
+        try {
+            const tenant = getTenant();
+            const response = await fetch(`${getApiBaseUrl()}/api/v1/account/change-password`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${accessToken}`,
+                    ...tenant?.id && { 'X-Tenant-ID': tenant.id }
+                },
+                body: JSON.stringify({
+                    current_password: data.current_password,
+                    new_password: data.new_password
+                }),
+            })
+            if (!response.ok) {
+                let detail = ''
+                try {
+                    const text = await response.text()
+                    if (text) {
+                        try {
+                            const parsed = JSON.parse(text)
+                            const rawDetail = parsed?.error ?? parsed?.detail ?? parsed?.message
+                            detail = Array.isArray(rawDetail) ? (rawDetail[0]?.msg ?? String(rawDetail[0] ?? '')) : (typeof rawDetail === 'string' ? rawDetail : text)
+                        } catch {
+                            detail = text
+                        }
+                    }
+                } catch {
+                    // Fall through to the status-based message below.
+                }
+                toast.error(detail || `Failed to change password (${response.status})`)
+                return
+            }
+            const result = await response.json().catch(() => null)
+            toast.success(result?.message ?? 'Password has been changed successfully.')
+            changePasswordForm.reset()
+        } catch {
+            toast.error('Unable to reach the server. Check your connection and try again.')
+        } finally {
+            setIsChangingPassword(false)
+        }
     }
 
 
@@ -431,6 +515,84 @@ export function Profile() {
                     </CardContent>
                 </Card>
             </div>
+
+            {/* Change Password Card */}
+            <Card className="mt-6">
+                <CardHeader>
+                    <CardTitle className="flex items-center space-x-2">
+                        <KeyRound className="w-5 h-5" />
+                        <span>Change Password</span>
+                    </CardTitle>
+                    <CardDescription>
+                        Change your password without going through the email reset flow
+                    </CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <Form {...changePasswordForm}>
+                        <form onSubmit={changePasswordForm.handleSubmit(onChangePasswordSubmit)} className="space-y-6">
+                            <FormField
+                                control={changePasswordForm.control}
+                                name="current_password"
+                                render={({ field }) => (
+                                    <FormItem>
+                                        <FormLabel>Current Password</FormLabel>
+                                        <FormControl>
+                                            <Input type="password" placeholder="Enter your current password" {...field} autoComplete="current-password" />
+                                        </FormControl>
+                                        <FormMessage />
+                                    </FormItem>
+                                )}
+                            />
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <FormField
+                                    control={changePasswordForm.control}
+                                    name="new_password"
+                                    render={({ field }) => (
+                                        <FormItem>
+                                            <FormLabel>New Password</FormLabel>
+                                            <FormControl>
+                                                <Input type="password" placeholder="Enter your new password" {...field} autoComplete="new-password" />
+                                            </FormControl>
+                                            <FormMessage />
+                                        </FormItem>
+                                    )}
+                                />
+
+                                <FormField
+                                    control={changePasswordForm.control}
+                                    name="confirmPassword"
+                                    render={({ field }) => (
+                                        <FormItem>
+                                            <FormLabel>Confirm New Password</FormLabel>
+                                            <FormControl>
+                                                <Input type="password" placeholder="Confirm your new password" {...field} autoComplete="new-password" />
+                                            </FormControl>
+                                            <FormMessage />
+                                        </FormItem>
+                                    )}
+                                />
+                            </div>
+
+                            <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2">
+                                <Button type="submit" disabled={isChangingPassword} className="flex-1">
+                                    {isChangingPassword ? (
+                                        <>
+                                            <Upload className="w-4 h-4 mr-2 animate-spin" />
+                                            Changing...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Save className="w-4 h-4 mr-2" />
+                                            Change Password
+                                        </>
+                                    )}
+                                </Button>
+                            </div>
+                        </form>
+                    </Form>
+                </CardContent>
+            </Card>
 
             {/* Account Status Card */}
             <Card className="mt-6">
