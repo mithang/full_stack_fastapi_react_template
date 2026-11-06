@@ -58501,3 +58501,123 @@ async def test_account_change_password_success_returns_200_with_security_headers
     assert stored is not None
     assert verify_password("NewPass456!", stored.password) is True
     assert verify_password("Test@123!", stored.password) is False
+
+
+@pytest.mark.asyncio
+async def test_account_change_password_five_wrong_current_passwords_lock_out_correct_password(client: AsyncClient):
+    """
+        The account change-password POST after five consecutive wrong
+        current passwords: the endpoint is temporarily locked out, so
+        even the correct current password still yields the same
+        generic 401 until the window expires.
+    """
+    # The follow-up to the wrong-current-password 401 lock above:
+    # that lock covers one failure, but nothing bounded how many
+    # guesses a session (or a hijacked one) could make at the
+    # current password — and a guessed current password lets the
+    # attacker rotate the password and lock the owner out.
+    # change_password_authenticated now records consecutive failures
+    # and locks the endpoint out after MAX_FAILED_LOGIN_ATTEMPTS (5)
+    # inside FAILED_LOGIN_LOCKOUT_WINDOW (15 minutes), on its own
+    # counters so this lockout never locks the user out of login.
+    # The caller row is seeded with the conftest mocked user's exact
+    # id (68c302ef6bf7a039b7e9b385), as in the wrong-current-password
+    # lock above. The sixth attempt uses the CORRECT current
+    # password and must still 401 — that is the lockout, not a wrong
+    # password — and it must not increment the counter again, or
+    # every probe would extend the lockout forever. The re-read
+    # below also proves the password was never rotated: the old
+    # password still verifies. No X-Tenant-ID header is sent, so
+    # the seed and the service reads all use the host test DB.
+    from beanie import PydanticObjectId
+
+    from api.common.enums.gender import Gender
+    from api.common.security import hash_it, verify_password
+    from api.domain.entities.user import User
+
+    await User(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b385"),
+        first_name="Admin",
+        last_name="User",
+        email="admin@example.com",
+        gender=Gender.OTHER,
+        is_active=True,
+        password=hash_it("Test@123!"),
+    ).insert()
+    for _ in range(5):
+        response = await client.post(
+            "/account/change-password",
+            json={"current_password": "WrongPass123!", "new_password": "NewPass456!"},
+        )
+        assert response.status_code == 401
+        assert response.json()["code"] == 401
+        assert response.json()["error"] == "Current password is incorrect."
+    response = await client.post(
+        "/account/change-password",
+        json={"current_password": "Test@123!", "new_password": "NewPass456!"},
+    )
+    assert response.status_code == 401
+    assert response.json()["code"] == 401
+    assert response.json()["error"] == "Current password is incorrect."
+    # The lockout is indistinguishable from a wrong current password:
+    # the same generic 401 and the same error text, with no hint that
+    # the endpoint is locked rather than the password wrong.
+    stored = await User.find_one(User.email == "admin@example.com")
+    assert stored is not None
+    assert stored.failed_password_change_attempts == 5
+    assert stored.last_failed_password_change_at is not None
+    assert verify_password("Test@123!", stored.password) is True
+    assert verify_password("NewPass456!", stored.password) is False
+
+
+@pytest.mark.asyncio
+async def test_account_change_password_stale_failures_do_not_lock_out(client: AsyncClient):
+    """
+        The account change-password POST for a user whose five
+        recorded change-password failures are older than the lockout
+        window: the stale count decays, so one more wrong current
+        password counts as the first failure instead of locking the
+        endpoint out.
+    """
+    # The counterpart to the lockout test above: without decay, a
+    # user who mistyped five times over months would lock out on
+    # the next mistake. The seeded row carries five failures from
+    # 16 minutes ago — just outside FAILED_LOGIN_LOCKOUT_WINDOW (15
+    # minutes) — so the next wrong current password must record
+    # failed_password_change_attempts == 1 rather than 6, and must
+    # not lock the endpoint. Seeding is direct through the User
+    # document with the conftest mocked user's exact id, as in the
+    # lockout test; the attempt raises before update_user_password,
+    # so no password write or email send can affect the outcome. No
+    # X-Tenant-ID header is sent, so the seed and the service reads
+    # all use the host test DB.
+    from datetime import timedelta
+
+    from beanie import PydanticObjectId
+
+    from api.common.enums.gender import Gender
+    from api.common.security import hash_it
+    from api.common.utils import get_utc_now
+    from api.domain.entities.user import User
+
+    await User(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b385"),
+        first_name="Admin",
+        last_name="User",
+        email="admin@example.com",
+        gender=Gender.OTHER,
+        is_active=True,
+        password=hash_it("Test@123!"),
+        failed_password_change_attempts=5,
+        last_failed_password_change_at=get_utc_now() - timedelta(minutes=16),
+    ).insert()
+    response = await client.post(
+        "/account/change-password",
+        json={"current_password": "WrongPass123!", "new_password": "NewPass456!"},
+    )
+    assert response.status_code == 401
+    assert response.json()["code"] == 401
+    assert response.json()["error"] == "Current password is incorrect."
+    stored = await User.find_one(User.email == "admin@example.com")
+    assert stored is not None
+    assert stored.failed_password_change_attempts == 1

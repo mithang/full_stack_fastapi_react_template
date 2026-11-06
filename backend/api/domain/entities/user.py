@@ -33,6 +33,21 @@ class User(ApiBaseModel):
     # NOT included in to_serializable_dict (like password).
     failed_login_attempts: int = 0
     last_failed_login_at: Optional[datetime] = None
+    # Consecutive failed current-password checks on the authenticated
+    # change-password endpoint and when the last one happened.
+    # AuthService.change_password_authenticated() locks that endpoint
+    # out for a short window after too many consecutive failures, on
+    # the same threshold/window as the login lockout; a successful
+    # change resets both. Kept separate from the login counters on
+    # purpose: a change-password lockout must never lock the user
+    # out of login (or vice versa), so a hijacked session cannot
+    # deny the owner their login by failing this endpoint. 0/None
+    # means no failures recorded (existing documents predate the
+    # fields and proceed as before). Internal security state, so
+    # deliberately NOT included in to_serializable_dict (like
+    # password and the login counters).
+    failed_password_change_attempts: int = 0
+    last_failed_password_change_at: Optional[datetime] = None
     image_url: Optional[str] = None
     password: str  # hashed password
     sso_provider_id: Optional[str] = None

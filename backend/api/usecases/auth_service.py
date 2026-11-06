@@ -93,7 +93,11 @@ CHANGE_EMAIL_REQUEST_COOLDOWN = timedelta(minutes=5)
 # always answers the same generic 401, so a lockout is
 # indistinguishable from a wrong password and reveals nothing about
 # the account. Failures older than the window do not accumulate
-# (see login), and a successful login resets the count.
+# (see login), and a successful login resets the count. The same
+# threshold and window bound guessing through the authenticated
+# change-password endpoint (see change_password_authenticated),
+# which keeps its own counters so the two channels never lock each
+# other out.
 MAX_FAILED_LOGIN_ATTEMPTS = 5
 FAILED_LOGIN_LOCKOUT_WINDOW = timedelta(minutes=15)
 
@@ -108,6 +112,23 @@ def _is_login_locked_out(user: User, now) -> bool:
     if user.failed_login_attempts < MAX_FAILED_LOGIN_ATTEMPTS:
         return False
     last = user.last_failed_login_at
+    if last is None:
+        return False
+    if last.tzinfo is None:
+        last = last.replace(tzinfo=timezone.utc)
+    return now - last < FAILED_LOGIN_LOCKOUT_WINDOW
+
+
+def _is_password_change_locked_out(user: User, now) -> bool:
+    # Pure lockout decision for the authenticated change-password
+    # endpoint, mirroring _is_login_locked_out on its own counters:
+    # locked only once the failure count reaches the threshold AND
+    # the last failure is still inside the window. A None timestamp
+    # is treated as not locked. Separate counters mean this lockout
+    # blocks only change-password attempts, never login.
+    if user.failed_password_change_attempts < MAX_FAILED_LOGIN_ATTEMPTS:
+        return False
+    last = user.last_failed_password_change_at
     if last is None:
         return False
     if last.tzinfo is None:
@@ -580,8 +601,50 @@ class AuthService:
             failure cannot report a completed change as failed.
         """
         user = await self.user_service.get_user_by_id(user_id=user_id)
-        if not user.password or verify_password(current_password, user.password) is False:
+        now = get_utc_now()
+        if _is_password_change_locked_out(user, now):
+            # Same generic 401 as a wrong current password, with the
+            # same dummy verify so a locked-out attempt takes about
+            # as long as a wrong-password attempt and the two stay
+            # indistinguishable. The failure is NOT recorded again:
+            # the count stays at the threshold and the window keeps
+            # running from the last real failure, so the lockout
+            # expires on its own instead of being extended by every
+            # probe.
+            verify_password(current_password, _DUMMY_PASSWORD_HASH)
             raise UnauthorizedException("Current password is incorrect.")
+        if not user.password or verify_password(current_password, user.password) is False:
+            # Record the failure before raising, so the 401 the caller
+            # sees is unchanged. Without a bound, a session (or a
+            # hijacked one) could guess the current password
+            # indefinitely — and a guessed current password lets the
+            # attacker rotate the password and lock the owner out.
+            # Failures older than the window do not accumulate toward
+            # a lockout. Stored datetimes come back from Mongo as
+            # naive UTC, so normalise before comparing with
+            # get_utc_now()'s aware value. Direct .save() bypasses
+            # BaseRepository.update()'s central updated_at stamp (see
+            # activate_account), so stamp it here.
+            last = user.last_failed_password_change_at
+            if last is not None and last.tzinfo is None:
+                last = last.replace(tzinfo=timezone.utc)
+            if last is None or now - last >= FAILED_LOGIN_LOCKOUT_WINDOW:
+                user.failed_password_change_attempts = 1
+            else:
+                user.failed_password_change_attempts = user.failed_password_change_attempts + 1
+            user.last_failed_password_change_at = now
+            user.updated_at = now
+            await user.save()
+            raise UnauthorizedException("Current password is incorrect.")
+        if user.failed_password_change_attempts:
+            # A successful change clears the failure record, so a
+            # legitimate user is never locked out by old mistakes.
+            # Saved here; update_user_password below re-reads the
+            # user and saves only the new hash, so the reset is kept.
+            user.failed_password_change_attempts = 0
+            user.last_failed_password_change_at = None
+            user.updated_at = now
+            await user.save()
         await self.user_service.update_user_password(user_id=user_id, new_password=new_password)
         logger.info(f"Password changed for user {user_id}.")
         html = notify_password_change_template_html(user_first_name=user.first_name)
