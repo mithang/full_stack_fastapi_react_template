@@ -65532,3 +65532,80 @@ async def test_account_change_email_confirmation_nonobject_body_returns_422_with
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+async def test_account_change_email_confirmation_string_body_returns_422_with_security_headers(client: AsyncClient):
+    """
+        The account change-email-confirmation PATCH with a string JSON body:
+    """
+    # The change-email-confirmation body-shape sweep
+    # continues here, verified fresh this run, not
+    # assumed: function-name grep count 0 for
+    # change_email_confirmation_string_body before
+    # appending. The non-object body was locked in
+    # iteration 2547. The endpoint declares a single
+    # body param (account_endpoint.py:343-350: request:
+    # ChangeEmailConfirmRequestDto, whose only field is
+    # a required token: str, auth_dto.py:26-27), so a
+    # JSON string body cannot be coerced to the DTO and
+    # fails FastAPI request validation before the
+    # handler body runs: the service's token
+    # verification, user lookup, email-existence check,
+    # email update, and notification email never
+    # execute, so no DB row and no SMTP call can affect
+    # the outcome, and no refresh cookie is set. The
+    # DTO's model validator only runs after a valid
+    # object body is parsed, so it cannot mask the 422
+    # either. The endpoint takes CurrentUser, which
+    # conftest overrides to the mocked user, and
+    # carries no permission gate and no FrontendHost
+    # dependency, so nothing can mask the 422. This is
+    # distinct from the missing-token lock (an object
+    # body with a missing field) and from the
+    # non-string-token lock (an object body with a
+    # mistyped field): here the whole body is the wrong
+    # JSON type, so the detail loc is ["body"],
+    # mirroring the change-email-request string-body
+    # 422 lock. Deliberately no exact error-type
+    # assertion (no string-body error-type precedent
+    # for this endpoint) and no Cache-Control/Pragma
+    # assertion: a 422 is FastAPI request validation,
+    # not an ApiBaseException, so the central handler's
+    # no-store headers do not apply to it. The security
+    # headers ARE locked: the pure-ASGI middleware
+    # stamps every HTTP response, including validation
+    # errors, with no path exclusions.
+    response = await client.patch(
+        "/account/change_email_confirmation",
+        json="some-token",
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert isinstance(detail, list) and detail
+    assert any(
+        err.get("loc") == ["body"]
+        for err in detail
+    )
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the change-email-request string-body 422 lock,
+    # using substring checks so later additions to the list do
+    # not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
