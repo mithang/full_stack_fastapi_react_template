@@ -9163,3 +9163,158 @@ async def test_create_user_no_special_character_password_returns_406_with_securi
     # Postcondition: the weak password failed before any user
     # row was created, so the email has no user in the test DB.
     assert await User.find_one(User.email == "test@example.com") is None
+
+
+async def test_create_user_no_digit_password_returns_406_with_security_headers(client: AsyncClient):
+    """
+        The user-create POST with a password that has no digit:
+    """
+    # The fifth value branch of the user password per-field sweep
+    # after the type branches, verified fresh this run, not
+    # assumed: function-name grep count 0 for
+    # create_user_no_digit_password and grep count 0 for
+    # "no_digit_password" in this file before appending.
+    # The tenant sweep is complete (body-shape 2556-2562 +
+    # per-field 2563-2577), the register sweep is complete, the
+    # role sweep is complete (body-shape 2578-2584 + per-field
+    # 2585-2599), the user body-shape sweep is complete (missing
+    # body, non-object, string, numeric, boolean, null, malformed
+    # JSON - iterations 2600-2606), the user per-field first_name
+    # sweep is complete (missing, non-string, object, float,
+    # empty, whitespace-only - iterations 2607-2612), the
+    # last_name sweep is complete (missing, non-string, object,
+    # float, empty, whitespace-only - iterations 2613-2618), the
+    # email sweep is complete (missing, non-string, object,
+    # float, empty, whitespace-only, invalid-format - iterations
+    # 2619-2625) and the gender sweep is complete (missing,
+    # non-string, object, float, empty, whitespace-only,
+    # invalid-value - iterations 2626-2632), and the password
+    # sweep has locked missing (2633), non-string (2634),
+    # object (2635), float (2636), empty (2637),
+    # whitespace-only (2638), too-short (2639) and
+    # no-special-character (2640). The endpoint takes a required
+    # `data: CreateUserDto` body parameter
+    # (user_endpoint.py:115-128) whose password is a required
+    # `str` on CreateUserDto (user_dto.py:44, no min_length
+    # constraint), alongside required first_name, last_name,
+    # email and gender. A 9-character password therefore passes
+    # FastAPI request validation: the DTO's mode="after"
+    # normalize_names validator only runs after valid field
+    # parsing (and only touches first_name/last_name), and the
+    # password is deliberately NOT trimmed (user_dto.py:30,
+    # credential semantics), so it cannot mask the failure.
+    # The handler body runs instead: after the permission gate
+    # and the GUEST role lookup, it calls
+    # UserService.create_user, which validates the password
+    # FIRST -- before the duplicate-email check and before any
+    # repository write (usecases/user_service.py:111-121).
+    # validate_password("Password!") fails PASSWORD_REGEX
+    # (common/utils.py:42, at least 8 characters with
+    # upper/lowercase, a digit and a special character --
+    # "Password!" satisfies the length and the lower, upper
+    # and special-character lookaheads but has no digit, so
+    # the digit lookahead rejects it; the same value with a
+    # "1" inserted passes, verified against the regex this
+    # run) and raises InvalidOperationException, which the
+    # central ApiBaseException handler maps to 406 with body
+    # {"error": ..., "code": 406} plus no-store headers
+    # (api/__init__.py:84-135), mirroring the register
+    # weak-password 406 lock. This is distinct from the
+    # missing-password lock (iteration 2633, field omitted -
+    # 422), the non-string lock (iteration 2634, JSON integer -
+    # 422), the object lock (iteration 2635, a dict - 422), the
+    # float lock (iteration 2636 - 422), the empty-password
+    # lock (iteration 2637, "" - 406), the
+    # whitespace-only-password lock (iteration 2638, eight
+    # spaces - 406), the too-short-password lock (iteration
+    # 2639, "Aa1!" - 406) and the no-special-character lock
+    # (iteration 2640, "Password123" - 406): here the password
+    # is present, a string, non-empty, non-blank and long
+    # enough, so validation passes and the failure is the
+    # policy rejection of a credential missing a digit.
+    # The endpoint is permission-gated
+    # (USER_READ_AND_WRITE_ONLY), and FastAPI solves
+    # sub-dependencies before validating the endpoint's own
+    # body, so the mocked caller's role must be seeded first --
+    # otherwise the permission gate's RoleNotFoundException 404
+    # would mask the 406, exactly as in the role
+    # whitespace-only-name lock. The endpoint also resolves
+    # the GUEST role via role_service.find_by_name BEFORE
+    # calling create_user (user_endpoint.py:124-127), so a
+    # GUEST role must be seeded too -- otherwise that lookup's
+    # RoleNotFoundException 404 would mask the 406. The role
+    # is seeded with the mocked user's exact role_id
+    # (68c302ef6bf7a039b7e9b386, conftest.py) and the route's
+    # USER_READ_AND_WRITE_ONLY permission, mirroring the user
+    # missing-password lock; the GUEST role is seeded with a
+    # distinct id (68c302ef6bf7a039b7e9b389, unused in this
+    # file) and name "guest", mirroring the register
+    # weak-password 406 lock; the default conftest mock is a
+    # host caller (tenant_id None), so _assert_create_scope
+    # cannot fire. Deliberately no Cache-Control/Pragma
+    # omission here: unlike a 422, a 406 is an
+    # ApiBaseException, so the central handler's no-store
+    # headers DO apply and are locked, mirroring the register
+    # weak-password 406 lock. The security headers ARE locked:
+    # the pure-ASGI middleware stamps every HTTP response,
+    # including error responses, with no path exclusions.
+    from beanie import PydanticObjectId
+
+    from api.domain.entities.role import Role
+    from api.domain.entities.user import User
+    from api.domain.enum.permission import Permission
+
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b386"),
+        name="Host user creator",
+        description="Role carrying USER_READ_AND_WRITE_ONLY for the mocked caller",
+        permissions=[Permission.USER_READ_AND_WRITE_ONLY],
+    ).insert()
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b389"),
+        name="guest",
+        description="Guest role resolved by the user-create endpoint before create_user",
+        permissions=[],
+    ).insert()
+    response = await client.post(
+        "/users/",
+        json={
+            "first_name": "Test",
+            "last_name": "User",
+            "email": "test@example.com",
+            "gender": "other",
+            "password": "Password!",
+        },
+    )
+    assert response.status_code == 406
+    assert response.json()["code"] == 406
+    assert "Password must be at least 8 characters" in response.json()["error"]
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the other user locks in this file, using
+    # substring checks so later additions to the list do not
+    # break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+    # Postcondition: the weak password failed before any user
+    # row was created, so the email has no user in the test DB.
+    assert await User.find_one(User.email == "test@example.com") is None
