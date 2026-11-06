@@ -1896,6 +1896,90 @@ async def test_account_login_stale_failures_do_not_lock_out(client: AsyncClient)
 
 
 @pytest.mark.asyncio
+async def test_account_magic_link_login_clears_password_login_lockout(client: AsyncClient):
+    """
+        The account magic-link validate GET for a user locked out of
+        password login: a successful login through the magic link
+        clears the failure record, so the correct password works
+        again immediately instead of waiting out the window.
+    """
+    # login() resets the failure record on a password success, but
+    # the other login channels returned their token set without
+    # touching the counters: a user who mistyped five times and
+    # then proved their identity through a magic link still got
+    # the generic 401 on password login until the 15-minute window
+    # expired. The seed carries five failures from just now, so
+    # the account is locked; the correct password must 401 before
+    # the magic-link login and 200 after it, and the stored record
+    # must read 0/None in between. Seeding is direct through the
+    # User/Role/UserMagicLink documents (doc.insert(), the same
+    # call BaseRepository.create uses); the Role row is needed
+    # because _get_token_set looks the caller's role up by id, and
+    # the magic-link token is hash_it(user_id + JWT_SECRET), the
+    # same construction create_magic_link stores and
+    # validate_magic_link verifies. No X-Tenant-ID header is sent,
+    # so the seeds and the service reads all use the host test DB.
+    from beanie import PydanticObjectId
+
+    from api.common.enums.gender import Gender
+    from api.common.security import JWT_SECRET, hash_it
+    from api.common.utils import get_utc_now
+    from api.domain.entities.role import Role
+    from api.domain.entities.user import User
+    from api.domain.entities.user_magic_link import UserMagicLink
+    from api.domain.enum.permission import Permission
+
+    user_id = PydanticObjectId("68c302ef6bf7a039b7e9b391")
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b386"),
+        name="Admin",
+        description="Administrator role for the mocked caller",
+        permissions=[Permission.USER_READ_AND_WRITE_ONLY, Permission.FULL_ACCESS],
+    ).insert()
+    await User(
+        id=user_id,
+        first_name="Lockout",
+        last_name="MagicLink",
+        email="lockout-magic@example.com",
+        gender=Gender.OTHER,
+        is_active=True,
+        password=hash_it("CorrectPass123!"),
+        role_id=PydanticObjectId("68c302ef6bf7a039b7e9b386"),
+        failed_login_attempts=5,
+        last_failed_login_at=get_utc_now(),
+    ).insert()
+    token = hash_it(str(user_id) + JWT_SECRET)
+    await UserMagicLink(user_id=user_id, token=token).insert()
+
+    response = await client.post(
+        "/account/login",
+        data={"username": "lockout-magic@example.com", "password": "CorrectPass123!"},
+    )
+    assert response.status_code == 401
+    assert response.json()["code"] == 401
+    assert "Authentication failed. Please check your credentials." in response.json()["error"]
+
+    response = await client.get(
+        "/account/email_magic_link_validate",
+        params={"token": token, "user_id": str(user_id)},
+    )
+    assert response.status_code == 200
+    assert "refresh_token" in response.headers.get("set-cookie", "")
+
+    stored = await User.find_one(User.email == "lockout-magic@example.com")
+    assert stored is not None
+    assert stored.failed_login_attempts == 0
+    assert stored.last_failed_login_at is None
+
+    response = await client.post(
+        "/account/login",
+        data={"username": "lockout-magic@example.com", "password": "CorrectPass123!"},
+    )
+    assert response.status_code == 200
+    assert "refresh_token" in response.headers.get("set-cookie", "")
+
+
+@pytest.mark.asyncio
 async def test_account_change_email_confirmation_email_in_use_returns_400_with_cache_and_security_headers(client: AsyncClient):
     """
         The account change-email-confirmation PATCH when the new
