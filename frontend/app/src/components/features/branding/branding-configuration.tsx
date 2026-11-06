@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/form";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { extractErrorMessage } from "@/lib/utils";
 import type { UpdateBrandingDto } from "@/api";
 import ColorField from "@/components/features/branding/color-fields";
 
@@ -187,7 +188,13 @@ export default function BrandingConfiguration() {
             setSaved(true);
             setTimeout(() => setSaved(false), 2000);
         } catch (error) {
-            console.error('Failed to update branding:', error);
+            // Log only the server's message, not the raw ApiError:
+            // onUpdateBranding re-throws it, and its .request.body carries
+            // the submitted contact info (support_email, phone, address),
+            // which must never reach the browser console — the provider-side
+            // log was fixed the same way, but this form-side catch still
+            // logged the raw error.
+            console.error('Failed to update branding:', extractErrorMessage(error));
         } finally {
             setLoading(false);
         }
