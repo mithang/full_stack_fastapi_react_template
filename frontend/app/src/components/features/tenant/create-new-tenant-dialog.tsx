@@ -21,6 +21,7 @@ import { Label } from "@/components/ui/label";
 import { useAppConfig } from "@/components/providers/app-config-provider";
 import { useSubdomainCheck } from "@/hooks/use-subdomain-check";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { extractErrorMessage } from "@/lib/utils";
 
 const tenantSchema = z.object({
     // trim() must come before min(): Zod checks run in chain order, so
@@ -99,7 +100,12 @@ export function CreateNewTenantDialog({ open, onDismiss }: CreateNewTenantDialog
             onDismiss();
 
         } catch (error) {
-            console.error("Error creating tenant:", error);
+            // Log only the extracted message: the raw ApiError carries the
+            // submitted request body (CreateTenantDto.admin_password) in
+            // error.request.body, so logging it would expose the new tenant
+            // admin's plaintext password in the browser console — the same
+            // class as the provider-side fix in tenant-provider.tsx.
+            console.error("Error creating tenant:", extractErrorMessage(error));
         } finally {
             setIsLoading(false);
         }
