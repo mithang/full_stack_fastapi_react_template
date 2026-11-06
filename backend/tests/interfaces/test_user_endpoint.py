@@ -5590,3 +5590,119 @@ async def test_create_user_empty_first_name_returns_422_with_security_headers(cl
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+async def test_create_user_whitespace_first_name_returns_422_with_security_headers(client: AsyncClient):
+    """
+        The user-create POST with first_name sent as a
+        whitespace-only string ("   "):
+    """
+    # The sixth branch of the user per-field sweep, verified
+    # fresh this run, not assumed: function-name grep count 0 for
+    # create_user_whitespace_first_name and grep count 0 for
+    # "whitespace_first_name" in this file before appending. The
+    # tenant sweep is complete (body-shape 2556-2562 + per-field
+    # 2563-2577), the register sweep is complete, the role sweep
+    # is complete (body-shape 2578-2584 + per-field 2585-2599),
+    # the user body-shape sweep is complete (missing body,
+    # non-object, string, numeric, boolean, null, malformed JSON
+    # - iterations 2600-2606), and the user per-field sweep
+    # opened with the missing-first_name lock (iteration 2607)
+    # and continued with the non-string (numeric) first_name lock
+    # (iteration 2608), the object first_name lock (iteration
+    # 2609), the float first_name lock (iteration 2610) and the
+    # empty first_name lock (iteration 2611), so the per-field
+    # sweep continues here with POST /users/. The endpoint takes
+    # a required `data: CreateUserDto` body parameter
+    # (user_endpoint.py:115-128) whose first_name is a required
+    # str (Field min_length=1), alongside required last_name,
+    # email and gender and a required password on CreateUserDto
+    # (user_dto.py:8-44). A 3-space string passes the
+    # min_length=1 field check and only the DTO's mode="after"
+    # normalize_names validator rejects the blank value with a
+    # ValueError "first_name must not be blank" before the
+    # handler body runs: UserService.create_user never runs, so
+    # no user record is created -- no duplicate-email check, no
+    # GUEST role lookup, no repository write. The error loc is
+    # at the body, not at the field, since a model_validator
+    # error carries no field part, so this test asserts on the
+    # message instead of the loc, mirroring the role
+    # whitespace-name lock (iteration 2591) and the register
+    # blank-first_name lock. This is distinct from the
+    # missing-first_name lock (iteration 2607, field absent),
+    # the numeric first_name lock (iteration 2608), the object
+    # first_name lock (iteration 2609), the float first_name
+    # lock (iteration 2610) and the empty first_name lock
+    # (iteration 2611, string_too_short at field validation):
+    # here the field is present, a string, and long enough, but
+    # trims to blank, with every other required field present
+    # and valid. The endpoint is permission-gated
+    # (USER_READ_AND_WRITE_ONLY), and FastAPI solves
+    # sub-dependencies before validating the endpoint's own
+    # body, so the mocked caller's role must be seeded first --
+    # otherwise the permission gate's RoleNotFoundException 404
+    # would mask the 422, exactly as in the role whitespace-name
+    # lock. The role is seeded with the mocked user's exact
+    # role_id (68c302ef6bf7a039b7e9b386, conftest.py) and the
+    # route's USER_READ_AND_WRITE_ONLY permission, mirroring the
+    # user missing-first_name lock, so the permission gate cannot
+    # mask the 422 with a 404; the default conftest mock is a
+    # host caller (tenant_id None), so _assert_create_scope
+    # cannot fire. Deliberately no Cache-Control/Pragma
+    # assertion: a 422 is FastAPI request validation, not an
+    # ApiBaseException, so the central handler's no-store headers
+    # do not apply to it, mirroring the tenant, account and role
+    # whitespace-name 422 locks. The security headers ARE locked:
+    # the pure-ASGI middleware stamps every HTTP response,
+    # including validation errors, with no path exclusions.
+    from beanie import PydanticObjectId
+
+    from api.domain.entities.role import Role
+    from api.domain.enum.permission import Permission
+
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b386"),
+        name="Host user creator",
+        description="Role carrying USER_READ_AND_WRITE_ONLY for the mocked caller",
+        permissions=[Permission.USER_READ_AND_WRITE_ONLY],
+    ).insert()
+    response = await client.post(
+        "/users/",
+        json={
+            "first_name": "   ",
+            "last_name": "User",
+            "email": "test@example.com",
+            "gender": "other",
+            "password": "Password123!",
+        },
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert any(
+        "first_name must not be blank" in str(err.get("msg", ""))
+        for err in detail
+    )
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the other user locks in this file, using
+    # substring checks so later additions to the list do not
+    # break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
