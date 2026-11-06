@@ -60505,3 +60505,105 @@ async def test_account_register_taken_subdomain_weak_password_no_special_returns
     # Postcondition: the weak password failed before any user
     # row was created, so the email has no user in the test DB.
     assert await User.find_one(User.email == "takennospecial@example.com") is None
+
+
+async def test_account_register_taken_subdomain_weak_password_no_digit_returns_406_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The account register POST taken-subdomain + weak-password
+        (no-digit) path: a seeded GUEST role plus a seeded tenant
+        whose subdomain is taken, and a password that is 8+
+        characters but fails the policy on one class.
+    """
+    # The taken-subdomain weak-password no-digit branch,
+    # verified fresh this run, not assumed: function-name grep
+    # count 0 for
+    # test_account_register_taken_subdomain_weak_password_no_digit,
+    # seed-email grep count 0 for takennodigit@example.com, and
+    # no existing register lock combines a seeded tenant with an
+    # 8+-character password missing the digit class (the
+    # taken-subdomain weak lock used "weak", too short and
+    # missing every class; the 422 locks fail DTO validation).
+    # Tenancy defaults to "header" (api/core/config.py), so
+    # register() takes the multi-tenant path: with tenant_id None
+    # it looks the normalized subdomain up, finds the seeded
+    # tenant, writes a file-based audit entry (temp file, not the
+    # test DB) and raises InvalidOperationException, which the
+    # handler catches and answers by creating the user directly
+    # (auth_service.py register, taken-subdomain branch) -- and
+    # create_user() validates the password BEFORE checking for an
+    # existing email or persisting anything (user_service.py:119),
+    # so the weak password raises InvalidOperationException,
+    # mapped centrally to 406 with body {"error": ..., "code":
+    # 406} plus no-store headers (api/__init__.py:108-109), and
+    # the pure-ASGI security-headers middleware stamps every HTTP
+    # response with no path exclusions. "Password!" is 9
+    # characters with upper, lower and special but no digit, so
+    # it fails PASSWORD_REGEX (api/common/utils.py:42). No Celery
+    # task is enqueued on this path (the callback only runs for
+    # a newly created tenant) and no email is sent (create_user's
+    # activation send is commented out), so no broker or SMTP
+    # server is needed. No X-Tenant-ID header is sent, so the
+    # seeds and the service reads all use the host test DB, and
+    # the conftest fixture drops the test DB after the test, so
+    # the rows cannot leak into other tests. Postcondition is
+    # asserted directly: no user row is created for the email.
+    from beanie import PydanticObjectId
+
+    from api.common.enums.gender import Gender
+    from api.domain.entities.role import Role
+    from api.domain.entities.tenant import Tenant
+    from api.domain.entities.user import User
+
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b393"),
+        name="guest",
+        description="Guest role for the register user",
+        permissions=[],
+    ).insert()
+    await Tenant(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b394"),
+        name="taken",
+        subdomain="taken.fsrapp.com",
+    ).insert()
+    response = await client.post(
+        "/account/register",
+        json={
+            "first_name": "Taken",
+            "last_name": "NoDigit",
+            "email": "takennodigit@example.com",
+            "gender": "other",
+            "password": "Password!",
+            "sub_domain": "taken.fsrapp.com",
+        },
+    )
+    assert response.status_code == 406
+    assert response.json()["code"] == 406
+    assert "Password must be at least 8 characters" in response.json()["error"]
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the refresh success lock, using substring checks
+    # so later additions to the list do not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+    # Postcondition: the weak password failed before any user
+    # row was created, so the email has no user in the test DB.
+    assert await User.find_one(User.email == "takennodigit@example.com") is None
