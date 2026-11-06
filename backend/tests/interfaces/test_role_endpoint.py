@@ -2876,3 +2876,104 @@ async def test_create_role_numeric_body_returns_422_with_security_headers(client
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+async def test_create_role_boolean_body_returns_422_with_security_headers(client: AsyncClient):
+    """
+        The role-create POST with a JSON boolean body:
+    """
+    # The fifth branch of the role body-shape sweep, verified
+    # fresh this run, not assumed: function-name grep count 0 for
+    # create_role_boolean_body before appending. The account
+    # body-shape sweeps are complete (register,
+    # password-reset-request, password-reset-confirmation,
+    # activate, change-email-request, change-email-confirmation,
+    # resend-activation-email, login JSON-body - iterations
+    # 2547-2555) and the tenant sweep is complete (missing body,
+    # non-object, string, numeric, boolean, null, malformed JSON
+    # plus the per-field sweep - iterations 2556-2577), and the
+    # role sweep locked missing body (2578), non-object body
+    # (2579), string body (2580) and numeric body (2581), so the
+    # boolean body is next here with POST /roles/. The endpoint
+    # takes a required `data: CreateRoleDto` body parameter
+    # (role_endpoint.py:178-189) whose name field is required
+    # (role_dto.py:27-30; description and tenant_id are
+    # optional), so a JSON boolean body cannot coerce to the DTO
+    # and fails FastAPI request validation before the handler
+    # body runs: RoleService.create_role never runs, so no role
+    # record is created -- no duplicate-name check, no
+    # repository write. The DTO's mode="after"
+    # normalize_name_and_description validator only runs after
+    # valid field parsing, so it cannot mask the 422. This is
+    # distinct from the missing-body lock (no body at all), from
+    # the non-object lock (a JSON array body), from the
+    # string-body lock (a JSON string body) and from the
+    # numeric-body lock (a JSON number body): here a body is
+    # present and parses as JSON, but of the wrong scalar type,
+    # so the failure is a body-shape 422 whose detail loc is
+    # still ["body"], mirroring the tenant and account
+    # boolean-body 422 locks. The endpoint is permission-gated
+    # (ROLE_READ_AND_WRITE_ONLY), and FastAPI solves
+    # sub-dependencies before validating the endpoint's own
+    # body, so the mocked caller's role must be seeded first --
+    # otherwise the permission gate's RoleNotFoundException 404
+    # would mask the 422, exactly as in the tenant boolean-body
+    # lock. The role is seeded with the mocked user's exact
+    # role_id (68c302ef6bf7a039b7e9b386, conftest.py) and the
+    # route's ROLE_READ_AND_WRITE_ONLY permission. The default
+    # conftest mock is a host caller (tenant_id None), so the
+    # handler's _assert_create_scope check cannot fire.
+    # Deliberately no exact error-type assertion, mirroring the
+    # tenant and account boolean-body 422 locks. Deliberately
+    # no Cache-Control/Pragma assertion: a 422 is FastAPI
+    # request validation, not an ApiBaseException, so the
+    # central handler's no-store headers do not apply to it,
+    # mirroring the tenant and account boolean-body 422 locks.
+    # The security headers ARE locked: the pure-ASGI middleware
+    # stamps every HTTP response, including validation errors,
+    # with no path exclusions.
+    from beanie import PydanticObjectId
+
+    from api.domain.entities.role import Role
+    from api.domain.enum.permission import Permission
+
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b386"),
+        name="Host administrator",
+        description="Role carrying ROLE_READ_AND_WRITE_ONLY for the mocked caller",
+        permissions=[Permission.ROLE_READ_AND_WRITE_ONLY],
+    ).insert()
+    response = await client.post(
+        "/roles/",
+        json=True,
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert any(
+        "body" in [str(part) for part in err.get("loc", [])]
+        for err in detail
+    )
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the other role locks in this file, using
+    # substring checks so later additions to the list do not
+    # break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
