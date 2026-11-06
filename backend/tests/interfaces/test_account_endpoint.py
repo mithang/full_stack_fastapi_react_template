@@ -60156,3 +60156,126 @@ async def test_account_password_reset_confirmation_weak_new_password_no_digit_re
     assert stored is not None
     assert verify_password("OldPassword123!", stored.password) is True
     assert verify_password("Password!", stored.password) is False
+
+
+async def test_account_password_reset_confirmation_weak_new_password_no_lowercase_returns_406_with_security_headers(client: AsyncClient):
+    """
+        The account password reset confirmation POST for a user id
+        WITH a seeded reset record and a VALID token, but a WEAK
+        new password missing the lowercase class: minted with the
+        seeded record's secret, the query user id, the CORRECT
+        type, and a future exp.
+    """
+    # The no-lowercase weak-password branch, verified fresh this
+    # run, not assumed: function-name grep count 0 for
+    # test_account_password_reset_confirmation_weak_new_password_no_lowercase,
+    # and the only existing weak-new_password locks post "weak"
+    # (too short, missing every class), "Password1" (no special,
+    # 10:09) and "Password!" (no digit, 10:14). "PASSWORD1!" is 10
+    # characters with upper, digit and special but NO lowercase
+    # letter, so it isolates the lowercase lookahead of
+    # PASSWORD_REGEX. The handler takes only the AuthService
+    # dependency (account_endpoint.py password_reset_confirm), so
+    # no permission gate or CurrentUser lookup can interfere, and
+    # the request DTO carries new_password as a plain str with no
+    # policy validator, so "PASSWORD1!" passes request validation
+    # and reaches the service. The deterministic ordering is the
+    # key: change_password (auth_service.py) first retrieves the
+    # seeded reset record, then verifies the token (correct
+    # secret, type, user id, future exp, so verification
+    # succeeds), then calls update_user_password, which finds the
+    # seeded user row and only then calls validate_password
+    # (user_service.py) -- and "PASSWORD1!" fails PASSWORD_REGEX
+    # (needs 8+ chars, upper, lower, digit, special), raising
+    # InvalidOperationException with the exact policy message.
+    # That raise propagates BEFORE any password save, record
+    # deletion, or notification email -- so no live mail server
+    # is needed, unlike the success branch, and the seeded user
+    # keeps its old password (re-read below proves the old
+    # password still verifies and "PASSWORD1!" does not). The
+    # exact message pins this branch: it is distinct from all
+    # five token-failure messages. No X-Tenant-ID header is sent,
+    # so the seeds and the service reads all use the host test
+    # DB, and the conftest fixture drops the test DB after the
+    # test, so the rows cannot leak into other tests. The central
+    # ApiBaseException handler maps InvalidOperationException to
+    # 406 with body {"error": ..., "code": 406} and
+    # Cache-Control: no-store plus Pragma: no-cache
+    # (api/__init__.py), and the pure-ASGI security-headers
+    # middleware stamps every HTTP response with no path
+    # exclusions.
+    import jwt
+    from datetime import datetime, timedelta, timezone
+
+    from beanie import PydanticObjectId
+
+    from api.common.enums.gender import Gender
+    from api.common.security import ALGORITHM, hash_it, verify_password
+    from api.domain.entities.user import User
+    from api.domain.entities.user_password_reset import UserPasswordReset
+
+    await User(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b385"),
+        first_name="Test",
+        last_name="User",
+        email="test@example.com",
+        gender=Gender.OTHER,
+        is_active=True,
+        password=hash_it("OldPassword123!"),
+    ).insert()
+    record_secret = "weak-no-lowercase-test-secret"
+    await UserPasswordReset(
+        user_id=PydanticObjectId("68c302ef6bf7a039b7e9b385"),
+        token_secret=record_secret,
+        reset_secret_updated_at=datetime.now(timezone.utc),
+        first_name="Test",
+    ).insert()
+    token = jwt.encode(
+        {
+            "user_id": "68c302ef6bf7a039b7e9b385",
+            "email": "test@example.com",
+            "type": "password_reset_confirmation",
+            "exp": datetime.now(timezone.utc) + timedelta(hours=1),
+            "iat": datetime.now(timezone.utc),
+        },
+        record_secret,
+        algorithm=ALGORITHM,
+    )
+    response = await client.post(
+        f"/account/password_reset_confirmation?token={token}&user_id=68c302ef6bf7a039b7e9b385",
+        json={"new_password": "PASSWORD1!"},
+    )
+    assert response.status_code == 406
+    assert response.json()["code"] == 406
+    assert response.json()["error"] == "Password must be at least 8 characters long, include uppercase and lowercase letters, a number, and a special character."
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the expired-token lock, using substring checks so
+    # later additions to the list do not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+    # The weak password was rejected before any write: the seeded
+    # user still has its old password.
+    stored = await User.find_one(User.email == "test@example.com")
+    assert stored is not None
+    assert verify_password("OldPassword123!", stored.password) is True
+    assert verify_password("PASSWORD1!", stored.password) is False
