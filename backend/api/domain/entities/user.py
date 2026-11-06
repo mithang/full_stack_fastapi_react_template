@@ -19,6 +19,11 @@ class User(ApiBaseModel):
     # cooldown window; None means no resend has been recorded (existing
     # documents predate the field and proceed as before).
     activation_email_sent_at: Optional[datetime] = None
+    # Last time a change-email confirmation email went out for this
+    # user. change_email_request() throttles repeats within the
+    # cooldown window; None means no request has been recorded
+    # (existing documents predate the field and proceed as before).
+    change_email_sent_at: Optional[datetime] = None
     image_url: Optional[str] = None
     password: str  # hashed password
     sso_provider_id: Optional[str] = None
@@ -35,6 +40,7 @@ class User(ApiBaseModel):
             "is_active": self.is_active,
             "activated_at": str(self.activated_at) if self.activated_at else None,
             "activation_email_sent_at": str(self.activation_email_sent_at) if self.activation_email_sent_at else None,
+            "change_email_sent_at": str(self.change_email_sent_at) if self.change_email_sent_at else None,
             "image_url": str(self.image_url) if self.image_url else None,
             "sso_provider_id": self.sso_provider_id if self.sso_provider_id else None
         }

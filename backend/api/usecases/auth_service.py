@@ -73,6 +73,18 @@ PASSWORD_RESET_REQUEST_COOLDOWN = timedelta(minutes=5)
 # throttling reveals nothing, and the already-issued link stays valid.
 ACTIVATION_EMAIL_REQUEST_COOLDOWN = timedelta(minutes=5)
 
+# Minimum gap between change-email confirmation emails for the same
+# user. The confirmation token is signed with the global JWT secret,
+# so unlike a password reset a re-request does not invalidate the link
+# the user already holds — but without a cooldown an unbounded caller
+# with the victim's session (the route is authenticated, so this needs
+# a logged-in session or a compromised one) could flood the user's
+# inbox with confirmation emails. Five minutes bounds that to
+# 12 emails/hour while a legitimate user re-requesting after a delayed
+# email waits only briefly; the endpoint always answers 202, so
+# throttling reveals nothing, and the already-issued link stays valid.
+CHANGE_EMAIL_REQUEST_COOLDOWN = timedelta(minutes=5)
+
 class AuthService:
     def __init__(self,
             user_service: UserService,
@@ -578,6 +590,27 @@ class AuthService:
             raise InvalidOperationException(f"The email '{new_email}' is already in use by another account.")
 
         user = await self.user_service.find_by_email(email=current_email)
+        # Throttle repeat requests for the same user before sending
+        # anything: without a cooldown an unbounded caller with the
+        # user's session could flood the user's inbox with
+        # confirmation emails. Return silently instead — the endpoint
+        # always answers 202, so this reveals nothing, and the
+        # already-issued link stays valid (tokens are signed with the
+        # global secret, not rotated per send). A re-request after the
+        # window sends as before. The timestamp is only stamped after
+        # a successful send, so a failed send does not start the
+        # cooldown. Stored datetimes come back from Mongo as naive
+        # UTC, so normalise before comparing with get_utc_now()'s
+        # aware value. Validation above (same email / already in use)
+        # still raises before this check, so those responses are
+        # unchanged.
+        if user.change_email_sent_at is not None:
+            sent_at = user.change_email_sent_at
+            if sent_at.tzinfo is None:
+                sent_at = sent_at.replace(tzinfo=timezone.utc)
+            if get_utc_now() - sent_at < CHANGE_EMAIL_REQUEST_COOLDOWN:
+                logger.info(f"Change-email request for user {user.id} throttled: a confirmation email was already sent within the cooldown window; the existing link stays valid.")
+                return
         activation_token = await self.jwt_token_service.encode_activation_token(payload=ActivationTokenPayloadDto(
             user_id=str(user.id),
             email=new_email,
@@ -599,6 +632,11 @@ class AuthService:
             type=MessageType.html,
             raise_on_failure=True
         )
+        # Direct .save() bypasses BaseRepository.update()'s central
+        # updated_at stamp (see activate_account), so stamp it here.
+        user.change_email_sent_at = get_utc_now()
+        user.updated_at = get_utc_now()
+        await user.save()
 
     async def change_email_confirmation(self, token: str, current_user_id: str) -> None:
         """
