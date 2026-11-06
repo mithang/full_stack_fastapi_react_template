@@ -12,7 +12,7 @@ from api.common.exceptions import ApiBaseException, ForbiddenException, InvalidO
 from api.common.utils import get_logger, is_tenancy_enabled, validate_password
 from api.core.container import get_auth_service, get_email_magic_link_service, get_passkey_service, get_role_service, get_sso_auth_provider
 from api.core.exceptions import PassKeyException, UserNotFoundException
-from api.domain.dtos.auth_dto import ChangeEmailConfirmRequestDto, ChangeEmailRequestDto, ChangeEmailResponseDto, MagicLinkResponseDto, MeResponseDto, PasswordResetConfirmRequestDto, PasswordResetRequestDto, PasswordResetResponseDto
+from api.domain.dtos.auth_dto import ChangeEmailConfirmRequestDto, ChangeEmailRequestDto, ChangeEmailResponseDto, ChangePasswordRequestDto, MagicLinkResponseDto, MeResponseDto, PasswordResetConfirmRequestDto, PasswordResetRequestDto, PasswordResetResponseDto
 from api.domain.dtos.login_dto import LoginRequestDto
 from api.domain.dtos.user_dto import CreateUserDto, UserActivationRequestDto, UserDto, UserResendActivationEmailRequestDto
 from api.domain.entities.sso_settings import SSOProvider
@@ -276,6 +276,23 @@ async def password_reset_confirm(
     )
 
     return PasswordResetResponseDto(message="Password has been reset successfully. A notification email has been sent!")
+
+@router.post("/change-password", response_model=PasswordResetResponseDto, status_code=status.HTTP_200_OK)
+async def change_password_authenticated(
+    request: ChangePasswordRequestDto,
+    current_user: CurrentUser,
+    auth_service: AuthService = Depends(get_auth_service)
+):
+    # Authenticated password change: unlike password_reset_confirmation
+    # this takes the current password, not a reset token, so a logged-in
+    # user can rotate a password they know without the email flow. The
+    # service verifies the current password before writing anything.
+    await auth_service.change_password_authenticated(
+        user_id=str(current_user.id),
+        current_password=request.current_password,
+        new_password=request.new_password
+    )
+    return PasswordResetResponseDto(message="Password has been changed successfully. A notification email has been sent!")
 
 @router.post("/resend_activation_email", status_code=status.HTTP_202_ACCEPTED)
 async def resend_activation_email(

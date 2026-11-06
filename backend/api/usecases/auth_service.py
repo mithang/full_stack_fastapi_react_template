@@ -497,6 +497,37 @@ class AuthService:
         )
 
 
+    async def change_password_authenticated(self, user_id: str, current_password: str, new_password: str) -> None:
+        """
+            Change the password of the currently authenticated user.
+            Raises UnauthorizedException if the current password is
+            incorrect. Previously a logged-in user had no way to change
+            their password without the email reset flow: the only
+            change_password path took a reset token, so a session
+            hijack aside, a user who simply wanted to rotate a
+            password they knew had to request an email link. The
+            current password is verified against the stored hash
+            before anything is written, so knowing the session alone
+            is not enough; the new password goes through
+            update_user_password, which enforces the same policy as
+            the reset path. The notification email uses the default
+            best-effort send (raise_on_failure=False), so an SMTP
+            failure cannot report a completed change as failed.
+        """
+        user = await self.user_service.get_user_by_id(user_id=user_id)
+        if not user.password or verify_password(current_password, user.password) is False:
+            raise UnauthorizedException("Current password is incorrect.")
+        await self.user_service.update_user_password(user_id=user_id, new_password=new_password)
+        logger.info(f"Password changed for user {user_id}.")
+        html = notify_password_change_template_html(user_first_name=user.first_name)
+        await self.email_service.send_email(
+            to=user.email,
+            subject="Your Password Has Been Changed",
+            body=html,
+            type=MessageType.html
+        )
+
+
     async def send_activation_email(self, payload: UserResendActivationEmailRequestDto, domain: str) -> None:
         """
             Resend the activation email to the user.

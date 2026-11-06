@@ -58250,3 +58250,147 @@ async def test_account_sso_login_new_user_persists_sso_provider_id_at_creation(c
     ]
     assert len(ours) == 1
     assert ours[0]["changes"]["new"]["sso_provider_id"] == "google"
+
+
+@pytest.mark.asyncio
+async def test_account_change_password_wrong_current_password_returns_401_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The account change-password POST with a wrong current password:
+    """
+    # A logged-in user previously had no way to change their password
+    # without the email reset flow, so this endpoint is new; the lock
+    # pins its guard. The handler takes CurrentUser, which conftest
+    # overrides to the mocked user admin@example.com (id
+    # 68c302ef6bf7a039b7e9b385), so the caller row is seeded with that
+    # exact id via Beanie's explicit-id document insert (the same
+    # mechanism as the change-email-confirmation success lock) and the
+    # service's get_user_by_id finds it; the wrong current password
+    # then fails verify_password before update_user_password or any
+    # email send runs, so no DB write and no SMTP call can affect the
+    # outcome. The central ApiBaseException handler maps
+    # UnauthorizedException to 401 with body {"error": ..., "code":
+    # 401} and Cache-Control: no-store plus Pragma: no-cache, and the
+    # pure-ASGI security-headers middleware stamps every HTTP
+    # response with no path exclusions. No X-Tenant-ID header is
+    # sent, so the seed and the service reads all use the host test
+    # DB. Deliberately NOT locked: the success path (separate test
+    # below) and a missing caller row, which answers 404 from
+    # get_user_by_id before the password check.
+    from beanie import PydanticObjectId
+
+    from api.common.enums.gender import Gender
+    from api.common.security import hash_it
+    from api.domain.entities.user import User
+
+    await User(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b385"),
+        first_name="Admin",
+        last_name="User",
+        email="admin@example.com",
+        gender=Gender.OTHER,
+        is_active=True,
+        password=hash_it("Test@123!"),
+    ).insert()
+    response = await client.post(
+        "/account/change-password",
+        json={"current_password": "WrongPass123!", "new_password": "NewPass456!"},
+    )
+    assert response.status_code == 401
+    assert response.json()["code"] == 401
+    assert response.json()["error"] == "Current password is incorrect."
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+
+
+@pytest.mark.asyncio
+async def test_account_change_password_success_returns_200_with_security_headers(client: AsyncClient):
+    """
+        The account change-password POST success path:
+    """
+    # The caller row is seeded with the conftest mocked user's exact
+    # id (68c302ef6bf7a039b7e9b385), so get_user_by_id finds it and
+    # the correct current password passes verify_password; the
+    # service then updates the stored hash via update_user_password
+    # (which enforces the password policy on the new password) and
+    # saves it BEFORE the notification email, so a 200 here already
+    # proves the save completed, and the re-read below proves the
+    # old password no longer verifies while the new one does. The
+    # notification send uses the default raise_on_failure=False,
+    # whose handler swallows ApiError, ConnectionErrors, and any
+    # other exception (smtp_email.py) — so an unconfigured or
+    # unreachable SMTP server in the test environment cannot turn
+    # this success into an error. The endpoint returns
+    # PasswordResetResponseDto(message="Password has been changed
+    # successfully. A notification email has been sent!") with
+    # status 200 and sets no refresh cookie. No Cache-Control
+    # assertion here, deliberately: unlike the error paths (central
+    # HTTPException handler), this success path sets no cache
+    # headers, mirroring the change-email-confirmation success lock.
+    # No X-Tenant-ID header is sent, so the seed and the service
+    # reads all use the host test DB.
+    from beanie import PydanticObjectId
+
+    from api.common.enums.gender import Gender
+    from api.common.security import hash_it, verify_password
+    from api.domain.entities.user import User
+
+    await User(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b385"),
+        first_name="Admin",
+        last_name="User",
+        email="admin@example.com",
+        gender=Gender.OTHER,
+        is_active=True,
+        password=hash_it("Test@123!"),
+    ).insert()
+    response = await client.post(
+        "/account/change-password",
+        json={"current_password": "Test@123!", "new_password": "NewPass456!"},
+    )
+    assert response.status_code == 200
+    assert response.json()["message"] == "Password has been changed successfully. A notification email has been sent!"
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+
+    stored = await User.find_one(User.email == "admin@example.com")
+    assert stored is not None
+    assert verify_password("NewPass456!", stored.password) is True
+    assert verify_password("Test@123!", stored.password) is False

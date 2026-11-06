@@ -13,6 +13,10 @@ class PasswordResetRequestDto(BaseModel):
 class PasswordResetConfirmRequestDto(BaseModel):
     new_password: str
 
+class ChangePasswordRequestDto(BaseModel):
+    current_password: str
+    new_password: str
+
 class PasswordResetResponseDto(BaseModel):
     message: str
 
