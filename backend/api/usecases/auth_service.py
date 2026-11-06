@@ -136,45 +136,22 @@ def _is_password_change_locked_out(user: User, now) -> bool:
     return now - last < FAILED_LOGIN_LOCKOUT_WINDOW
 
 
-async def _clear_login_lockout(user: User, now) -> None:
-    # Clear the password-login failure record after a successful
-    # login through any other channel (magic link, passkey, SSO).
-    # login() already resets on a password success, but the other
-    # three login paths returned their token set without touching
-    # these counters, so a user who mistyped five times and then
-    # proved their identity through a magic link still could not
-    # use password login until the 15-minute window expired.
-    # Best-effort on purpose: the caller has already minted the
-    # token set by the time this runs, and a failed counter save
-    # must never turn a successful login into an error — the
-    # lockout expires on its own, so the worst case is a stale
-    # count for the rest of the window. A failure is logged so it
-    # is visible instead of silent.
-    if not user.failed_login_attempts:
-        return
-    try:
-        user.failed_login_attempts = 0
-        user.last_failed_login_at = None
-        user.updated_at = now
-        await user.save()
-    except Exception:
-        logger.warning(f"Failed to clear login lockout counters for user {user.id}; the lockout expires on its own.")
-
-
 async def _clear_password_failure_records(user: User, now) -> None:
-    # Clear BOTH password-guessing failure records after a
-    # successful token-based password reset: the password-login
-    # counters AND the authenticated change-password counters.
-    # change_password is the one success path that proved identity
-    # through the email token yet touched neither record, so a
-    # user who had failed five password logins (or five
-    # change-password attempts) and then reset via email still
-    # could not log in with the new password — or use
-    # /change-password — until the 15-minute window expired.
-    # Same best-effort contract as _clear_login_lockout: the
-    # password is already rotated by the time this runs, and a
-    # failed counter save must never turn a successful reset into
-    # an error — the lockouts expire on their own.
+    # Clear BOTH password-guessing failure records after any
+    # success path that proved the user's identity: a token-based
+    # password reset, or a login through any other channel (magic
+    # link, passkey, SSO). The login counters AND the authenticated
+    # change-password counters are cleared together, because the
+    # alternate login paths used to clear only the login counters:
+    # a user who had failed five change-password attempts and then
+    # proved their identity through a magic link still could not
+    # use /change-password until the 15-minute window expired.
+    # Same best-effort contract as before: the caller has already
+    # minted the token set (or rotated the password) by the time
+    # this runs, and a failed counter save must never turn a
+    # successful login or reset into an error — the lockouts
+    # expire on their own. A failure is logged so it is visible
+    # instead of silent.
     if not user.failed_login_attempts and not user.failed_password_change_attempts:
         return
     try:
@@ -259,7 +236,7 @@ class AuthService:
                 tenant_id=str(user.tenant_id) if user.tenant_id else None
             ))
             token_set = await self._get_token_set(user)
-            await _clear_login_lockout(user, get_utc_now())
+            await _clear_password_failure_records(user, get_utc_now())
             return token_set
         except Exception:
             # "except UserNotFoundException or Exception" was NOT a
@@ -293,7 +270,7 @@ class AuthService:
                 changes={"Info": f"User attempted to log in with passkey."}
             ))
             token_set = await self._get_token_set(user)
-            await _clear_login_lockout(user, get_utc_now())
+            await _clear_password_failure_records(user, get_utc_now())
             return token_set
         except Exception:
             # Same `or`-in-except idiom bug as login_with_magic_link:
@@ -394,7 +371,7 @@ class AuthService:
                 user.updated_at = get_utc_now()
                 await user.save()
             token_set = await self._get_token_set(user)
-            await _clear_login_lockout(user, get_utc_now())
+            await _clear_password_failure_records(user, get_utc_now())
             return token_set
         except UserNotFoundException:
             # The email here comes from the IdP's OpenID claims, not from

@@ -1980,6 +1980,93 @@ async def test_account_magic_link_login_clears_password_login_lockout(client: As
 
 
 @pytest.mark.asyncio
+async def test_account_magic_link_login_clears_password_change_lockout(client: AsyncClient):
+    """
+        The account magic-link validate GET for a user locked out
+        of /change-password: a successful login through the magic
+        link clears BOTH failure records, so the correct current
+        password works for a change right away instead of waiting
+        out the window.
+    """
+    # The three alternate login paths cleared only the login
+    # counters via _clear_login_lockout, so a user who had failed
+    # five change-password attempts and then proved their identity
+    # through a magic link still got the generic 401 from
+    # /change-password until the 15-minute window expired — even
+    # though the same login cleared the login lockout. The seed
+    # carries five recent change-password failures (a live
+    # change-password lockout) and zero login failures, isolating
+    # the pair the old helper never touched; the magic-link
+    # validate must return 200, and the change with the correct
+    # current password (using the access token the validate
+    # minted) must then return 200, rotate the password, and
+    # leave both counter pairs at 0/None. Seeding mirrors the
+    # magic-link-clears-login-lockout test above (Role row for
+    # _get_token_set, token hash_it(user_id + JWT_SECRET)); the
+    # login counters are left at their defaults on purpose, so
+    # the test fails if the old login-only helper is ever put
+    # back. No X-Tenant-ID header is sent, so the seeds and the
+    # service reads all use the host test DB.
+    from beanie import PydanticObjectId
+
+    from api.common.enums.gender import Gender
+    from api.common.security import JWT_SECRET, hash_it, verify_password
+    from api.common.utils import get_utc_now
+    from api.domain.entities.role import Role
+    from api.domain.entities.user import User
+    from api.domain.entities.user_magic_link import UserMagicLink
+    from api.domain.enum.permission import Permission
+
+    user_id = PydanticObjectId("68c302ef6bf7a039b7e9b392")
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b386"),
+        name="Admin",
+        description="Administrator role for the mocked caller",
+        permissions=[Permission.USER_READ_AND_WRITE_ONLY, Permission.FULL_ACCESS],
+    ).insert()
+    await User(
+        id=user_id,
+        first_name="Lockout",
+        last_name="MagicLinkChange",
+        email="lockout-magic-change@example.com",
+        gender=Gender.OTHER,
+        is_active=True,
+        password=hash_it("CorrectPass123!"),
+        role_id=PydanticObjectId("68c302ef6bf7a039b7e9b386"),
+        failed_password_change_attempts=5,
+        last_failed_password_change_at=get_utc_now(),
+    ).insert()
+    token = hash_it(str(user_id) + JWT_SECRET)
+    await UserMagicLink(user_id=user_id, token=token).insert()
+
+    response = await client.get(
+        "/account/email_magic_link_validate",
+        params={"token": token, "user_id": str(user_id)},
+    )
+    assert response.status_code == 200
+    assert "refresh_token" in response.headers.get("set-cookie", "")
+    access_token = response.json()["access_token"]
+    assert isinstance(access_token, str) and len(access_token) > 0
+
+    response = await client.post(
+        "/account/change-password",
+        json={"current_password": "CorrectPass123!", "new_password": "NewPass456!"},
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+    assert response.status_code == 200
+    assert response.json()["message"] == "Password has been changed successfully. A notification email has been sent!"
+
+    stored = await User.find_one(User.email == "lockout-magic-change@example.com")
+    assert stored is not None
+    assert verify_password("NewPass456!", stored.password) is True
+    assert verify_password("CorrectPass123!", stored.password) is False
+    assert stored.failed_login_attempts == 0
+    assert stored.last_failed_login_at is None
+    assert stored.failed_password_change_attempts == 0
+    assert stored.last_failed_password_change_at is None
+
+
+@pytest.mark.asyncio
 async def test_account_password_login_clears_password_change_lockout(client: AsyncClient):
     """
         The account login POST success path for a user locked out
