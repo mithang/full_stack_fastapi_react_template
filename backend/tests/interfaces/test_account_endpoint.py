@@ -60813,3 +60813,73 @@ async def test_account_register_taken_subdomain_weak_password_no_uppercase_retur
     # Postcondition: the weak password failed before any user
     # row was created, so the email has no user in the test DB.
     assert await User.find_one(User.email == "takenuppercase@example.com") is None
+
+
+@pytest.mark.asyncio
+async def test_account_activate_nonobject_body_returns_422_with_security_headers(client: AsyncClient):
+    """
+        The account activation POST with a non-object JSON body:
+    """
+    # The next activate validation branch after the missing-token
+    # 422 lock, verified fresh this run, not assumed: function-name
+    # grep count 0 for activate_nonobject before appending, and
+    # the existing activate locks all post an object body (a token
+    # string, or {} for the missing-token lock). The activate
+    # handler takes a required `req: UserActivationRequestDto`
+    # body parameter (account_endpoint.py), so a JSON array body
+    # cannot be coerced to the model and fails FastAPI request
+    # validation before the handler body runs: AuthService
+    # .activate_account never runs, so no JWT verification, user
+    # lookup, activation write, or email happens, and no token is
+    # minted and no refresh cookie is set. This is distinct from
+    # the missing-token lock (an object body with the field
+    # absent) and from the non-string-token lock (an object body
+    # with one mistyped field): here the whole body is the wrong
+    # JSON type, so the detail loc is ["body"] rather than a field
+    # name. The DTO's mode="after" normalize_token validator
+    # cannot mask it either, since it runs only after field
+    # validation passes. The endpoint's dependencies cannot mask
+    # the 422 either: get_auth_service only resolves a container
+    # object and the optional tenant_id query param is absent.
+    # Deliberately no exact error-type assertion, mirroring the
+    # register non-object-body 422 lock. Deliberately no
+    # Cache-Control/Pragma assertion: a 422 is FastAPI request
+    # validation, not an ApiBaseException, so the central handler's
+    # no-store headers do not apply to it, mirroring the register
+    # missing-body 422 lock. The security headers ARE locked: the
+    # pure-ASGI middleware stamps every HTTP response, including
+    # validation errors, with no path exclusions.
+    response = await client.post(
+        "/account/activate",
+        json=["activation-token"],
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert any(
+        "body" in [str(part) for part in err.get("loc", [])]
+        for err in detail
+    )
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the register non-object-body 422 lock, using
+    # substring checks so later additions to the list do not
+    # break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
