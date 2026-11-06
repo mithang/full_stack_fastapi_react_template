@@ -62106,3 +62106,78 @@ async def test_account_email_magic_link_login_null_body_returns_422_with_securit
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+async def test_account_email_magic_link_login_malformed_json_body_returns_422_with_security_headers(client: AsyncClient):
+    """
+        The account email magic link login POST with a malformed (non-JSON) body:
+    """
+    # The next email-magic-link-login validation branch, verified
+    # fresh this run, not assumed: function-name grep count 0 for
+    # email_magic_link_login_malformed before appending. The
+    # endpoint takes a bare `email: EmailStr = Body(...)` parameter
+    # (account_endpoint.py:485-488), so a body that is not valid
+    # JSON at all cannot even be parsed, and fails FastAPI request
+    # validation before the handler body runs: user_service
+    # .find_by_email never runs and create_magic_link is never
+    # called, so no magic-link record is written and no email is
+    # sent -- no live mail server is needed, unlike the 200
+    # success branch, which stays deliberately NOT locked. This
+    # completes the email-magic-link-login body-shape sweep
+    # (missing, array, string, numeric, boolean, null, malformed
+    # JSON each locked; string is the valid shape, NOT a 422
+    # candidate). This is distinct from the scalar-body locks
+    # (valid JSON of the wrong type): here the body is not JSON
+    # at all, so the failure is a JSON decode error whose detail
+    # loc is still ["body"], mirroring the register malformed-
+    # JSON lock and the resend-activation-email malformed-JSON
+    # lock. The body is sent with an explicit JSON content type
+    # so the failure is a parse failure, not a content-type
+    # rejection. This endpoint has no permission gate and no
+    # CurrentUser dependency, and its dependencies
+    # (get_email_magic_link_service, get_auth_service) merely
+    # resolve container objects, so nothing can mask the 422.
+    # Deliberately no exact error-type assertion (no non-object-
+    # body error-type precedent for this endpoint) and no
+    # Cache-Control/Pragma assertion: a 422 is FastAPI request
+    # validation, not an ApiBaseException, so the central
+    # handler's no-store headers do not apply to it. The
+    # security headers ARE locked: the pure-ASGI middleware
+    # stamps every HTTP response, including validation errors,
+    # with no path exclusions.
+    response = await client.post(
+        "/account/email_magic_link_login",
+        content="{not valid json",
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert isinstance(detail, list) and detail
+    assert any(
+        err.get("loc") == ["body"]
+        for err in detail
+    )
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the magic link login missing-body 422 lock,
+    # using substring checks so later additions to the list do
+    # not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
