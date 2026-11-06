@@ -160,6 +160,33 @@ async def _clear_login_lockout(user: User, now) -> None:
     except Exception:
         logger.warning(f"Failed to clear login lockout counters for user {user.id}; the lockout expires on its own.")
 
+
+async def _clear_password_failure_records(user: User, now) -> None:
+    # Clear BOTH password-guessing failure records after a
+    # successful token-based password reset: the password-login
+    # counters AND the authenticated change-password counters.
+    # change_password is the one success path that proved identity
+    # through the email token yet touched neither record, so a
+    # user who had failed five password logins (or five
+    # change-password attempts) and then reset via email still
+    # could not log in with the new password — or use
+    # /change-password — until the 15-minute window expired.
+    # Same best-effort contract as _clear_login_lockout: the
+    # password is already rotated by the time this runs, and a
+    # failed counter save must never turn a successful reset into
+    # an error — the lockouts expire on their own.
+    if not user.failed_login_attempts and not user.failed_password_change_attempts:
+        return
+    try:
+        user.failed_login_attempts = 0
+        user.last_failed_login_at = None
+        user.failed_password_change_attempts = 0
+        user.last_failed_password_change_at = None
+        user.updated_at = now
+        await user.save()
+    except Exception:
+        logger.warning(f"Failed to clear password failure records for user {user.id}; the lockouts expire on their own.")
+
 class AuthService:
     def __init__(self,
             user_service: UserService,
@@ -605,6 +632,18 @@ class AuthService:
         await self.user_service.update_user_password(user_id=user_id, new_password=new_password)
         await reset_data.delete()
         logger.info(f"Password reset successful for user {user_id}. Cleared reset data.")
+        # The user just proved identity through the email token and
+        # rotated the password, so both password-guessing failure
+        # records are cleared: without this, a user locked out of
+        # password login (or of /change-password) still could not
+        # log in with the new password until the 15-minute window
+        # expired. The re-read holds the freshly saved hash, so
+        # clearing the counters on it cannot clobber the new
+        # password. Best-effort (see
+        # _clear_password_failure_records): a failed counter save
+        # never turns a successful reset into an error.
+        updated_user = await self.user_service.get_user_by_id(user_id=user_id)
+        await _clear_password_failure_records(updated_user, get_utc_now())
         html = notify_password_change_template_html(user_first_name=reset_data.first_name)
         await self.email_service.send_email(
             to=payload.email,

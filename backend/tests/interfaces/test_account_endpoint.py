@@ -33206,6 +33206,94 @@ async def test_account_password_reset_confirmation_success_returns_200_with_secu
 
 
 @pytest.mark.asyncio
+async def test_account_password_reset_confirmation_clears_password_failure_records(client: AsyncClient):
+    """
+        The account password reset confirmation POST success path
+        for a user locked out of BOTH password-guessing channels:
+        five recent failed password logins and five recent failed
+        change-password attempts. The reset proves identity through
+        the email token and rotates the password, so both failure
+        records must be cleared — otherwise the user still could
+        not log in with the new password (or use /change-password)
+        until the 15-minute window expired.
+    """
+    # The follow-up to the magic-link-clears-lockout lock: the
+    # other three login channels clear the login failure record
+    # on success, but the token-based reset — the fourth way a
+    # user proves identity and rotates the password — cleared
+    # neither record. The seeded user carries five recent login
+    # failures and five recent change-password failures (both
+    # inside FAILED_LOGIN_LOCKOUT_WINDOW, so both channels are
+    # locked), plus a seeded reset record and a valid token, as
+    # in the success lock above. The endpoint must still return
+    # 200 with the reset message, the new password must verify
+    # (and the old one must not), the reset record must be
+    # consumed, and the re-read user must show both counters at
+    # 0 with both timestamps None. No X-Tenant-ID header is sent,
+    # so the seeds and the service reads all use the host test DB.
+    import jwt
+    from datetime import datetime, timedelta, timezone
+
+    from beanie import PydanticObjectId
+
+    from api.common.enums.gender import Gender
+    from api.common.security import ALGORITHM, hash_it, verify_password
+    from api.common.utils import get_utc_now
+    from api.domain.entities.user import User
+    from api.domain.entities.user_password_reset import UserPasswordReset
+
+    await User(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b385"),
+        first_name="Test",
+        last_name="User",
+        email="test@example.com",
+        gender=Gender.OTHER,
+        is_active=True,
+        password=hash_it("OldPassword123!"),
+        failed_login_attempts=5,
+        last_failed_login_at=get_utc_now(),
+        failed_password_change_attempts=5,
+        last_failed_password_change_at=get_utc_now(),
+    ).insert()
+    record_secret = "reset-clears-lockout-secret"
+    await UserPasswordReset(
+        user_id=PydanticObjectId("68c302ef6bf7a039b7e9b385"),
+        token_secret=record_secret,
+        reset_secret_updated_at=datetime.now(timezone.utc),
+        first_name="Test",
+    ).insert()
+    token = jwt.encode(
+        {
+            "user_id": "68c302ef6bf7a039b7e9b385",
+            "email": "test@example.com",
+            "type": "password_reset_confirmation",
+            "exp": datetime.now(timezone.utc) + timedelta(hours=1),
+            "iat": datetime.now(timezone.utc),
+        },
+        record_secret,
+        algorithm=ALGORITHM,
+    )
+    response = await client.post(
+        f"/account/password_reset_confirmation?token={token}&user_id=68c302ef6bf7a039b7e9b385",
+        json={"new_password": "NewStrong1!"},
+    )
+    assert response.status_code == 200
+    assert response.json()["message"] == "Password has been reset successfully. A notification email has been sent!"
+    updated_user = await User.get(PydanticObjectId("68c302ef6bf7a039b7e9b385"))
+    assert updated_user is not None
+    assert verify_password("NewStrong1!", updated_user.password)
+    assert not verify_password("OldPassword123!", updated_user.password)
+    assert updated_user.failed_login_attempts == 0
+    assert updated_user.last_failed_login_at is None
+    assert updated_user.failed_password_change_attempts == 0
+    assert updated_user.last_failed_password_change_at is None
+    remaining_record = await UserPasswordReset.find_one(
+        UserPasswordReset.user_id == PydanticObjectId("68c302ef6bf7a039b7e9b385")
+    )
+    assert remaining_record is None
+
+
+@pytest.mark.asyncio
 async def test_account_password_reset_confirmation_tab_newline_padded_token_returns_200_with_security_headers(client: AsyncClient):
     """
         The account password reset confirmation POST success path
