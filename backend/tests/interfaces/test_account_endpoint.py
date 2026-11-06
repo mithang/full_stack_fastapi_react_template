@@ -62537,3 +62537,72 @@ async def test_account_passkey_has_passkeys_malformed_json_body_returns_422_with
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+async def test_account_passkey_login_options_nonobject_body_returns_422_with_security_headers(client: AsyncClient):
+    """
+        The passkey login_options POST with a non-object JSON body:
+    """
+    # The next login_options validation branch, verified fresh
+    # this run, not assumed: function-name grep count 0 for
+    # login_options_nonobject before appending. The login_options
+    # field-level locks (invalid, non-string email; missing body)
+    # are complete, but no body-shape locks exist yet, so this
+    # starts that sweep. The endpoint takes a bare `email:
+    # EmailStr = Body(...)` parameter
+    # (account_endpoint.py:410-415), so a JSON array body cannot
+    # be coerced to EmailStr and fails FastAPI request validation
+    # before the handler body runs: user_service.find_by_email
+    # and passkey_service.auth_login_options never run, so no user
+    # or passkey record is consulted -- no live passkey data is
+    # needed, unlike the 200 branches, which stay deliberately
+    # NOT touched. This is distinct from the missing-body lock
+    # (no body at all) and from the non-string-email lock (an
+    # object body with a mistyped field): here the whole body is
+    # the wrong JSON type, so the detail loc is ["body"],
+    # mirroring the missing-body 422 lock for this same endpoint.
+    # This endpoint has no permission gate and no CurrentUser
+    # dependency, and its dependencies merely resolve container
+    # objects, so nothing can mask the 422.
+    # Deliberately no exact error-type assertion (no non-object-
+    # body error-type precedent for this endpoint) and no
+    # Cache-Control/Pragma assertion: a 422 is FastAPI request
+    # validation, not an ApiBaseException, so the central
+    # handler's no-store headers do not apply to it. The
+    # security headers ARE locked: the pure-ASGI middleware
+    # stamps every HTTP response, including validation errors,
+    # with no path exclusions.
+    response = await client.post(
+        "/account/passkey/login_options",
+        json=["user@example.com"],
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert isinstance(detail, list) and detail
+    assert any(
+        err.get("loc") == ["body"]
+        for err in detail
+    )
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the has_passkeys missing-body 422 lock,
+    # using substring checks so later additions to the list do
+    # not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
