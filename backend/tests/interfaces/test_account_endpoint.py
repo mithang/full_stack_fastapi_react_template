@@ -61186,3 +61186,89 @@ async def test_account_activate_null_body_returns_422_with_security_headers(clie
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+async def test_account_activate_malformed_json_body_returns_422_with_security_headers(client: AsyncClient):
+    """
+        The account activation POST with a malformed JSON body:
+    """
+    # The next activate body-shape branch after the scalar-null
+    # 422 lock, verified fresh this run, not assumed:
+    # function-name grep count 0 for
+    # activate_malformed_json_body before appending, and the
+    # existing activate locks all post either an object body
+    # (a token string, or {} for the missing-token lock), a
+    # JSON array (the non-object lock), a JSON string (the
+    # scalar-string lock), a JSON number (the scalar-numeric
+    # lock), a JSON boolean (the scalar-boolean lock), or a
+    # JSON null (the scalar-null lock). No activate test posts
+    # an unparseable body. The activate handler takes a
+    # required `req: UserActivationRequestDto` body parameter
+    # (account_endpoint.py:311-312), so a body that is not
+    # valid JSON fails FastAPI request validation before the
+    # handler body runs: AuthService.activate_account never
+    # runs, so no JWT verification, user lookup, activation
+    # write, or email happens, and no token is minted and no
+    # refresh cookie is set. The DTO's mode="after"
+    # normalize_token validator cannot mask it either, since
+    # it runs only after field validation passes, and JSON
+    # parsing fails before any field validation. The
+    # endpoint's dependencies cannot mask the 422 either:
+    # get_auth_service only resolves a container object and
+    # the optional tenant_id query param is absent. No custom
+    # RequestValidationError handler exists in backend/api,
+    # so FastAPI's default 422 applies, with a ["body"] loc
+    # and type "json_invalid". This mirrors the register
+    # malformed-JSON 422 lock
+    # (test_account_register_malformed_json_body_returns_422_
+    # with_security_headers), which posts the same
+    # "{not valid json" content with Content-Type
+    # application/json and asserts the same 422 shape, and
+    # the password_reset_request / password_reset_confirmation
+    # malformed-JSON locks in this file. Deliberately no exact
+    # error-type assertion, mirroring the register
+    # non-object-body 422 lock. Deliberately no
+    # Cache-Control/Pragma assertion: a 422 is FastAPI
+    # request validation, not an ApiBaseException, so the
+    # central handler's no-store headers do not apply to it,
+    # mirroring the register missing-body 422 lock. The
+    # security headers ARE locked: the pure-ASGI middleware
+    # stamps every HTTP response, including validation errors,
+    # with no path exclusions. With this lock the activate
+    # body-shape sweep is complete (array, string, numeric,
+    # boolean, null, malformed JSON).
+    response = await client.post(
+        "/account/activate",
+        content="{not valid json",
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert any(
+        "body" in [str(part) for part in err.get("loc", [])]
+        for err in detail
+    )
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the register non-object-body 422 lock, using
+    # substring checks so later additions to the list do not
+    # break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
