@@ -4797,3 +4797,117 @@ async def test_create_user_boolean_body_returns_422_with_security_headers(client
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+async def test_create_user_null_body_returns_422_with_security_headers(client: AsyncClient):
+    """
+        The user-create POST with an explicit JSON null body:
+    """
+    # The sixth branch of the user body-shape sweep, verified
+    # fresh this run, not assumed: function-name grep count 0 for
+    # create_user_null_body and grep count 0 for "null_body" in
+    # this file before appending. The account body-shape sweeps
+    # are complete (register, password-reset-request,
+    # password-reset-confirmation, activate, change-email-request,
+    # change-email-confirmation, resend-activation-email, login
+    # JSON-body - iterations 2547-2555), the tenant sweep is
+    # complete (missing body, non-object, string, numeric,
+    # boolean, null, malformed JSON plus the per-field sweep -
+    # iterations 2556-2577), and the role sweep is complete
+    # (missing body, non-object, string, numeric, boolean,
+    # null, malformed JSON plus the per-field sweep - iterations
+    # 2578-2599), and the user sweep locked missing body
+    # (2600), non-object body (2601), string body (2602),
+    # numeric body (2603) and boolean body (2604), so the null
+    # body is next here with POST /users/. The endpoint takes
+    # a required `data: CreateUserDto` body parameter
+    # (user_endpoint.py:115-128) whose first_name, last_name,
+    # email and gender fields are required (user_dto.py:8-43;
+    # password is required on CreateUserDto), so an explicit
+    # JSON null body cannot coerce to the DTO and fails FastAPI
+    # request validation before the handler body runs:
+    # UserService.create_user never runs, so no user record is
+    # created -- no duplicate-email check, no GUEST role lookup,
+    # no repository write. The DTO's mode="after"
+    # normalize_names validator only runs after valid field
+    # parsing, so it cannot mask the 422. This is distinct from
+    # the missing-body lock (no body at all), from the
+    # non-object lock (a JSON array body), from the string-body
+    # lock (a JSON string body), from the numeric-body lock (a
+    # JSON numeric body) and from the boolean-body lock (a JSON
+    # boolean body): here a body is present and parses as JSON,
+    # but is an explicit null, so the failure is a body-shape
+    # 422 whose detail loc is still ["body"], mirroring the
+    # tenant, account and role null-body 422 locks. The body is
+    # sent as the literal string "null" with a JSON content
+    # type rather than via json=None, so the null is
+    # unambiguous and does not depend on how the HTTP client
+    # encodes a None json argument, mirroring the tenant,
+    # account and role null-body locks. The endpoint is
+    # permission-gated (USER_READ_AND_WRITE_ONLY), and FastAPI
+    # solves sub-dependencies before validating the endpoint's
+    # own body, so the mocked caller's role must be seeded
+    # first -- otherwise the permission gate's
+    # RoleNotFoundException 404 would mask the 422, exactly as
+    # in the role null-body lock. The role is seeded with the
+    # mocked user's exact role_id
+    # (68c302ef6bf7a039b7e9b386, conftest.py) and the route's
+    # USER_READ_AND_WRITE_ONLY permission, mirroring the user
+    # missing-body lock, so the permission gate cannot mask
+    # the 422 with a 404; the default conftest mock is a host
+    # caller (tenant_id None), so _assert_create_scope cannot
+    # fire. Deliberately no exact error-type assertion,
+    # mirroring the tenant, account and role null-body 422
+    # locks. Deliberately no Cache-Control/Pragma assertion: a
+    # 422 is FastAPI request validation, not an
+    # ApiBaseException, so the central handler's no-store
+    # headers do not apply to it, mirroring the tenant,
+    # account and role null-body 422 locks. The security
+    # headers ARE locked: the pure-ASGI middleware stamps
+    # every HTTP response, including validation errors, with
+    # no path exclusions.
+    from beanie import PydanticObjectId
+
+    from api.domain.entities.role import Role
+    from api.domain.enum.permission import Permission
+
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b386"),
+        name="Host user creator",
+        description="Role carrying USER_READ_AND_WRITE_ONLY for the mocked caller",
+        permissions=[Permission.USER_READ_AND_WRITE_ONLY],
+    ).insert()
+    response = await client.post(
+        "/users/",
+        content="null",
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert any(
+        "body" in [str(part) for part in err.get("loc", [])]
+        for err in detail
+    )
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the other user locks in this file, using
+    # substring checks so later additions to the list do not
+    # break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
