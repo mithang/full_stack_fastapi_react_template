@@ -62,6 +62,17 @@ _DUMMY_PASSWORD_HASH = hash_it(secrets.token_hex(32))
 # email exists..." 200, so throttling reveals nothing about the account.
 PASSWORD_RESET_REQUEST_COOLDOWN = timedelta(minutes=5)
 
+# Minimum gap between activation-email resends for the same user. The
+# activation token is signed with the global JWT secret, so unlike a
+# password reset a resend does not invalidate the link the user already
+# holds — but without a cooldown an unbounded caller (the resend route
+# is admin-gated, so this needs an admin session or a compromised one)
+# could flood the victim's inbox. Five minutes bounds that to
+# 12 emails/hour while a legitimate admin re-sending after a delayed
+# email waits only briefly; the endpoint always answers 202, so
+# throttling reveals nothing, and the already-issued link stays valid.
+ACTIVATION_EMAIL_REQUEST_COOLDOWN = timedelta(minutes=5)
+
 class AuthService:
     def __init__(self,
             user_service: UserService,
@@ -483,6 +494,24 @@ class AuthService:
         user = await self.user_service.find_by_email(email=payload.email)
         if user.is_active:
             raise InvalidOperationException("User is already active.")
+        # Throttle repeat resends for the same user before sending
+        # anything: without a cooldown an unbounded caller could flood
+        # the victim's inbox with activation emails. Return silently
+        # instead — the endpoint always answers 202, so this reveals
+        # nothing, and the already-issued link stays valid (activation
+        # tokens are signed with the global secret, not rotated per
+        # send). A re-request after the window sends as before. The
+        # timestamp is only stamped after a successful send, so a
+        # failed send does not start the cooldown. Stored datetimes
+        # come back from Mongo as naive UTC, so normalise before
+        # comparing with get_utc_now()'s aware value.
+        if user.activation_email_sent_at is not None:
+            sent_at = user.activation_email_sent_at
+            if sent_at.tzinfo is None:
+                sent_at = sent_at.replace(tzinfo=timezone.utc)
+            if get_utc_now() - sent_at < ACTIVATION_EMAIL_REQUEST_COOLDOWN:
+                logger.info(f"Activation email resend for user {user.id} throttled: an activation email was already sent within the cooldown window; the existing link stays valid.")
+                return
         activation_token = await self.jwt_token_service.encode_activation_token(payload=ActivationTokenPayloadDto(
             user_id=str(payload.id),
             email=payload.email,
@@ -502,6 +531,11 @@ class AuthService:
             type=MessageType.html,
             raise_on_failure=True
         )
+        # Direct .save() bypasses BaseRepository.update()'s central
+        # updated_at stamp (see activate_account), so stamp it here.
+        user.activation_email_sent_at = get_utc_now()
+        user.updated_at = get_utc_now()
+        await user.save()
         logger.info(f"Activation email sent to {payload.email}")
 
 
