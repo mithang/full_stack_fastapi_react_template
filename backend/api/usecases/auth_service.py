@@ -85,6 +85,35 @@ ACTIVATION_EMAIL_REQUEST_COOLDOWN = timedelta(minutes=5)
 # throttling reveals nothing, and the already-issued link stays valid.
 CHANGE_EMAIL_REQUEST_COOLDOWN = timedelta(minutes=5)
 
+# Maximum consecutive failed password logins before the account is
+# temporarily locked out of password login, and how long the lockout
+# lasts. Five failures in fifteen minutes bounds an online guessing
+# attack to about 20 attempts/hour per account while a legitimate
+# user who mistypes a few times waits only briefly; the endpoint
+# always answers the same generic 401, so a lockout is
+# indistinguishable from a wrong password and reveals nothing about
+# the account. Failures older than the window do not accumulate
+# (see login), and a successful login resets the count.
+MAX_FAILED_LOGIN_ATTEMPTS = 5
+FAILED_LOGIN_LOCKOUT_WINDOW = timedelta(minutes=15)
+
+
+def _is_login_locked_out(user: User, now) -> bool:
+    # Pure lockout decision, kept separate from login() so the
+    # threshold/window logic can be reasoned about on its own: locked
+    # only once the failure count reaches the threshold AND the last
+    # failure is still inside the window. A None timestamp (a count
+    # with no recorded time, which cannot arise from login() but
+    # could from a hand-edited document) is treated as not locked.
+    if user.failed_login_attempts < MAX_FAILED_LOGIN_ATTEMPTS:
+        return False
+    last = user.last_failed_login_at
+    if last is None:
+        return False
+    if last.tzinfo is None:
+        last = last.replace(tzinfo=timezone.utc)
+    return now - last < FAILED_LOGIN_LOCKOUT_WINDOW
+
 class AuthService:
     def __init__(self,
             user_service: UserService,
@@ -221,8 +250,44 @@ class AuthService:
             # channel; the result is discarded and the 401 follows.
             verify_password(req.password, _DUMMY_PASSWORD_HASH)
             raise UnauthorizedException("Authentication failed. Please check your credentials.")
-        if verify_password(req.password, user.password) is False:
+        now = get_utc_now()
+        if _is_login_locked_out(user, now):
+            # Same generic 401 as a wrong password, with the same dummy
+            # verify so a locked account takes about as long as a wrong
+            # password attempt and the two stay indistinguishable. The
+            # failure is NOT recorded again: the count stays at the
+            # threshold and the window keeps running from the last real
+            # failure, so the lockout expires on its own instead of
+            # being extended by every probe.
+            verify_password(req.password, _DUMMY_PASSWORD_HASH)
             raise UnauthorizedException("Authentication failed. Please check your credentials.")
+        if verify_password(req.password, user.password) is False:
+            # Record the failure before raising, so the 401 the caller
+            # sees is unchanged. Failures older than the window do not
+            # accumulate toward a lockout, so a user who mistypes once
+            # a month never locks out. Stored datetimes come back from
+            # Mongo as naive UTC, so normalise before comparing with
+            # get_utc_now()'s aware value. Direct .save() bypasses
+            # BaseRepository.update()'s central updated_at stamp (see
+            # activate_account), so stamp it here.
+            last = user.last_failed_login_at
+            if last is not None and last.tzinfo is None:
+                last = last.replace(tzinfo=timezone.utc)
+            if last is None or now - last >= FAILED_LOGIN_LOCKOUT_WINDOW:
+                user.failed_login_attempts = 1
+            else:
+                user.failed_login_attempts = user.failed_login_attempts + 1
+            user.last_failed_login_at = now
+            user.updated_at = now
+            await user.save()
+            raise UnauthorizedException("Authentication failed. Please check your credentials.")
+        if user.failed_login_attempts:
+            # A successful login clears the failure record, so a
+            # legitimate user is never locked out by old mistakes.
+            user.failed_login_attempts = 0
+            user.last_failed_login_at = None
+            user.updated_at = now
+            await user.save()
 
         return await self._get_token_set(user)
 

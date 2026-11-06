@@ -1789,6 +1789,113 @@ async def test_account_login_wrong_password_returns_401_with_cache_and_security_
 
 
 @pytest.mark.asyncio
+async def test_account_login_five_wrong_passwords_lock_out_correct_password(client: AsyncClient):
+    """
+        The account login POST after five consecutive wrong passwords:
+        the account is temporarily locked out of password login, so
+        even the correct password still yields the same generic 401
+        until the window expires.
+    """
+    # The follow-up to the wrong-password 401 lock above: that lock
+    # covers one failure, but nothing bounded how many guesses an
+    # online attacker could make against a known email — login had
+    # no brute-force protection at all. AuthService.login now
+    # records consecutive failures and locks the account out after
+    # MAX_FAILED_LOGIN_ATTEMPTS (5) inside FAILED_LOGIN_LOCKOUT_WINDOW
+    # (15 minutes). Seeding is done directly through the User
+    # document (doc.insert(), the same call BaseRepository.create
+    # uses), as in the wrong-password lock above. No role row is
+    # needed: every attempt raises UnauthorizedException before
+    # _get_token_set runs, so no role lookup and no audit-log write
+    # ever happen. The sixth attempt uses the CORRECT password and
+    # must still 401 — that is the lockout, not a wrong password —
+    # and it must not increment the counter again, or every probe
+    # would extend the lockout forever. No X-Tenant-ID header is
+    # sent, so both the seed and the logins read the host test DB.
+    from api.common.enums.gender import Gender
+    from api.common.security import hash_it
+    from api.domain.entities.user import User
+
+    await User(
+        first_name="Lockout",
+        last_name="User",
+        email="lockout@example.com",
+        gender=Gender.OTHER,
+        is_active=True,
+        password=hash_it("CorrectPass123!"),
+    ).insert()
+    for _ in range(5):
+        response = await client.post(
+            "/account/login",
+            data={"username": "lockout@example.com", "password": "WrongPassword123!"},
+        )
+        assert response.status_code == 401
+        assert response.json()["code"] == 401
+        assert "Authentication failed. Please check your credentials." in response.json()["error"]
+    response = await client.post(
+        "/account/login",
+        data={"username": "lockout@example.com", "password": "CorrectPass123!"},
+    )
+    assert response.status_code == 401
+    assert response.json()["code"] == 401
+    assert "Authentication failed. Please check your credentials." in response.json()["error"]
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    # The lockout is indistinguishable from a wrong password: the
+    # same generic 401, the same error text, and no hint that the
+    # account is locked rather than the password wrong.
+    stored = await User.find_one(User.email == "lockout@example.com")
+    assert stored is not None
+    assert stored.failed_login_attempts == 5
+    assert stored.last_failed_login_at is not None
+
+
+@pytest.mark.asyncio
+async def test_account_login_stale_failures_do_not_lock_out(client: AsyncClient):
+    """
+        The account login POST for a user whose five recorded failures
+        are older than the lockout window: the stale count decays, so
+        one more wrong password counts as the first failure instead
+        of locking the account out.
+    """
+    # The counterpart to the lockout test above: without decay, a
+    # user who mistyped five times over months would lock out on
+    # the next mistake. The seeded row carries five failures from
+    # 16 minutes ago — just outside FAILED_LOGIN_LOCKOUT_WINDOW (15
+    # minutes) — so the next wrong password must record
+    # failed_login_attempts == 1 rather than 6, and must not lock
+    # the account. Seeding is direct through the User document, as
+    # in the lockout test; the attempt raises before _get_token_set,
+    # so no role row or audit-log write is needed. No X-Tenant-ID
+    # header is sent, so the seed and the login read the host DB.
+    from datetime import timedelta
+    from api.common.enums.gender import Gender
+    from api.common.security import hash_it
+    from api.common.utils import get_utc_now
+    from api.domain.entities.user import User
+
+    await User(
+        first_name="Stale",
+        last_name="Failures",
+        email="stalefailures@example.com",
+        gender=Gender.OTHER,
+        is_active=True,
+        password=hash_it("CorrectPass123!"),
+        failed_login_attempts=5,
+        last_failed_login_at=get_utc_now() - timedelta(minutes=16),
+    ).insert()
+    response = await client.post(
+        "/account/login",
+        data={"username": "stalefailures@example.com", "password": "WrongPassword123!"},
+    )
+    assert response.status_code == 401
+    assert response.json()["code"] == 401
+    assert "Authentication failed. Please check your credentials." in response.json()["error"]
+    stored = await User.find_one(User.email == "stalefailures@example.com")
+    assert stored is not None
+    assert stored.failed_login_attempts == 1
+
+
+@pytest.mark.asyncio
 async def test_account_change_email_confirmation_email_in_use_returns_400_with_cache_and_security_headers(client: AsyncClient):
     """
         The account change-email-confirmation PATCH when the new

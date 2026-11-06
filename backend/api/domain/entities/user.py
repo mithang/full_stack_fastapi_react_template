@@ -24,6 +24,15 @@ class User(ApiBaseModel):
     # cooldown window; None means no request has been recorded
     # (existing documents predate the field and proceed as before).
     change_email_sent_at: Optional[datetime] = None
+    # Consecutive failed password-login attempts and when the last
+    # one happened. AuthService.login() locks the account out of
+    # password login for a short window after too many consecutive
+    # failures; a successful login resets both. 0/None means no
+    # failures recorded (existing documents predate the fields and
+    # proceed as before). Internal security state, so deliberately
+    # NOT included in to_serializable_dict (like password).
+    failed_login_attempts: int = 0
+    last_failed_login_at: Optional[datetime] = None
     image_url: Optional[str] = None
     password: str  # hashed password
     sso_provider_id: Optional[str] = None
