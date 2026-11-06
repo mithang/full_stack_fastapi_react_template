@@ -63640,3 +63640,83 @@ async def test_account_change_password_null_body_returns_422_with_security_heade
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+async def test_account_change_password_malformed_json_body_returns_422_with_security_headers(client: AsyncClient):
+    """
+        The account change-password POST with a malformed (non-JSON) body:
+    """
+    # The next change-password validation branch, verified fresh
+    # this run, not assumed: function-name grep count 0 for
+    # change_password_malformed before appending. The
+    # change-password field-level locks (non-string current/new
+    # password, missing current/new password, empty/weak new
+    # password) are complete, and the body-shape sweep now
+    # covers a JSON array (nonobject, iteration 2519), a JSON
+    # string (2520), a JSON number (2521), a JSON boolean (2522)
+    # and a JSON null body (2523); a body that is not JSON at all
+    # is the last shape in that sweep. The endpoint takes a
+    # ChangePasswordRequestDto body (account_endpoint.py:280-285)
+    # with two required str fields and no model validator
+    # (domain/dtos/auth_dto.py:16-18), so a body that cannot be
+    # parsed as JSON fails FastAPI request validation before the
+    # handler body runs: change_password_authenticated never
+    # runs, so no user lookup, no current-password verify, no
+    # password update, no failure-record write and no
+    # notification email can occur, making this lock
+    # deterministic even though the success path needs a seeded
+    # caller row. This is distinct from the missing-field locks
+    # (an object body with a missing field) and from the
+    # scalar-body locks (valid JSON of the wrong type): here the
+    # body is not JSON at all, so the failure is a JSON decode
+    # error whose detail loc is still ["body"], mirroring the
+    # null-body 422 lock for this same endpoint. The body is sent
+    # with an explicit JSON content type so the failure is a
+    # parse failure, not a content-type rejection. The endpoint
+    # takes CurrentUser, which conftest overrides to the mocked
+    # user, and get_auth_service merely resolves a container
+    # object, so nothing can mask the 422.
+    # Deliberately no exact error-type assertion (no
+    # malformed-JSON error-type precedent for this endpoint)
+    # and no Cache-Control/Pragma assertion: a 422 is FastAPI
+    # request validation, not an ApiBaseException, so the
+    # central handler's no-store headers do not apply to it.
+    # The security headers ARE locked: the pure-ASGI middleware
+    # stamps every HTTP response, including validation errors,
+    # with no path exclusions.
+    response = await client.post(
+        "/account/change-password",
+        content="{not valid json",
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert isinstance(detail, list) and detail
+    assert any(
+        err.get("loc") == ["body"]
+        for err in detail
+    )
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the change-password wrong-current-password 401 lock,
+    # using substring checks so later additions to the list do not
+    # break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
