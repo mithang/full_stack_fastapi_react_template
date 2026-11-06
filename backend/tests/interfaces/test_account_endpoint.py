@@ -58793,3 +58793,65 @@ async def test_account_change_password_stale_failures_do_not_lock_out(client: As
     stored = await User.find_one(User.email == "admin@example.com")
     assert stored is not None
     assert stored.failed_password_change_attempts == 1
+
+
+@pytest.mark.asyncio
+async def test_account_change_password_success_clears_password_login_lockout(client: AsyncClient):
+    """
+        The account change-password POST success path for a user who
+        is locked out of password login: proving the current password
+        clears the login failure record too, so the new password
+        works for login right away.
+    """
+    # change_password_authenticated reset only its own
+    # change-password counters on success, so a user who had failed
+    # five password logins (locked out for 15 minutes) and then
+    # rotated the password from a still-valid session could not log
+    # in with the new password until the window expired — the
+    # lockout survived a proven-legitimate password change. The
+    # seed carries five recent login failures (a live lockout) and
+    # two recent change-password failures (below the threshold, so
+    # the endpoint itself is not locked out); a successful change
+    # with the correct current password must return 200, rotate the
+    # password, and clear BOTH counter pairs with both timestamps
+    # None. Seeding is direct through the User document with the
+    # conftest mocked user's exact id, as in the lockout tests
+    # above. No X-Tenant-ID header is sent, so the seed and the
+    # service reads all use the host test DB.
+    from datetime import timedelta
+
+    from beanie import PydanticObjectId
+
+    from api.common.enums.gender import Gender
+    from api.common.security import hash_it, verify_password
+    from api.common.utils import get_utc_now
+    from api.domain.entities.user import User
+
+    now = get_utc_now()
+    await User(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b385"),
+        first_name="Admin",
+        last_name="User",
+        email="admin@example.com",
+        gender=Gender.OTHER,
+        is_active=True,
+        password=hash_it("Test@123!"),
+        failed_login_attempts=5,
+        last_failed_login_at=now - timedelta(minutes=1),
+        failed_password_change_attempts=2,
+        last_failed_password_change_at=now - timedelta(minutes=1),
+    ).insert()
+    response = await client.post(
+        "/account/change-password",
+        json={"current_password": "Test@123!", "new_password": "NewPass456!"},
+    )
+    assert response.status_code == 200
+    assert response.json()["message"] == "Password has been changed successfully. A notification email has been sent!"
+    stored = await User.find_one(User.email == "admin@example.com")
+    assert stored is not None
+    assert verify_password("NewPass456!", stored.password) is True
+    assert verify_password("Test@123!", stored.password) is False
+    assert stored.failed_login_attempts == 0
+    assert stored.last_failed_login_at is None
+    assert stored.failed_password_change_attempts == 0
+    assert stored.last_failed_password_change_at is None

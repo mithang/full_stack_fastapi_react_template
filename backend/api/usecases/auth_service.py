@@ -706,13 +706,25 @@ class AuthService:
             user.updated_at = now
             await user.save()
             raise UnauthorizedException("Current password is incorrect.")
-        if user.failed_password_change_attempts:
+        if user.failed_password_change_attempts or user.failed_login_attempts:
             # A successful change clears the failure record, so a
             # legitimate user is never locked out by old mistakes.
-            # Saved here; update_user_password below re-reads the
-            # user and saves only the new hash, so the reset is kept.
+            # The password-login counters are cleared too: entering
+            # the correct current password proves the same identity
+            # a password login would, so a user who was locked out
+            # of login (five mistyped passwords) and then rotated
+            # the password from a still-valid session must be able
+            # to log in with the new password right away — otherwise
+            # the login lockout would survive a proven-legitimate
+            # password change for the rest of the window, and the
+            # user would be locked out of the account they just
+            # secured. Saved here; update_user_password below
+            # re-reads the user and saves only the new hash, so the
+            # reset is kept.
             user.failed_password_change_attempts = 0
             user.last_failed_password_change_at = None
+            user.failed_login_attempts = 0
+            user.last_failed_login_at = None
             user.updated_at = now
             await user.save()
         await self.user_service.update_user_password(user_id=user_id, new_password=new_password)
