@@ -84,19 +84,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         } catch (error) {
             console.error("Failed to refresh token:", error);
-            // Only a server-answered failure means the refresh cookie
-            // itself is bad. A failure with no numeric status is a
-            // network error — the request never reached the server —
-            // so the cookie may still be valid: keep the session and
-            // do not navigate to /login, where the effect below skips
-            // notProtectedRoutes and could never retry the cookie.
-            // isLoggedIn is already false (set above), so the dashboard
-            // shows Loading until the worker's next tick refreshes via
-            // the cookie and posts a fresh token — the same rule
-            // fetchUser follows for network failures.
-            const hasStatus = typeof (error as { status?: unknown } | null)?.status === "number";
-            if (!hasStatus) {
-                console.error("Failed to refresh token (network error, keeping session):", error);
+            // Only a server-answered AUTH failure means the refresh
+            // cookie itself is bad: 400 malformed, 401 invalid/expired,
+            // 403 missing cookie, 404 user deleted. A failure with no
+            // numeric status is a network error — the request never
+            // reached the server — and any other answered failure (5xx,
+            // ...) is a transient server error, not a bad cookie: in
+            // both cases keep the session and do not navigate to /login,
+            // where the effect below skips notProtectedRoutes and could
+            // never retry the cookie. isLoggedIn is already false (set
+            // above), so the dashboard shows Loading until the worker's
+            // next tick refreshes via the cookie and posts a fresh
+            // token — the same rule fetchUser follows for network
+            // failures. Treating a 500 like a bad cookie would turn a
+            // transient backend blip into a forced re-login.
+            const status = (error as { status?: unknown } | null)?.status;
+            const isAuthFailure = typeof status === "number" && [400, 401, 403, 404].includes(status);
+            if (!isAuthFailure) {
+                console.error("Failed to refresh token (transient error, keeping session):", error);
                 return;
             }
             // Drop the stale client session too, not just the route: this
