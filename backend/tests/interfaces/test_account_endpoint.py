@@ -1980,6 +1980,73 @@ async def test_account_magic_link_login_clears_password_login_lockout(client: As
 
 
 @pytest.mark.asyncio
+async def test_account_password_login_clears_password_change_lockout(client: AsyncClient):
+    """
+        The account login POST success path for a user locked out
+        of the authenticated change-password endpoint: a
+        successful password login clears both password-guessing
+        failure records, so /change-password works again
+        immediately instead of waiting out the window.
+    """
+    # The mirror of the change-password-clears-login-lockout
+    # fix: change_password_authenticated cleared both counter
+    # pairs on success, but login() cleared only its own login
+    # counters. The seed carries two recent failed password
+    # logins (below the threshold, so login itself is not
+    # locked) and five recent failed change-password attempts
+    # (at the threshold, so /change-password is locked). The
+    # correct password must return 200, and the re-read user
+    # must show both counters at 0 with both timestamps None.
+    # The Role row is needed because _get_token_set looks the
+    # caller's role up by id. No X-Tenant-ID header is sent, so
+    # the seeds and the service reads all use the host test DB.
+    from beanie import PydanticObjectId
+
+    from api.common.enums.gender import Gender
+    from api.common.security import hash_it
+    from api.common.utils import get_utc_now
+    from api.domain.entities.role import Role
+    from api.domain.entities.user import User
+    from api.domain.enum.permission import Permission
+
+    user_id = PydanticObjectId("68c302ef6bf7a039b7e9b3a3")
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b386"),
+        name="Admin",
+        description="Administrator role for the mocked caller",
+        permissions=[Permission.USER_READ_AND_WRITE_ONLY, Permission.FULL_ACCESS],
+    ).insert()
+    await User(
+        id=user_id,
+        first_name="Lockout",
+        last_name="LoginClearsChange",
+        email="lockout-login-clears-change@example.com",
+        gender=Gender.OTHER,
+        is_active=True,
+        password=hash_it("CorrectPass123!"),
+        role_id=PydanticObjectId("68c302ef6bf7a039b7e9b386"),
+        failed_login_attempts=2,
+        last_failed_login_at=get_utc_now(),
+        failed_password_change_attempts=5,
+        last_failed_password_change_at=get_utc_now(),
+    ).insert()
+
+    response = await client.post(
+        "/account/login",
+        data={"username": "lockout-login-clears-change@example.com", "password": "CorrectPass123!"},
+    )
+    assert response.status_code == 200
+    assert "refresh_token" in response.headers.get("set-cookie", "")
+
+    stored = await User.find_one(User.email == "lockout-login-clears-change@example.com")
+    assert stored is not None
+    assert stored.failed_login_attempts == 0
+    assert stored.last_failed_login_at is None
+    assert stored.failed_password_change_attempts == 0
+    assert stored.last_failed_password_change_at is None
+
+
+@pytest.mark.asyncio
 async def test_account_change_email_confirmation_email_in_use_returns_400_with_cache_and_security_headers(client: AsyncClient):
     """
         The account change-email-confirmation PATCH when the new

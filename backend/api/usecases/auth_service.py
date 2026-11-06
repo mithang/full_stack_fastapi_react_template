@@ -358,11 +358,20 @@ class AuthService:
             user.updated_at = now
             await user.save()
             raise UnauthorizedException("Authentication failed. Please check your credentials.")
-        if user.failed_login_attempts:
-            # A successful login clears the failure record, so a
-            # legitimate user is never locked out by old mistakes.
+        if user.failed_login_attempts or user.failed_password_change_attempts:
+            # A successful login clears BOTH password-guessing failure
+            # records, so a legitimate user is never locked out by old
+            # mistakes. Clearing only the login counters left the
+            # change-password lockout in place: a user who failed five
+            # change-password attempts and then proved their identity
+            # with the correct password still could not use
+            # /change-password until the 15-minute window expired.
+            # This is the mirror of the change-password success path,
+            # which already clears both pairs.
             user.failed_login_attempts = 0
             user.last_failed_login_at = None
+            user.failed_password_change_attempts = 0
+            user.last_failed_password_change_at = None
             user.updated_at = now
             await user.save()
 
