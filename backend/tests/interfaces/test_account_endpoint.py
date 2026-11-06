@@ -62821,3 +62821,79 @@ async def test_account_passkey_login_options_null_body_returns_422_with_security
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+async def test_account_passkey_login_options_malformed_json_body_returns_422_with_security_headers(client: AsyncClient):
+    """
+        The passkey login_options POST with a malformed (non-JSON) body:
+    """
+    # The next login_options validation branch, verified fresh
+    # this run, not assumed: function-name grep count 0 for
+    # login_options_malformed before appending. The null-body lock
+    # (login_options_null_body, previous run) is complete; the
+    # malformed-JSON body is the next and last branch in the same
+    # body-shape sweep. The endpoint takes a bare `email: EmailStr
+    # = Body(...)` parameter (account_endpoint.py:410-415), so a
+    # body that is not valid JSON at all cannot even be parsed,
+    # and fails FastAPI request validation before the handler body
+    # runs: user_service.find_by_email and
+    # passkey_service.auth_login_options never run, so no user
+    # or passkey record is consulted -- no live passkey data is
+    # needed, unlike the 200 branches, which stay deliberately
+    # NOT touched. This completes the login_options body-shape
+    # sweep (missing, array, numeric, boolean, null, malformed
+    # JSON each locked; string is the valid shape, NOT a 422
+    # candidate -- the invalid-email lock already covers a
+    # string body). This is distinct from the scalar-body locks
+    # (valid JSON of the wrong type): here the body is not JSON
+    # at all, so the failure is a JSON decode error whose detail
+    # loc is still ["body"], mirroring the null-body lock for
+    # this same endpoint and the malformed-JSON lock for the
+    # sibling bare-EmailStr endpoint has_passkeys. The body is
+    # sent with an explicit JSON content type so the failure is
+    # a parse failure, not a content-type rejection.
+    # This endpoint has no permission gate and no CurrentUser
+    # dependency, and its dependencies merely resolve container
+    # objects, so nothing can mask the 422. Deliberately no exact
+    # error-type assertion (no malformed-body error-type precedent
+    # for this endpoint) and no Cache-Control/Pragma assertion:
+    # a 422 is FastAPI request validation, not an ApiBaseException,
+    # so the central handler's no-store headers do not apply to
+    # it. The security headers ARE locked: the pure-ASGI
+    # middleware stamps every HTTP response, including validation
+    # errors, with no path exclusions.
+    response = await client.post(
+        "/account/passkey/login_options",
+        content="{not valid json",
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert isinstance(detail, list) and detail
+    assert any(
+        err.get("loc") == ["body"]
+        for err in detail
+    )
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the has_passkeys missing-body 422 lock,
+    # using substring checks so later additions to the list do
+    # not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
