@@ -57079,3 +57079,569 @@ async def test_create_user_disallowed_non_ascii_uppercase_s_acute_letter_passwor
     # Postcondition: the weak password failed before any user
     # row was created, so the email has no user in the test DB.
     assert await User.find_one(User.email == "test@example.com") is None
+
+
+async def test_create_user_disallowed_non_ascii_uppercase_s_circumflex_letter_password_returns_406_with_security_headers(client: AsyncClient):
+    """
+        The user-create POST with a password containing a disallowed non-ASCII letter:
+    """
+    # The next value branch of the user password per-field sweep
+    # after the disallowed-non-ascii-uppercase-s-acute-letter branch (2772, "Ś"),
+    # verified fresh this run, not assumed:
+    # function-name grep count 0 for
+    # create_user_disallowed_non_ascii_uppercase_s_circumflex_letter_password
+    # and JSON-value grep count 0 for
+    # "password": "Password1!Ŝ" in this file before appending.
+    # The Latin-1 letter sweep is now complete after
+    # "Þ" (2738), and the Latin Extended-A sweep has locked
+    # "ā", "ă" and "ą" (2706-2708); the sweep now turns to the
+    # uppercase Latin Extended-A letters, with "Ŝ" (uppercase
+    # S-circumflex, U+015C) as the thirty-fifth member, after "Ś" (2772).
+    # The ASCII punctuation sweep is now complete: all 25
+    # disallowed printable-ASCII punctuation members
+    # (" # ' ( ) + , - . / : ; < = > [ \ ] ^ _ ` { | } ~,
+    # i.e. string.punctuation minus the allowed specials
+    # @$!%*?&) were verified present in this file this run,
+    # each as a "Password1!<char>" 406 lock, and the regex
+    # rejects every one of them while accepting the
+    # "Password1!" control. The tenant sweep is complete
+    # (body-shape 2556-2562 + per-field 2563-2577), the
+    # register sweep is complete, the role sweep is complete
+    # (body-shape 2578-2584 + per-field 2585-2599), the user
+    # body-shape sweep is complete (missing body, non-object,
+    # string, numeric, boolean, null, malformed JSON -
+    # iterations 2600-2606), the user per-field first_name
+    # sweep is complete (missing, non-string, object, float,
+    # empty, whitespace-only - iterations 2607-2612), the
+    # last_name sweep is complete (missing, non-string, object,
+    # float, empty, whitespace-only - iterations 2613-2618),
+    # the email sweep is complete (missing, non-string, object,
+    # float, empty, whitespace-only, invalid-format -
+    # iterations 2619-2625) and the gender sweep is complete
+    # (missing, non-string, object, float, empty,
+    # whitespace-only, invalid-value - iterations 2626-2632),
+    # and the password sweep has locked missing (2633),
+    # non-string (2634), object (2635), float (2636), empty
+    # (2637), whitespace-only (2638), too-short (2639),
+    # no-special-character (2640), no-digit (2641),
+    # no-uppercase (2642), no-lowercase (2643),
+    # disallowed-character (2644, interior space),
+    # trailing-disallowed-character (2645, trailing space),
+    # leading-disallowed-character (2646, leading space),
+    # disallowed-special-character (2647, "#"),
+    # disallowed-paren-special-character (2648, "("),
+    # disallowed-close-paren-special-character (2649, ")"),
+    # disallowed-square-bracket-special-character (2650, "["),
+    # disallowed-close-square-bracket-special-character
+    # (2651, "]"),
+    # disallowed-curly-brace-special-character (2652, "{"),
+    # disallowed-close-curly-brace-special-character
+    # (2653, "}"),
+    # disallowed-caret-special-character (2654, "^"),
+    # disallowed-tilde-special-character (2655, "~"),
+    # disallowed-backtick-special-character (2656, "`"),
+    # disallowed-hyphen-special-character (2657, "-"),
+    # disallowed-underscore-special-character (2658, "_"),
+    # disallowed-equals-special-character (2659, "="),
+    # disallowed-plus-special-character (2660, "+"),
+    # disallowed-pipe-special-character (2661, "|"),
+    # disallowed-backslash-special-character (2662, "\\") and
+    # disallowed-slash-special-character (2663, "/") and
+    # disallowed-colon-special-character (2664, ":") and
+    # disallowed-semicolon-special-character (2665, ";") and
+    # disallowed-single-quote-special-character (2666, "'")
+    # disallowed-double-quote-special-character
+    # (2667, '"') and disallowed-less-than-special-character
+    # (2668, "<") and disallowed-greater-than-special-character
+    # (2669, ">") and disallowed-comma-special-character
+    # (2670, ",") and disallowed-dot-special-character
+    # (2671, ".") and disallowed-non-ascii-letter (2672, "é") and
+    # disallowed-non-ascii-u-umlaut-letter (2673, "ü") and
+    # disallowed-non-ascii-eszett-letter (2674, "ß") and
+    # disallowed-non-ascii-n-tilde-letter (2676, "ñ") and
+    # disallowed-non-ascii-c-cedilla-letter (2677, "ç") and
+    # disallowed-non-ascii-o-stroke-letter (2678, "ø") and
+    # disallowed-non-ascii-a-ring-letter (2679, "å") and
+    # disallowed-non-ascii-ae-ligature-letter (2680, "æ") and
+    # disallowed-non-ascii-oe-ligature-letter (2681, "œ") and
+    # disallowed-non-ascii-eth-letter (2682, "ð") and
+    # disallowed-non-ascii-thorn-letter (2683, "þ") and
+    # disallowed-non-ascii-y-diaeresis-letter (2684, "ÿ") and
+    # disallowed-non-ascii-a-grave-letter (2685, "à").
+    # disallowed-non-ascii-a-acute-letter (2686, "á").
+    # disallowed-non-ascii-a-circumflex-letter (2687, "â").
+    # disallowed-non-ascii-a-tilde-letter (2688, "ã").
+    # disallowed-non-ascii-a-diaeresis-letter (2689, "ä").
+    # disallowed-non-ascii-e-diaeresis-letter (2690, "ë").
+    # disallowed-non-ascii-i-diaeresis-letter (2691, "ï").
+    # disallowed-non-ascii-i-circumflex-letter (2692, "î").
+    # disallowed-non-ascii-o-circumflex-letter (2693, "ô").
+    # disallowed-non-ascii-u-circumflex-letter (2694, "û").
+    # disallowed-non-ascii-y-acute-letter (2695, "ý").
+    # disallowed-non-ascii-u-grave-letter (2696, "ù").
+    # disallowed-non-ascii-u-acute-letter (2697, "ú").
+    # disallowed-non-ascii-o-grave-letter (2698, "ò").
+    # disallowed-non-ascii-o-acute-letter (2699, "ó").
+    # disallowed-non-ascii-i-grave-letter (2700, "ì").
+    # disallowed-non-ascii-e-circumflex-letter (2701, "ê").
+    # disallowed-non-ascii-e-grave-letter (2702, "è").
+    # disallowed-non-ascii-i-acute-letter (2703, "í").
+    # disallowed-non-ascii-o-tilde-letter (2704, "õ").
+    # disallowed-non-ascii-o-diaeresis-letter (2705, "ö").
+    # disallowed-non-ascii-a-macron-letter (2706, "ā").
+    # disallowed-non-ascii-a-breve-letter (2707, "ă").
+    # disallowed-non-ascii-a-ogonek-letter (2708, "ą").
+    # disallowed-non-ascii-uppercase-a-grave-letter (2709, "À").
+    # disallowed-non-ascii-uppercase-a-acute-letter (2710, "Á").
+    # disallowed-non-ascii-uppercase-a-circumflex-letter (2711, "Â").
+    # disallowed-non-ascii-uppercase-a-tilde-letter (2712, "Ã").
+    # disallowed-non-ascii-uppercase-a-diaeresis-letter (2713, "Ä").
+    # disallowed-non-ascii-uppercase-a-ring-letter (2714, "Å").
+    # disallowed-non-ascii-uppercase-ae-ligature-letter (2715, "Æ").
+    # disallowed-non-ascii-uppercase-c-cedilla-letter (2716, "Ç").
+    # disallowed-non-ascii-uppercase-e-grave-letter (2717, "È").
+    # disallowed-non-ascii-uppercase-e-acute-letter (2718, "É").
+    # disallowed-non-ascii-uppercase-e-circumflex-letter (2719, "Ê").
+    # disallowed-non-ascii-uppercase-e-diaeresis-letter (2720, "Ë").
+    # disallowed-non-ascii-uppercase-i-grave-letter (2721, "Ì").
+    # disallowed-non-ascii-uppercase-i-acute-letter (2722, "Í").
+    # disallowed-non-ascii-uppercase-i-circumflex-letter (2723, "Î").
+    # disallowed-non-ascii-uppercase-i-diaeresis-letter (2724, "Ï").
+    # disallowed-non-ascii-uppercase-eth-letter (2725, "Ð").
+    # disallowed-non-ascii-uppercase-n-tilde-letter (2726, "Ñ").
+    # disallowed-non-ascii-uppercase-o-grave-letter (2727, "Ò").
+    # disallowed-non-ascii-uppercase-o-acute-letter (2728, "Ó").
+    # disallowed-non-ascii-uppercase-o-circumflex-letter (2729, "Ô").
+    # disallowed-non-ascii-uppercase-o-tilde-letter (2730, "Õ").
+    # disallowed-non-ascii-uppercase-o-diaeresis-letter (2731, "Ö").
+    # disallowed-non-ascii-uppercase-o-stroke-letter (2732, "Ø").
+    # disallowed-non-ascii-uppercase-u-grave-letter (2733, "Ù").
+    # disallowed-non-ascii-uppercase-u-acute-letter (2734, "Ú").
+    # disallowed-non-ascii-uppercase-u-circumflex-letter (2735, "Û").
+    # disallowed-non-ascii-uppercase-u-diaeresis-letter (2736, "Ü").
+    # disallowed-non-ascii-uppercase-y-acute-letter (2737, "Ý").
+    # disallowed-non-ascii-uppercase-thorn-letter (2738, "Þ").
+    # disallowed-non-ascii-uppercase-a-macron-letter (2739, "Ā").
+    # disallowed-non-ascii-uppercase-a-breve-letter (2740, "Ă").
+    # disallowed-non-ascii-uppercase-a-ogonek-letter (2741, "Ą").
+    # disallowed-non-ascii-uppercase-c-acute-letter (2742, "Ć").
+    # disallowed-non-ascii-uppercase-c-circumflex-letter (2743, "Ĉ").
+    # disallowed-non-ascii-uppercase-c-dot-letter (2744, "Ċ").
+    # disallowed-non-ascii-uppercase-c-caron-letter (2745, "Č").
+    # disallowed-non-ascii-uppercase-d-caron-letter (2746, "Ď").
+    # disallowed-non-ascii-uppercase-d-stroke-letter (2747, "Đ").
+    # disallowed-non-ascii-uppercase-e-macron-letter (2748, "Ē").
+    # disallowed-non-ascii-uppercase-e-breve-letter (2749, "Ĕ").
+    # disallowed-non-ascii-uppercase-e-dot-letter (2750, "Ė").
+    # disallowed-non-ascii-uppercase-e-ogonek-letter (2751, "Ę").
+    # disallowed-non-ascii-uppercase-e-caron-letter (2752, "Ě").
+    # disallowed-non-ascii-uppercase-g-circumflex-letter (2753, "Ĝ").
+    # disallowed-non-ascii-uppercase-g-breve-letter (2754, "Ğ").
+    # disallowed-non-ascii-uppercase-g-dot-letter (2755, "Ġ").
+    # disallowed-non-ascii-uppercase-g-cedilla-letter (2756, "Ģ").
+    # disallowed-non-ascii-uppercase-h-circumflex-letter (2757, "Ĥ").
+    # disallowed-non-ascii-uppercase-h-stroke-letter (2758, "Ħ").
+    # disallowed-non-ascii-uppercase-i-tilde-letter (2759, "Ĩ").
+    # disallowed-non-ascii-uppercase-i-macron-letter (2760, "Ī").
+    # disallowed-non-ascii-uppercase-i-breve-letter (2761, "Ĭ").
+    # disallowed-non-ascii-uppercase-n-acute-letter (2762, "Ń").
+    # disallowed-non-ascii-uppercase-n-cedilla-letter (2763, "Ņ").
+    # disallowed-non-ascii-uppercase-n-caron-letter (2764, "Ň").
+    # disallowed-non-ascii-uppercase-n-eng-letter (2765, "Ŋ").
+    # disallowed-non-ascii-uppercase-o-macron-letter (2766, "Ō").
+    # disallowed-non-ascii-uppercase-o-breve-letter (2767, "Ŏ").
+    # disallowed-non-ascii-uppercase-o-double-acute-letter (2768, "Ő").
+    # disallowed-non-ascii-uppercase-r-acute-letter (2769, "Ŕ").
+    # disallowed-non-ascii-uppercase-r-cedilla-letter (2770, "Ŗ").
+    # disallowed-non-ascii-uppercase-r-caron-letter (2771, "Ř").
+    # disallowed-non-ascii-uppercase-s-acute-letter (2772, "Ś").
+    # disallowed-non-ascii-uppercase-s-circumflex-letter (2773, "Ŝ").
+# (The trailing-newline anchor quirk was fixed in
+# iteration 2675: PASSWORD_REGEX now ends with \Z.)
+    # The endpoint takes a required
+    # `data: CreateUserDto` body parameter
+    # (user_endpoint.py:115-128) whose password is a required
+    # `str` on CreateUserDto (user_dto.py:44, no min_length
+    # constraint), alongside required first_name, last_name,
+    # email and gender. An 11-character password therefore
+    # passes FastAPI request validation: the DTO's mode="after"
+    # normalize_names validator only runs after valid field
+    # parsing (and only touches first_name/last_name), and the
+    # password is deliberately NOT trimmed (user_dto.py:30,
+    # credential semantics), so the value survives to the
+    # policy check intact.
+    # The handler body runs instead: after the permission gate
+    # and the GUEST role lookup, it calls
+    # UserService.create_user, which validates the password
+    # FIRST -- before the duplicate-email check and before any
+    # repository write (usecases/user_service.py:111-121,
+    # validate_password at :119). validate_password
+    # ("Password1!Ŝ") fails PASSWORD_REGEX (common/utils.py:49,
+    # at least 8 characters with upper/lowercase, a digit and
+    # a special character, drawn only from
+    # [A-Za-z\d@$!%*?&] -- "Password1!Ŝ" satisfies the length
+    # and all four lookaheads, the "!" counting for the special
+    # lookahead, but the "Ŝ" is outside the allowed character
+    # class, so the class rejects it; the same value without
+    # the "Ŝ" passes, verified against the regex this run) and
+    # raises InvalidOperationException, which the central
+    # ApiBaseException handler maps to 406 with body
+    # {"error": ..., "code": 406} plus no-store headers
+    # (api/__init__.py:84-135, InvalidOperationException ->
+    # HTTP_406_NOT_ACCEPTABLE), mirroring the register
+    # weak-password 406 lock. This is distinct from the
+    # missing-password lock (iteration 2633, field omitted -
+    # 422), the non-string lock (iteration 2634, JSON integer -
+    # 422), the object lock (iteration 2635, a dict - 422), the
+    # float lock (iteration 2636 - 422), the empty-password
+    # lock (iteration 2637, "" - 406), the
+    # whitespace-only-password lock (iteration 2638, eight
+    # spaces - 406), the too-short-password lock (iteration
+    # 2639, "Aa1!" - 406), the no-special-character lock
+    # (iteration 2640, "Password123" - 406), the no-digit lock
+    # (iteration 2641, "Password!" - 406), the no-uppercase
+    # lock (iteration 2642, "password1!" - 406), the
+    # no-lowercase lock (iteration 2643, "PASSWORD1!" - 406),
+    # the disallowed-character lock (iteration 2644,
+    # "Password 1!" - 406, interior space), the
+    # trailing-disallowed-character lock (iteration 2645,
+    # "Password1! " - 406, trailing space), the
+    # leading-disallowed-character lock (iteration 2646,
+    # " Password1!" - 406, leading space), the
+    # disallowed-special-character lock (iteration 2647,
+    # "Password1!#" - 406, "#"), the
+    # disallowed-paren-special-character lock (iteration 2648,
+    # "Password1!(" - 406, "("), the
+    # disallowed-close-paren-special-character lock (iteration
+    # 2649, "Password1!)" - 406, ")"), the
+    # disallowed-square-bracket-special-character lock
+    # (iteration 2650, "Password1![" - 406, "[") and the
+    # disallowed-close-square-bracket-special-character lock
+    # (iteration 2651, "Password1!]" - 406, "]") and the
+    # disallowed-curly-brace-special-character lock
+    # (iteration 2652, "Password1!{" - 406, "{") and the
+    # disallowed-close-curly-brace-special-character lock
+    # (iteration 2653, "Password1!}" - 406, "}") and the
+    # disallowed-caret-special-character lock (iteration 2654,
+    # "Password1!^" - 406, "^") and the
+    # disallowed-tilde-special-character lock (iteration 2655,
+    # "Password1!~" - 406, "~") and the
+    # disallowed-backtick-special-character lock (iteration
+    # 2656, "Password1!`" - 406, "`"), the
+    # disallowed-hyphen-special-character lock (iteration
+    # 2657, "Password1!-" - 406, "-"), the
+    # disallowed-underscore-special-character lock (iteration
+    # 2658, "Password1!_" - 406, "_"), the
+    # disallowed-equals-special-character lock (iteration
+    # 2659, "Password1!=" - 406, "="), the
+    # disallowed-plus-special-character lock (iteration 2660,
+    # "Password1!+" - 406, "+"), the
+    # disallowed-pipe-special-character lock (iteration 2661,
+    # "Password1!|" - 406, "|"), the
+    # disallowed-backslash-special-character lock (iteration
+    # 2662, "Password1!\\" - 406, "\\") and the
+    # disallowed-slash-special-character lock (iteration
+    # 2663, "Password1!/" - 406, "/") and the
+    # disallowed-colon-special-character lock (iteration
+    # 2664, "Password1!:" - 406, ":") and the
+    # disallowed-semicolon-special-character lock (iteration
+    # 2665, "Password1!;" - 406, ";") and the
+    # disallowed-single-quote-special-character lock
+    # (iteration 2666, "Password1!'" - 406, "'") and the
+    # disallowed-double-quote-special-character lock
+    # (iteration 2667, "Password1!\"" - 406, '"') and the
+    # disallowed-less-than-special-character lock
+    # (iteration 2668, "Password1!<" - 406, "<") and the
+    # disallowed-greater-than-special-character lock
+    # (iteration 2669, "Password1!>" - 406, ">") and the
+    # disallowed-comma-special-character lock (iteration
+    # 2670, "Password1!," - 406, ",") and the
+    # disallowed-dot-special-character lock (iteration
+    # 2671, "Password1!." - 406, ".") and the
+    # disallowed-non-ascii-letter lock (iteration 2672,
+    # "Password1!é" - 406, "é") and the
+    # disallowed-non-ascii-u-umlaut-letter lock (iteration 2673,
+    # "Password1!ü" - 406, "ü") and the
+    # disallowed-non-ascii-eszett-letter lock (iteration 2674,
+    # "Password1!ß" - 406, "ß") and the
+    # disallowed-non-ascii-n-tilde-letter lock (iteration 2676,
+    # "Password1!ñ" - 406, "ñ") and the
+    # disallowed-non-ascii-c-cedilla-letter lock (iteration 2677,
+    # "Password1!ç" - 406, "ç") and the
+    # disallowed-non-ascii-o-stroke-letter lock (iteration 2678,
+    # "Password1!ø" - 406, "ø") and the
+    # disallowed-non-ascii-a-ring-letter lock (iteration 2679,
+    # "Password1!å" - 406, "å") and the
+    # disallowed-non-ascii-oe-ligature-letter lock (iteration 2681,
+    # "Password1!œ" - 406, "œ") and the
+    # disallowed-non-ascii-eth-letter lock (iteration 2682,
+    # "Password1!ð" - 406, "ð") and the
+    # disallowed-non-ascii-thorn-letter lock (iteration 2683,
+    # "Password1!þ" - 406, "þ") and the
+    # disallowed-non-ascii-y-diaeresis-letter lock (iteration 2684,
+    # "Password1!ÿ" - 406, "ÿ") and the
+    # disallowed-non-ascii-a-grave-letter lock (iteration 2685,
+    # "Password1!à" - 406, "à") and the
+    # disallowed-non-ascii-a-acute-letter lock (iteration 2686,
+    # "Password1!á" - 406, "á") and the
+    # disallowed-non-ascii-a-circumflex-letter lock (iteration 2687,
+    # "Password1!â" - 406, "â") and the
+    # disallowed-non-ascii-a-tilde-letter lock (iteration 2688,
+    # "Password1!ã" - 406, "ã") and the
+    # disallowed-non-ascii-a-diaeresis-letter lock (iteration 2689,
+    # "Password1!ä" - 406, "ä") and the
+    # disallowed-non-ascii-e-diaeresis-letter lock (iteration 2690,
+    # "Password1!ë" - 406, "ë") and the
+    # disallowed-non-ascii-i-circumflex-letter lock (iteration 2692,
+    # "Password1!î" - 406, "î") and the
+    # disallowed-non-ascii-o-circumflex-letter lock (iteration 2693,
+    # "Password1!ô" - 406, "ô") and the
+    # disallowed-non-ascii-u-circumflex-letter lock (iteration 2694,
+    # "Password1!û" - 406, "û") and the
+    # disallowed-non-ascii-y-acute-letter lock (iteration 2695,
+    # "Password1!ý" - 406, "ý") and the
+    # disallowed-non-ascii-u-grave-letter lock (iteration 2696,
+    # "Password1!ù" - 406, "ù") and the
+    # disallowed-non-ascii-u-acute-letter lock (iteration 2697,
+    # "Password1!ú" - 406, "ú") and the
+    # disallowed-non-ascii-o-grave-letter lock (iteration 2698,
+    # "Password1!ò" - 406, "ò") and the
+    # disallowed-non-ascii-o-acute-letter lock (iteration 2699,
+    # "Password1!ó" - 406, "ó") and the
+    # disallowed-non-ascii-i-grave-letter lock (iteration 2700,
+    # "Password1!ì" - 406, "ì") and the
+    # disallowed-non-ascii-e-circumflex-letter lock (iteration 2701,
+    # "Password1!ê" - 406, "ê") and the
+    # disallowed-non-ascii-e-grave-letter lock (iteration 2702,
+    # "Password1!è" - 406, "è") and the
+    # disallowed-non-ascii-i-acute-letter lock (iteration 2703,
+    # "Password1!í" - 406, "í") and the
+    # disallowed-non-ascii-o-tilde-letter lock (iteration 2704,
+    # "Password1!õ" - 406, "õ") and the
+    # disallowed-non-ascii-o-diaeresis-letter lock (iteration 2705,
+    # "Password1!ö" - 406, "ö") and the
+    # disallowed-non-ascii-a-macron-letter lock (iteration 2706,
+    # "Password1!ā" - 406, "ā") and the
+    # disallowed-non-ascii-a-breve-letter lock (iteration 2707,
+    # "Password1!ă" - 406, "ă") and the
+    # disallowed-non-ascii-a-ogonek-letter lock (iteration 2708,
+    # "Password1!ą" - 406, "ą") and the
+    # disallowed-non-ascii-uppercase-a-grave-letter lock (iteration 2709,
+    # "Password1!À" - 406, "À") and the
+    # disallowed-non-ascii-uppercase-a-acute-letter lock (iteration 2710,
+    # "Password1!Á" - 406, "Á") and the
+    # disallowed-non-ascii-uppercase-a-circumflex-letter lock (iteration 2711,
+    # "Password1!Â" - 406, "Â") and the
+    # disallowed-non-ascii-uppercase-a-tilde-letter lock (iteration 2712,
+    # "Password1!Ã" - 406, "Ã") and the
+    # disallowed-non-ascii-uppercase-a-diaeresis-letter lock (iteration 2713,
+    # "Password1!Ä" - 406, "Ä") and the
+    # disallowed-non-ascii-uppercase-a-ring-letter lock (iteration 2714,
+    # "Password1!Å" - 406, "Å") and the
+    # disallowed-non-ascii-uppercase-ae-ligature-letter lock (iteration 2715,
+    # "Password1!Æ" - 406, "Æ") and the
+    # disallowed-non-ascii-uppercase-c-cedilla-letter lock (iteration 2716,
+    # "Password1!Ç" - 406, "Ç") and the
+    # disallowed-non-ascii-uppercase-e-grave-letter lock (iteration 2717,
+    # "Password1!È" - 406, "È") and the
+    # disallowed-non-ascii-uppercase-e-acute-letter lock (iteration 2718,
+    # "Password1!É" - 406, "É") and the
+    # disallowed-non-ascii-uppercase-e-circumflex-letter lock (iteration 2719,
+    # "Password1!Ê" - 406, "Ê") and the
+    # disallowed-non-ascii-uppercase-e-diaeresis-letter lock (iteration 2720,
+    # "Password1!Ë" - 406, "Ë") and the
+    # disallowed-non-ascii-uppercase-i-grave-letter lock (iteration 2721,
+    # "Password1!Ì" - 406, "Ì") and the
+    # disallowed-non-ascii-uppercase-i-acute-letter lock (iteration 2722,
+    # "Password1!Í" - 406, "Í") and the
+    # disallowed-non-ascii-uppercase-i-circumflex-letter lock (iteration 2723,
+    # "Password1!Î" - 406, "Î") and the
+    # disallowed-non-ascii-uppercase-i-diaeresis-letter lock (iteration 2724,
+    # "Password1!Ï" - 406, "Ï") and the
+    # disallowed-non-ascii-uppercase-eth-letter lock (iteration 2725,
+    # "Password1!Ð" - 406, "Ð") and the
+    # disallowed-non-ascii-uppercase-n-tilde-letter lock (iteration 2726,
+    # "Password1!Ñ" - 406, "Ñ") and the
+    # disallowed-non-ascii-uppercase-o-grave-letter lock (iteration 2727,
+    # "Password1!Ò" - 406, "Ò") and the
+    # disallowed-non-ascii-uppercase-o-acute-letter lock (iteration 2728,
+    # "Password1!Ó" - 406, "Ó") and the
+    # disallowed-non-ascii-uppercase-o-circumflex-letter lock (iteration 2729,
+    # "Password1!Ô" - 406, "Ô") and the
+    # disallowed-non-ascii-uppercase-o-tilde-letter lock (iteration 2730,
+    # "Password1!Õ" - 406, "Õ") and the
+    # disallowed-non-ascii-uppercase-o-diaeresis-letter lock (iteration 2731,
+    # "Password1!Ö" - 406, "Ö") and the
+    # disallowed-non-ascii-uppercase-o-stroke-letter lock (iteration 2732,
+    # "Password1!Ø" - 406, "Ø") and the
+    # disallowed-non-ascii-uppercase-u-grave-letter lock (iteration 2733,
+    # "Password1!Ù" - 406, "Ù") and the
+    # disallowed-non-ascii-uppercase-u-acute-letter lock (iteration 2734,
+    # "Password1!Ú" - 406, "Ú") and the
+    # disallowed-non-ascii-uppercase-u-circumflex-letter lock (iteration 2735,
+    # "Password1!Û" - 406, "Û") and the
+    # disallowed-non-ascii-uppercase-u-diaeresis-letter lock (iteration 2736,
+    # "Password1!Ü" - 406, "Ü") and the
+    # disallowed-non-ascii-uppercase-y-acute-letter lock (iteration 2737,
+    # "Password1!Ý" - 406, "Ý") and the
+    # disallowed-non-ascii-uppercase-thorn-letter lock (iteration 2738,
+    # "Password1!Þ" - 406, "Þ") and the
+    # disallowed-non-ascii-uppercase-a-macron-letter lock (iteration 2739,
+    # "Password1!Ā" - 406, "Ā") and the
+    # disallowed-non-ascii-uppercase-a-breve-letter lock (iteration 2740,
+    # "Password1!Ă" - 406, "Ă") and the
+    # disallowed-non-ascii-uppercase-a-ogonek-letter lock (iteration 2741,
+    # "Password1!Ą" - 406, "Ą") and the
+    # disallowed-non-ascii-uppercase-c-acute-letter lock (iteration 2742,
+    # "Password1!Ć" - 406, "Ć") and the
+    # disallowed-non-ascii-uppercase-c-circumflex-letter lock (iteration 2743,
+    # "Password1!Ĉ" - 406, "Ĉ") and the
+    # disallowed-non-ascii-uppercase-c-dot-letter lock (iteration 2744,
+    # "Password1!Ċ" - 406, "Ċ") and the
+    # disallowed-non-ascii-uppercase-c-caron-letter lock (iteration 2745,
+    # "Password1!Č" - 406, "Č") and the
+    # disallowed-non-ascii-uppercase-d-caron-letter lock (iteration 2746,
+    # "Password1!Ď" - 406, "Ď") and the
+    # disallowed-non-ascii-uppercase-d-stroke-letter lock (iteration 2747,
+    # "Password1!Đ" - 406, "Đ") and the
+    # disallowed-non-ascii-uppercase-e-macron-letter lock (iteration 2748,
+    # "Password1!Ē" - 406, "Ē") and the
+    # disallowed-non-ascii-uppercase-e-breve-letter lock (iteration 2749,
+    # "Password1!Ĕ" - 406, "Ĕ") and the
+    # disallowed-non-ascii-uppercase-e-dot-letter lock (iteration 2750,
+    # "Password1!Ė" - 406, "Ė") and the
+    # disallowed-non-ascii-uppercase-e-ogonek-letter lock (iteration 2751,
+    # "Password1!Ę" - 406, "Ę") and the
+    # disallowed-non-ascii-uppercase-e-caron-letter lock (iteration 2752,
+    # "Password1!Ě" - 406, "Ě") and the
+    # disallowed-non-ascii-uppercase-g-circumflex-letter lock (iteration 2753,
+    # "Password1!Ĝ" - 406, "Ĝ") and the
+    # disallowed-non-ascii-uppercase-g-breve-letter lock (iteration 2754,
+    # "Password1!Ğ" - 406, "Ğ") and the
+    # disallowed-non-ascii-uppercase-g-dot-letter lock (iteration 2755,
+    # "Password1!Ġ" - 406, "Ġ") and the
+    # disallowed-non-ascii-uppercase-g-cedilla-letter lock (iteration 2756,
+    # "Password1!Ģ" - 406, "Ģ") and the
+    # disallowed-non-ascii-uppercase-h-circumflex-letter lock (iteration 2757,
+    # "Password1!Ĥ" - 406, "Ĥ") and the
+    # disallowed-non-ascii-uppercase-h-stroke-letter lock (iteration 2758,
+    # "Password1!Ħ" - 406, "Ħ") and the
+    # disallowed-non-ascii-uppercase-i-tilde-letter lock (iteration 2759,
+    # "Password1!Ĩ" - 406, "Ĩ") and the
+    # disallowed-non-ascii-uppercase-i-macron-letter lock (iteration 2760,
+    # "Password1!Ī" - 406, "Ī") and the
+    # disallowed-non-ascii-uppercase-i-breve-letter lock (iteration 2761,
+    # "Password1!Ĭ" - 406, "Ĭ") and the
+    # disallowed-non-ascii-uppercase-n-acute-letter lock (iteration 2762,
+    # "Password1!Ń" - 406, "Ń") and the
+    # disallowed-non-ascii-uppercase-n-cedilla-letter lock (iteration 2763,
+    # "Password1!Ņ" - 406, "Ņ") and the
+    # disallowed-non-ascii-uppercase-n-caron-letter lock (iteration 2764,
+    # "Password1!Ň" - 406, "Ň") and the
+    # disallowed-non-ascii-uppercase-n-eng-letter lock (iteration 2765,
+    # "Password1!Ŋ" - 406, "Ŋ") and the
+    # disallowed-non-ascii-uppercase-o-macron-letter lock (iteration 2766,
+    # "Password1!Ō" - 406, "Ō") and the
+    # disallowed-non-ascii-uppercase-o-breve-letter lock (iteration 2767,
+    # "Password1!Ŏ" - 406, "Ŏ") and the
+    # disallowed-non-ascii-uppercase-o-double-acute-letter lock (iteration 2768,
+    # "Password1!Ő" - 406, "Ő") and the
+    # disallowed-non-ascii-uppercase-r-acute-letter lock (iteration 2769,
+    # "Password1!Ŕ" - 406, "Ŕ") and the
+    # disallowed-non-ascii-uppercase-r-cedilla-letter lock (iteration 2770,
+    # "Password1!Ŗ" - 406, "Ŗ") and the
+    # disallowed-non-ascii-uppercase-r-caron-letter lock (iteration 2771,
+    # "Password1!Ř" - 406, "Ř") and the
+    # disallowed-non-ascii-uppercase-s-acute-letter lock (iteration 2772,
+    # "Password1!Ś" - 406, "Ś"): here the disallowed
+    # character is the non-ASCII letter "Ŝ", the one-hundred-first
+    # non-ASCII member of the disallowed set, and the
+    # failure pins the special-character class boundary for
+    # it -- the value is not a whitespace/trim case and it is
+    # not a missing-lookahead case, since every lookahead is
+    # satisfied. The endpoint is permission-gated
+    # (USER_READ_AND_WRITE_ONLY), and FastAPI solves
+    # sub-dependencies before validating the endpoint's own
+    # body, so the mocked caller's role must be seeded first
+    # -- otherwise the permission gate's RoleNotFoundException
+    # 404 would mask the 406, exactly as in the role
+    # whitespace-only-name lock. The endpoint also resolves
+    # the GUEST role via role_service.find_by_name BEFORE
+    # calling create_user (user_endpoint.py:124-127), so a
+    # GUEST role must be seeded too -- otherwise that lookup's
+    # RoleNotFoundException 404 would mask the 406.
+    # The role is seeded with the mocked user's exact role_id
+    # (68c302ef6bf7a039b7e9b386, conftest.py) and the route's
+    # USER_READ_AND_WRITE_ONLY permission, mirroring the user
+    # missing-password lock; the GUEST role is seeded with a
+    # distinct id (68c302ef6bf7a039b7e9b389, unused in this
+    # file) and name "guest", mirroring the register
+    # weak-password 406 lock; the default conftest mock is a
+    # host caller (tenant_id None), so _assert_create_scope
+    # cannot fire. Deliberately no Cache-Control/Pragma
+    # omission here: unlike a 422, a 406 is an
+    # ApiBaseException, so the central handler's no-store
+    # headers DO apply and are locked, mirroring the register
+    # weak-password 406 lock. The security headers ARE locked:
+    # the pure-ASGI middleware stamps every HTTP response,
+    # including error responses, with no path exclusions.
+    from beanie import PydanticObjectId
+
+    from api.domain.entities.role import Role
+    from api.domain.entities.user import User
+    from api.domain.enum.permission import Permission
+
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b386"),
+        name="Host user creator",
+        description="Role carrying USER_READ_AND_WRITE_ONLY for the mocked caller",
+        permissions=[Permission.USER_READ_AND_WRITE_ONLY],
+    ).insert()
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b389"),
+        name="guest",
+        description="Guest role resolved by the user-create endpoint before create_user",
+        permissions=[],
+    ).insert()
+    response = await client.post(
+        "/users/",
+        json={
+            "first_name": "Test",
+            "last_name": "User",
+            "email": "test@example.com",
+            "gender": "other",
+            "password": "Password1!Ŝ",
+        },
+    )
+    assert response.status_code == 406
+    assert response.json()["code"] == 406
+    assert "Password must be at least 8 characters" in response.json()["error"]
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the other user locks in this file, using
+    # substring checks so later additions to the list do not
+    # break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+    # Postcondition: the weak password failed before any user
+    # row was created, so the email has no user in the test DB.
+    assert await User.find_one(User.email == "test@example.com") is None
