@@ -6809,3 +6809,127 @@ async def test_update_tenant_blank_subscription_id_returns_422_with_security_hea
     )
     assert stored is not None
     assert stored.permissions == [Permission.HOST_MANAGE_TENANTS]
+
+
+@pytest.mark.asyncio
+async def test_update_tenant_padded_subscription_id_returns_204_and_stores_trimmed_with_security_headers(client: AsyncClient):
+    """
+        The tenant-update PUT with a whitespace-padded subscription_id:
+    """
+    # The second branch of the tenant-update whitespace sweep,
+    # verified fresh this run, not assumed: function-name grep
+    # count 0 for update_tenant_padded_subscription_id before
+    # appending. The first branch locked the whitespace-only
+    # value (422, iteration 2907); this locks the padded value:
+    # normalize_subscription_id (tenant_dto.py:116-132) strips
+    # it and the trimmed id is stored, so a host admin pasting
+    # a subscription id with surrounding whitespace no longer
+    # persists a padded id that would mismatch every later
+    # Stripe lookup for that tenant. The endpoint returns 204
+    # No Content (tenant_endpoint.py:534-542, response_model
+    # None, status_code 204, returns None), so the assertion is
+    # on the status plus the stored row, not a response body.
+    # The service assigns data.subscription_id verbatim after
+    # validation and dumps with exclude_none=True
+    # (tenant_service.py:164-193), so the other two fields
+    # stay None in the dump and the seeded tenant's is_active,
+    # custom_domain, name, and subdomain are untouched. The
+    # padded value must be a valid 24-hex ObjectId string:
+    # Tenant.subscription_id is Optional[PydanticObjectId]
+    # (tenant.py:145), and the internal trial-plan caller
+    # stores a plan id (subscription_plan_service.py:28-44,
+    # returns str(result)), so a real stored id is hex; a
+    # Stripe-shaped "sub_..." value would write to Mongo but
+    # fail Beanie validation on the read-back, which would
+    # break the postcondition for the wrong reason. The trim
+    # behaviour is what this locks, not the id shape, so the
+    # hex id is the right probe. The endpoint is
+    # permission-gated (HOST_MANAGE_TENANTS), and FastAPI
+    # solves sub-dependencies before validating the
+    # endpoint's own body, so the mocked caller's role must
+    # be seeded first -- otherwise the permission gate's
+    # RoleNotFoundException 404 would mask the 204, exactly
+    # as in the tenant-update non-string locks. The role is
+    # seeded with the mocked user's exact role_id
+    # (68c302ef6bf7a039b7e9b386, conftest.py) and the route's
+    # HOST_MANAGE_TENANTS permission, mirroring those locks.
+    # The default conftest mock is a host caller (tenant_id
+    # None), so the handler's scope guard cannot fire. The
+    # target tenant is seeded directly, so this test makes
+    # exactly one API call and enqueues no Celery job:
+    # update_tenant only writes via the repository. No
+    # custom_domain is sent, so the duplicate-domain guard
+    # cannot fire. Deliberately no Cache-Control / Pragma
+    # assertion: the endpoint sets none on this 204, and a
+    # 204 carries no body to cache. The security headers ARE
+    # locked: the pure-ASGI middleware stamps every HTTP
+    # response, including 204s, with no path exclusions.
+    from beanie import PydanticObjectId
+
+    from api.domain.entities.role import Role
+    from api.domain.entities.tenant import Tenant
+    from api.domain.enum.permission import Permission
+
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b386"),
+        name="Host administrator",
+        description="Role carrying HOST_MANAGE_TENANTS for the mocked caller",
+        permissions=[Permission.HOST_MANAGE_TENANTS],
+    ).insert()
+
+    await Tenant(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b387"),
+        name="target",
+        subdomain="target.fsrapp.com",
+    ).insert()
+
+    response = await client.put(
+        "/tenants/68c302ef6bf7a039b7e9b387",
+        json={"subscription_id": "  68c302ef6bf7a039b7e9b389  "},
+    )
+    assert response.status_code == 204
+    assert response.content == b""
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the other tenant locks in this file, using
+    # substring checks so later additions to the list do not
+    # break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+    # Postconditions: the padded id is stored trimmed, and the
+    # fields not sent in the body are untouched -- had the
+    # validator not trimmed, the stored id would carry the
+    # spaces and mismatch later Stripe lookups; had the
+    # service written the None fields through, is_active
+    # would have been clobbered.
+    stored_tenant = await Tenant.find_one(
+        Tenant.id == PydanticObjectId("68c302ef6bf7a039b7e9b387")
+    )
+    assert stored_tenant is not None
+    assert str(stored_tenant.subscription_id) == "68c302ef6bf7a039b7e9b389"
+    assert stored_tenant.name == "target"
+    assert str(stored_tenant.subdomain) == "target.fsrapp.com"
+    assert stored_tenant.is_active is False
+    assert stored_tenant.custom_domain is None
+    stored = await Role.find_one(
+        Role.id == PydanticObjectId("68c302ef6bf7a039b7e9b386")
+    )
+    assert stored is not None
+    assert stored.permissions == [Permission.HOST_MANAGE_TENANTS]
