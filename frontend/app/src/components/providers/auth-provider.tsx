@@ -403,8 +403,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 // default 400: without this, a worker refresh with no
                 // cookie would post 403, be ignored, and leave a dead
                 // session standing on protected routes until the next
-                // interaction. The public-route guard below still applies.
-                if (event.data.code === 401 || event.data.code === 400 || event.data.code === 403) {
+                // interaction. 404 joins them too: a deleted user (or a
+                // deleted role) makes refresh raise a NotFoundException,
+                // which the handler maps to 404, and the provider's own
+                // refreshToken() catch already treats 404 as an auth
+                // failure ("404 user deleted") — but the worker path
+                // ignored it, so the stale session stood and the worker
+                // kept polling every 10 minutes forever. The public-route
+                // guard below still applies.
+                if (event.data.code === 401 || event.data.code === 400 || event.data.code === 403 || event.data.code === 404) {
                     setIsLoggedInState(false);
                     setUser(null);
                     setAccessToken("");
