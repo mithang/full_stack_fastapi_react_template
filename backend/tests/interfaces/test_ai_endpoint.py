@@ -1572,3 +1572,138 @@ async def test_put_ai_set_model_preference_outside_tenant_scope_returns_403_with
     assert stored.features == [Feature(name=FeatureEnum.CHAT, enabled=True)]
     preferences = await UserPreference.find_all().to_list()
     assert preferences == []
+
+
+@pytest.mark.asyncio
+async def test_post_ai_ask_nonstring_question_returns_422_with_security_headers(client: AsyncClient):
+    """
+        The AI ask POST with a non-string question:
+    """
+    # The FIRST lock of the AI ask per-field validation sweep,
+    # verified fresh this run, not assumed: function-name grep
+    # count 0 for post_ai_ask_nonstring_question before
+    # appending. No test in this file locks a 422 on /ai/ask
+    # yet -- the existing locks cover only the feature-disabled
+    # 403, the create/read scope-guard 403s, and the
+    # set-model-preference 403s. The endpoint takes a
+    # required `query: AIAskRequestDto` body parameter
+    # (ai_endpoint.py:191-199) whose fields are question
+    # (required str, max_length=2000), model_name
+    # (Optional[str]), and session_id (Optional[str])
+    # (ai_dto.py:36-40), so a JSON list question cannot
+    # coerce to the str field and fails FastAPI request
+    # validation before the handler runs: no OllamaChat is
+    # constructed, no LLM call is made, no streaming
+    # response is produced, and no chat history or session
+    # record is written. The AI router is feature-gated at
+    # the router level (Feature.CHAT), and FastAPI solves
+    # dependencies before validating the endpoint's own
+    # body, so the gate must pass first -- otherwise its
+    # FeatureNotEnabledException 403 would mask the 422.
+    # The default conftest mock is a plain UserDto with no
+    # role attribute and would 500 under the gate
+    # (check_feature_access reads currentUser.role), so
+    # the caller is overridden per-test with a MeResponseDto
+    # whose role carries HOST_MANAGE_TENANTS and whose
+    # tenant_id is None: the gate's host branch returns
+    # True immediately (feature_access_management.py),
+    # with no tenant lookup, mirroring the host-caller
+    # pattern of the feature-disabled lock in this file
+    # but with the permission that admits the host caller.
+    # The override is restored in finally. The other field
+    # sent is valid (model_name "llama3"); session_id is
+    # omitted (valid None). A list is used as the
+    # non-string payload because Pydantic v2 lax mode has
+    # no list-to-str coercion path, and a blank string
+    # would also 422 but would pin the blank-value class
+    # (the handler's "Question cannot be empty" path),
+    # not the non-string class. The DTO's
+    # normalize_identifiers model_validator (mode="after")
+    # runs only after field validation passes and only
+    # touches model_name/session_id when already str, so
+    # it cannot mask the 422. The endpoint's
+    # get_local_ai_service and get_tenant_id dependencies
+    # are also solved before body validation but cannot
+    # fail here (container resolve; request.state lookup
+    # returning None with no header). Deliberately no
+    # exact error-type assertion, mirroring the tenant
+    # non-string locks. Deliberately no Cache-Control/
+    # Pragma assertion: a 422 is FastAPI request
+    # validation, not an ApiBaseException, so the central
+    # handler's no-store headers do not apply to it,
+    # mirroring the notification 422 locks. The security
+    # headers ARE locked: the pure-ASGI middleware stamps
+    # every HTTP response, including validation errors,
+    # with no path exclusions.
+    from api.domain.entities.ai import AISessions
+    from api.domain.enum.permission import Permission
+
+    async def override_get_current_user_host_admin():
+        return MeResponseDto(
+            first_name="Admin",
+            last_name="User",
+            id="68c302ef6bf7a039b7e9b385",
+            email="admin@example.com",
+            gender=Gender.OTHER,
+            is_active=True,
+            role_id="68c302ef6bf7a039b7e9b386",
+            created_at="2024-10-01T00:00:00Z",
+            updated_at="2024-10-01T00:00:00Z",
+            role=RoleDto(
+                id="68c302ef6bf7a039b7e9b386",
+                name="Host AI administrator",
+                description="Role carrying HOST_MANAGE_TENANTS for the mocked caller",
+                created_at="2024-10-01T00:00:00Z",
+                updated_at="2024-10-01T00:00:00Z",
+                permissions=[Permission.HOST_MANAGE_TENANTS],
+            ),
+            subscription=None,
+        )
+
+    original_override = app.dependency_overrides.get(get_current_user)
+    app.dependency_overrides[get_current_user] = override_get_current_user_host_admin
+    try:
+        response = await client.post(
+            "/ai/ask",
+            json={"question": ["Hello"], "model_name": "llama3"},
+        )
+    finally:
+        if original_override is None:
+            app.dependency_overrides.pop(get_current_user, None)
+        else:
+            app.dependency_overrides[get_current_user] = original_override
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert any(
+        "question" in [str(part) for part in err.get("loc", [])]
+        for err in detail
+    )
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the /ai/ask feature-disabled lock, using
+    # substring checks so later additions to the list do not
+    # break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+    # Postcondition: validation fails before the handler runs,
+    # so no chat session was created -- the exchange is never
+    # saved.
+    sessions = await AISessions.find_all().to_list()
+    assert sessions == []
