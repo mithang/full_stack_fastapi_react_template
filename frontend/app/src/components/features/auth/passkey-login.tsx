@@ -104,7 +104,9 @@ export function PasskeyLogin() {
                 return;
             }
             await registerFlow(data.email);
-            toast.success("Passkey registration successful!");
+            // No second success toast here: registerFlow() already
+            // toasts "Passkey registered successfully!" (same duplicate
+            // class as the register page's double toast, fixed earlier).
             await loginFlow(data.email);
 
         } catch (error) {
