@@ -2568,3 +2568,163 @@ async def test_update_product_non_string_tax_code_returns_422_with_security_head
     )
     assert stored_tenant is not None
     assert stored_tenant.features == [Feature(name=FeatureEnum.STRIPE, enabled=True)]
+
+
+async def test_update_product_non_bool_active_returns_422_with_security_headers(client: AsyncClient):
+    """
+    The product-update PATCH with a non-bool `active`
+    (a JSON list): PATCH /products/{id} reuses
+    CreateProductDto, so `active` is a `bool` field
+    defaulting to True, and Pydantic v2 does not coerce
+    lists to bools, so request validation rejects the body
+    with 422 before the handler body runs.
+    """
+    # Function-name grep count 0 for
+    # update_product_non_bool_active before appending,
+    # verified fresh this run, not assumed. The product-update
+    # per-field sweep has name (2833), description (2834) and
+    # tax_code (2835) locked; this run locks active and
+    # completes the sweep -- all four CreateProductDto fields
+    # then have non-string/non-bool locks on PATCH.
+    # CreateProductDto fields (product_dto.py:16-20): name: str,
+    # description: str, tax_code: str | None, active: bool.
+    # The name, description and tax_code sent are valid
+    # strings, so they cannot mask the 422. The DTO's
+    # mode="after" normalize_name_and_description validator
+    # only runs after valid field parsing and only touches
+    # name/description, so it cannot mask the 422. The
+    # endpoint is feature-gated (STRIPE) and permission-gated
+    # (MANAGE_PRODUCTS_AND_PRICING) at the router level, and
+    # FastAPI solves sub-dependencies before validating the
+    # endpoint's own body, so the tenant must be seeded with
+    # the STRIPE feature enabled and the mocked caller's role
+    # must be seeded with the permission first -- otherwise
+    # the feature gate's 403 or the permission gate's
+    # RoleNotFoundException 404 would mask the 422, exactly as
+    # in the product-create locks and the update
+    # name/description/tax_code locks. The tenant id
+    # (68c302ef6bf7a039b7e9b388) is both the X-Tenant-ID header
+    # value and the caller's tenant_id, so the handler's
+    # _assert_create_scope check would also pass; the 422 comes
+    # from validation, before the handler runs at all. The :path
+    # product_id param is a plain string ("prod_test123", as in
+    # the feature-disabled PATCH lock) and cannot mask the
+    # error. FastAPI request validation fails before the handler
+    # body runs: ProductService.update_product never runs, so no
+    # Stripe call is made. Deliberately no exact error-type
+    # assertion, mirroring the product-create non-string-field
+    # 422 locks. Deliberately no Cache-Control/Pragma assertion:
+    # a 422 is FastAPI request validation, not an
+    # ApiBaseException, so the central handler's no-store
+    # headers do not apply to it, mirroring the product-create
+    # 422 locks. The security headers ARE locked: the pure-ASGI
+    # middleware stamps every HTTP response, including
+    # validation errors, with no path exclusions.
+    from beanie import PydanticObjectId
+
+    from api.domain.entities.role import Role
+    from api.domain.entities.tenant import Feature, Tenant
+    from api.domain.enum.feature import Feature as FeatureEnum
+    from api.domain.enum.permission import Permission
+
+    await Tenant(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b388"),
+        name="products-validation-tenant",
+        subdomain="products-validation.fsrapp.com",
+        features=[Feature(name=FeatureEnum.STRIPE, enabled=True)],
+    ).insert()
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b386"),
+        name="Tenant product manager",
+        description="Role carrying MANAGE_PRODUCTS_AND_PRICING for the mocked caller",
+        permissions=[Permission.MANAGE_PRODUCTS_AND_PRICING],
+    ).insert()
+
+    async def override_get_current_user_tenant_scoped():
+        return MeResponseDto(
+            first_name="Admin",
+            last_name="User",
+            id="68c302ef6bf7a039b7e9b385",
+            email="admin@example.com",
+            gender=Gender.OTHER,
+            is_active=True,
+            role_id="68c302ef6bf7a039b7e9b386",
+            tenant_id="68c302ef6bf7a039b7e9b388",
+            created_at="2024-10-01T00:00:00Z",
+            updated_at="2024-10-01T00:00:00Z",
+            role=RoleDto(
+                id="68c302ef6bf7a039b7e9b386",
+                name="Tenant product manager",
+                description="Role carrying MANAGE_PRODUCTS_AND_PRICING for the mocked caller",
+                created_at="2024-10-01T00:00:00Z",
+                updated_at="2024-10-01T00:00:00Z",
+                permissions=[Permission.MANAGE_PRODUCTS_AND_PRICING],
+            ),
+            subscription=None,
+        )
+
+    original_override = app.dependency_overrides.get(get_current_user)
+    app.dependency_overrides[get_current_user] = override_get_current_user_tenant_scoped
+    try:
+        response = await client.patch(
+            "/products/prod_test123",
+            headers={"X-Tenant-ID": "68c302ef6bf7a039b7e9b388"},
+            json={
+                "name": "A test product",
+                "description": "A test product description",
+                "tax_code": "txcd_123456789",
+                "active": ["not-a-bool"],
+            },
+        )
+    finally:
+        if original_override is None:
+            app.dependency_overrides.pop(get_current_user, None)
+        else:
+            app.dependency_overrides[get_current_user] = original_override
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert any(
+        "active" in [str(part) for part in err.get("loc", [])]
+        for err in detail
+    )
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the other product locks in this file, using
+    # substring checks so later additions to the list do not
+    # break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+    # Postconditions: validation fails before the handler
+    # runs, so no Stripe call is made and nothing is updated
+    # -- the seeded role is still there with
+    # MANAGE_PRODUCTS_AND_PRICING and the seeded tenant is
+    # still there with the STRIPE feature enabled. Products
+    # are Stripe objects, not DB rows, so the tenant row is
+    # the observable postcondition.
+    stored_role = await Role.find_one(
+        Role.id == PydanticObjectId("68c302ef6bf7a039b7e9b386")
+    )
+    assert stored_role is not None
+    assert stored_role.permissions == [Permission.MANAGE_PRODUCTS_AND_PRICING]
+    stored_tenant = await Tenant.find_one(
+        Tenant.id == PydanticObjectId("68c302ef6bf7a039b7e9b388")
+    )
+    assert stored_tenant is not None
+    assert stored_tenant.features == [Feature(name=FeatureEnum.STRIPE, enabled=True)]
