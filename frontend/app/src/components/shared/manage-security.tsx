@@ -23,6 +23,7 @@ interface PassKeyManagementProps {
 }
 function PassKeyManagement({ accessToken, shouldRefresh }: PassKeyManagementProps) {
     const [allPasskeys, setAllPasskeys] = useState<Array<RegisteredPasskeyCredentialsDto>>([]);
+    const [deletingCredentialId, setDeletingCredentialId] = useState<string | null>(null);
     async function fetchPasskeys() {
         try {
             const apiClient = getApiClient(accessToken);
@@ -44,6 +45,15 @@ function PassKeyManagement({ accessToken, shouldRefresh }: PassKeyManagementProp
     }
 
     async function onDeletePasskey(credentialId: string) {
+        // A rapid double-click fired two DELETEs for the same credential:
+        // the second raised "Credential ID not found" (the first had
+        // already removed it) and toasted "Failed to delete passkey"
+        // even though the delete succeeded. Guard the in-flight delete
+        // and disable the row's button while it runs.
+        if (deletingCredentialId === credentialId) {
+            return;
+        }
+        setDeletingCredentialId(credentialId);
         // Called floating from onClick, so a rejection here would otherwise
         // go unobserved and leave the row in place with no explanation.
         try {
@@ -61,6 +71,8 @@ function PassKeyManagement({ accessToken, shouldRefresh }: PassKeyManagementProp
             toast.error(hasStatus ? "Failed to delete passkey." : "Unable to reach the server. Check your connection and try again.", {
                 description: hasStatus ? extractErrorMessage(error) : undefined,
             });
+        } finally {
+            setDeletingCredentialId(null);
         }
     }
 
@@ -104,7 +116,7 @@ function PassKeyManagement({ accessToken, shouldRefresh }: PassKeyManagementProp
                                 <TableCell>{new Date(passkey.created_at).toLocaleString()}</TableCell>
                                 <TableCell>{passkey.last_used_at ? new Date(passkey.last_used_at).toLocaleString() : "Never"}</TableCell>
                                 <TableCell className="text-right">
-                                    <Button variant="destructive" size="icon" aria-label="Delete passkey" onClick={() => onDeletePasskey(passkey.credential_id)}>
+                                    <Button variant="destructive" size="icon" aria-label="Delete passkey" disabled={deletingCredentialId === passkey.credential_id} onClick={() => onDeletePasskey(passkey.credential_id)}>
                                         <Trash />
                                     </Button>
                                 </TableCell>
