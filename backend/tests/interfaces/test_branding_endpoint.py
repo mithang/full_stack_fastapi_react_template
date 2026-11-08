@@ -2176,3 +2176,140 @@ async def test_create_branding_non_string_logo_type_returns_422_with_security_he
     assert stored_role.permissions == [Permission.FULL_ACCESS]
     assert await Branding.find_one() is None
     await mongo_client.close()
+
+
+@pytest.mark.asyncio
+async def test_patch_branding_non_string_tenant_id_returns_422_with_security_headers(client: AsyncClient):
+    """
+    The branding PATCH with a non-string `tenant_id` (a JSON
+    list): `tenant_id` is an `Optional[str]` field of
+    UpdateBrandingDto, which the PATCH /brandings/{branding_id}
+    endpoint takes as its body, and Pydantic v2 does not coerce
+    lists to str, so request validation rejects the body with
+    422 before the handler body runs.
+    """
+    # Function-name grep count 0 for
+    # patch_branding_non_string_tenant_id before appending,
+    # verified fresh this run, not assumed. This is the FIRST
+    # lock of the branding PATCH per-field validation sweep:
+    # the POST sweep locked all six UpdateBrandingDto fields
+    # (identity, contact_info, theme_config, tenant_id,
+    # logo_url, logo_type) on POST /brandings/, but the PATCH
+    # /brandings/{branding_id} route is a separate handler
+    # taking the same DTO, so a regression that dropped body
+    # validation on the PATCH route would pass the POST locks
+    # while accepting a wrong-typed body here. This run locks
+    # tenant_id, so five remain for future runs. The other
+    # fields are omitted (all optional) -- nothing else can
+    # mask the 422. A list is used as the non-string payload
+    # because Pydantic v2 lax mode has no list-to-str coercion
+    # path, and a blank string would pin the blank-value
+    # class, not the non-string class. Note tenant_id is
+    # Optional[str] with default None, so None is a valid
+    # value -- only the non-string type is locked here.
+    # Verified from
+    # backend/api/domain/dtos/branding_dto.py that
+    # UpdateBrandingDto carries no model_validator of its
+    # own (the normalize_app_name validator lives on the
+    # nested IdentityDto and only runs when identity is
+    # present), so no validator can mask the 422; verified
+    # from backend/api/interfaces/api_controllers/
+    # branding_endpoint.py that the handler reads
+    # data.tenant_id only inside the handler body, after
+    # validation, and the branding lookup / id check also
+    # run inside the handler body, so neither can mask the
+    # 422 -- no Branding record needs seeding, and the
+    # branding_id path param is a plain string, so no path
+    # validation can mask it either. The PATCH carries the
+    # same router-level FULL_ACCESS permission dependency
+    # as the POST (a parameter dependency, solved before
+    # the endpoint's own body is validated), so the caller
+    # role must carry FULL_ACCESS -- otherwise the
+    # permission 404 would mask the 422, exactly as in the
+    # POST tenant_id lock. The Role row (id
+    # 68c302ef6bf7a039b7e9b386) is seeded for that
+    # dependency, mirroring the POST locks: the dependency
+    # looks the role up by the mocked caller's role_id
+    # (user_access_management.py get_role_detail), so the
+    # default host caller needs no override -- the host
+    # scope (no X-Tenant-ID header) is legitimate here
+    # because validation fails before the handler's
+    # tenant-scope logic ever runs. Deliberately no exact
+    # error-type assertion, mirroring the POST non-string
+    # tenant_id 422 lock. Deliberately no Cache-Control /
+    # Pragma assertion: a 422 is FastAPI request validation,
+    # not an ApiBaseException, so the central handler's
+    # no-store headers do not apply to it, mirroring the
+    # POST 422 locks. The security headers ARE locked: the
+    # pure-ASGI middleware stamps every HTTP response,
+    # including validation errors, with no path exclusions.
+    from beanie import PydanticObjectId, init_beanie
+    from pymongo import AsyncMongoClient
+
+    from api.domain.entities.branding import Branding
+    from api.domain.entities.role import Role
+    from api.domain.enum.permission import Permission
+
+    mongo_client = AsyncMongoClient("mongodb://localhost:27012/test_db")
+    await init_beanie(
+        mongo_client["api_test_db"], document_models=[Branding]
+    )
+
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b386"),
+        name="Branding administrator",
+        description="Role carrying FULL_ACCESS for the mocked caller",
+        permissions=[Permission.FULL_ACCESS],
+    ).insert()
+
+    response = await client.patch(
+        "/brandings/68c302ef6bf7a039b7e9b387",
+        json={
+            "tenant_id": ["68c302ef6bf7a039b7e9b387"],
+        },
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert any(
+        "tenant_id" in [str(part) for part in err.get("loc", [])]
+        for err in detail
+    )
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the branding POST 404 lock, using substring
+    # checks so later additions to the list do not break
+    # this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+    # Postconditions: validation fails before the handler
+    # runs, so no branding service call is made and no
+    # record is created -- the seeded role is still there
+    # with FULL_ACCESS and no branding record exists in
+    # the test DB, mirroring the branding POST locks (the
+    # init_beanie call above registers Branding, which is
+    # not in the conftest model set, so the row can be
+    # queried here).
+    stored_role = await Role.find_one(
+        Role.id == PydanticObjectId("68c302ef6bf7a039b7e9b386")
+    )
+    assert stored_role is not None
+    assert stored_role.permissions == [Permission.FULL_ACCESS]
+    assert await Branding.find_one() is None
+    await mongo_client.close()
