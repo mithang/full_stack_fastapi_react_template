@@ -1663,3 +1663,173 @@ async def test_create_sso_settings_non_string_provider_returns_422_with_security
     )
     assert stored_role is not None
     assert stored_role.permissions == [Permission.FULL_ACCESS]
+
+
+async def test_create_sso_settings_non_string_client_id_returns_422_with_security_headers(client: AsyncClient):
+    """
+    The SSO settings create POST with a non-string
+    `client_id` (a JSON list):
+    `client_id` is a required `str` field with
+    min_length=1 of CreateSSOSettingsDto, and Pydantic
+    v2 does not coerce lists to str, so request
+    validation rejects the body with 422 before the
+    handler body runs.
+    """
+    # Function-name grep count 0 for
+    # create_sso_settings_non_string_client_id
+    # before appending, verified fresh this run, not
+    # assumed. This is the THIRD lock of the SSO
+    # settings create per-field validation sweep:
+    # CreateSSOSettingsDto has seven fields (enabled,
+    # provider, client_id, client_secret, scopes,
+    # redirect_uris, tenant_id) and this run locks
+    # client_id; four remain for future runs. The other
+    # fields are sent valid alongside the bad value:
+    # enabled True, provider "google" (a valid
+    # SSOProvider member), client_secret None, scopes []
+    # and redirect_uris [] -- nothing else can mask
+    # the 422. A list is used as the non-string payload
+    # because a blank string would also 422 but would
+    # pin the blank-value class, not the non-string
+    # class, and Pydantic v2 lax mode has no
+    # list-to-str coercion path, exactly as the list
+    # payloads in the billing locks. The
+    # normalize_credentials model_validator runs only
+    # after field validation and only touches
+    # client_id when it is already a str, so it cannot
+    # mask the 422. The ssos router carries a
+    # FULL_ACCESS permission dependency at router level
+    # and no feature gate; FastAPI solves dependencies
+    # before validating the endpoint's own body, so the
+    # caller role must carry FULL_ACCESS -- otherwise
+    # the permission 403/404 would mask the 422,
+    # exactly as the MANAGE_BILLING requirement in the
+    # billing locks. The Role row (id
+    # 68c302ef6bf7a039b7e9b386) is seeded for that
+    # dependency, mirroring the SSO scope locks, and
+    # the override's RoleDto carries the same
+    # permission. The _assert_create_scope guard runs
+    # inside the handler body, after validation, so it
+    # cannot mask the 422 either; the caller tenant_id
+    # still matches the X-Tenant-ID header
+    # (68c302ef6bf7a039b7e9b388) so the request is
+    # otherwise legitimate, and no tenant row needs
+    # seeding -- the ssos router has no feature gate
+    # and the TenantMiddleware only sets
+    # request.state.tenant_id from the header, as in
+    # the SSO scope locks. The endpoint sets
+    # sso_settings.tenant_id from the caller after
+    # validation, so no tenant_id is sent in the body.
+    # Deliberately no exact error-type assertion,
+    # mirroring the checkout non-string email 422 lock.
+    # Deliberately no Cache-Control/Pragma assertion: a
+    # 422 is FastAPI request validation, not an
+    # ApiBaseException, so the central handler's
+    # no-store headers do not apply to it, mirroring
+    # the billing 422 locks. The security headers ARE
+    # locked: the pure-ASGI middleware stamps every
+    # HTTP response, including validation errors, with
+    # no path exclusions.
+    from beanie import PydanticObjectId
+
+    from api import app
+    from api.common.enums.gender import Gender
+    from api.domain.dtos.auth_dto import MeResponseDto
+    from api.domain.dtos.role_dto import RoleDto
+    from api.domain.entities.role import Role
+    from api.domain.enum.permission import Permission
+    from api.infrastructure.security.current_user import get_current_user
+
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b386"),
+        name="Tenant SSO administrator",
+        description="Role carrying FULL_ACCESS for the mocked caller",
+        permissions=[Permission.FULL_ACCESS],
+    ).insert()
+
+    async def override_get_current_user_tenant_scoped():
+        return MeResponseDto(
+            first_name="Admin",
+            last_name="User",
+            id="68c302ef6bf7a039b7e9b385",
+            email="admin@example.com",
+            gender=Gender.OTHER,
+            is_active=True,
+            role_id="68c302ef6bf7a039b7e9b386",
+            tenant_id="68c302ef6bf7a039b7e9b388",
+            created_at="2024-10-01T00:00:00Z",
+            updated_at="2024-10-01T00:00:00Z",
+            role=RoleDto(
+                id="68c302ef6bf7a039b7e9b386",
+                name="Tenant SSO administrator",
+                description="Role carrying FULL_ACCESS for the mocked caller",
+                created_at="2024-10-01T00:00:00Z",
+                updated_at="2024-10-01T00:00:00Z",
+                permissions=[Permission.FULL_ACCESS],
+            ),
+            subscription=None,
+        )
+
+    original_override = app.dependency_overrides.get(get_current_user)
+    app.dependency_overrides[get_current_user] = override_get_current_user_tenant_scoped
+    try:
+        response = await client.post(
+            "/ssos/",
+            headers={"X-Tenant-ID": "68c302ef6bf7a039b7e9b388"},
+            json={
+                "enabled": True,
+                "provider": "google",
+                "client_id": ["test-client-id"],
+                "client_secret": None,
+                "scopes": [],
+                "redirect_uris": [],
+            },
+        )
+    finally:
+        if original_override is None:
+            app.dependency_overrides.pop(get_current_user, None)
+        else:
+            app.dependency_overrides[get_current_user] = original_override
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert any(
+        "client_id" in [str(part) for part in err.get("loc", [])]
+        for err in detail
+    )
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the SSO scope locks, using substring checks
+    # so later additions to the list do not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+    # Postconditions: validation fails before the handler
+    # runs, so no SSO-settings service call is made and no
+    # record is created -- the seeded role is still there
+    # with FULL_ACCESS. No SSOSettings row is asserted:
+    # SSOSettings is not in the conftest model set, so it
+    # cannot be queried from this test, and validation
+    # failing before the handler is what guarantees
+    # nothing was created -- the role row is the
+    # observable postcondition, as in the SSO scope locks.
+    stored_role = await Role.find_one(
+        Role.id == PydanticObjectId("68c302ef6bf7a039b7e9b386")
+    )
+    assert stored_role is not None
+    assert stored_role.permissions == [Permission.FULL_ACCESS]
