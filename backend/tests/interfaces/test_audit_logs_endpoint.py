@@ -285,3 +285,132 @@ async def test_get_audit_logs_outside_tenant_scope_returns_403_with_cache_and_se
     )
     assert stored is not None
     assert stored.permissions == [Permission.AUDIT_LOGS_VIEW_ONLY]
+
+
+@pytest.mark.asyncio
+async def test_post_audit_logs_download_non_string_action_returns_422_with_security_headers(client: AsyncClient):
+    """
+    The audit-logs POST /download with a non-string `action`
+    (a JSON list): `action` is an `Optional[AuditActionType]`
+    field of DownloadAuditRequestDto, where AuditActionType is
+    the literal ("create", "update", "delete", "read", "login",
+    "logout", "error", "download"), and Pydantic v2 does not
+    coerce lists to a literal member, so request validation
+    rejects the body with 422 before the handler body runs.
+    """
+    # Function-name grep count 0 for
+    # post_audit_logs_download_non_string_action before
+    # appending, verified fresh this run, not assumed. This is
+    # the FIRST lock of the audit-logs POST /download
+    # per-field validation sweep: the route's only existing
+    # locks are the missing-role 404 and the outside-scope
+    # 403, neither of which exercises body validation, so a
+    # regression that dropped validation on this route would
+    # pass them while accepting a wrong-typed body -- and a
+    # wrong-typed action would then be queued to Celery as a
+    # download report (trigger_download_report.delay runs
+    # inside the handler, after validation) with an action
+    # the worker cannot match. The other field,
+    # total_records, is locked separately (non-int and
+    # missing remain). `total_records` is sent valid (5) so
+    # nothing else can mask the 422. A list is used as the
+    # non-string payload because Pydantic v2 lax mode has no
+    # list-to-literal coercion path, and a string outside the
+    # literal (e.g. "archive") would pin the invalid-value
+    # class, not the non-string class. Note `action` is
+    # Optional with default None, so None is a valid value --
+    # only the non-string type is locked here. Verified from
+    # backend/api/domain/dtos/audit_logs_dto.py (37 lines,
+    # no model_validator on DownloadAuditRequestDto, only
+    # the two plain fields) that nothing can mask the 422
+    # for a list payload; verified from
+    # backend/api/interfaces/api_controllers/
+    # audit_logs_endpoint.py that download_audit_logs
+    # (lines 74-93) takes DownloadAuditRequestDto as its
+    # body and only reads it inside the handler body, after
+    # validation, so the total_records <= 0 guard, the
+    # Celery queue call, and the scope logic cannot mask
+    # the 422. The route carries two permission
+    # dependencies -- the router-level AUDIT_LOGS_VIEW_ONLY
+    # and the handler-level AUDIT_LOGS_DOWNLOAD (both
+    # parameter dependencies, solved before the endpoint's
+    # own body is validated) -- so the caller role must
+    # carry both, otherwise a permission 404 would mask
+    # the 422, exactly as in the branding PATCH 422 locks.
+    # The Role row (id 68c302ef6bf7a039b7e9b386) is seeded
+    # with both permissions for those dependencies,
+    # mirroring the audit-logs 403 lock's seed: the
+    # dependency looks the role up by the mocked caller's
+    # role_id, so the default host caller needs no
+    # override -- the host scope (no X-Tenant-ID header)
+    # is legitimate here because validation fails before
+    # the handler's tenant-scope logic ever runs.
+    # Deliberately no exact error-type assertion,
+    # mirroring the branding PATCH non-string-field 422
+    # locks. Deliberately no Cache-Control / Pragma
+    # assertion: a 422 is FastAPI request validation, not
+    # an ApiBaseException, so the central handler's
+    # no-store headers do not apply to it, mirroring the
+    # branding POST/PATCH 422 locks. The security headers
+    # ARE locked: the pure-ASGI middleware stamps every
+    # HTTP response, including validation errors, with no
+    # path exclusions.
+    from beanie import PydanticObjectId
+
+    from api.domain.entities.role import Role
+    from api.domain.enum.permission import Permission
+
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b386"),
+        name="Audit log downloader",
+        description="Role carrying AUDIT_LOGS_VIEW_ONLY and AUDIT_LOGS_DOWNLOAD for the mocked caller",
+        permissions=[Permission.AUDIT_LOGS_VIEW_ONLY, Permission.AUDIT_LOGS_DOWNLOAD],
+    ).insert()
+
+    response = await client.post(
+        "/audit-logs/download",
+        json={
+            "action": ["create"],
+            "total_records": 5,
+        },
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert any(
+        "action" in [str(part) for part in err.get("loc", [])]
+        for err in detail
+    )
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the audit-logs GET lock, using substring
+    # checks so later additions to the list do not break
+    # this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+    # Postconditions: validation fails before the handler
+    # runs, so no Celery download report is queued and no
+    # record is created -- the seeded role is still there
+    # with both permissions, mirroring the audit-logs 403
+    # lock's postcondition.
+    stored_role = await Role.find_one(
+        Role.id == PydanticObjectId("68c302ef6bf7a039b7e9b386")
+    )
+    assert stored_role is not None
+    assert stored_role.permissions == [Permission.AUDIT_LOGS_VIEW_ONLY, Permission.AUDIT_LOGS_DOWNLOAD]
