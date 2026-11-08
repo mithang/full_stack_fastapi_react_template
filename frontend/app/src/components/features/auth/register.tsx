@@ -112,12 +112,10 @@ export default function Register() {
                 // ensures a non-empty value here.
                 sub_domain: isMultiTenancyEnabled ? `${(data.subdomain ?? "").trim()}.${mainDomainName}` : ""
             });
-            toast.success("Registration successful! Please check your email for verification.", {
-                duration: 5000,
-                position: "top-right",
-                richColors: true
-            });
-
+            // The provider's register() already toasts success (with
+            // the "Redirecting to login..." description) and navigates
+            // to /login after 2 s, so no second toast here: the page
+            // previously showed the same success message twice.
         } catch (error) {
             // A backend response (ApiError, which carries a numeric
             // status) means the server answered and rejected the
