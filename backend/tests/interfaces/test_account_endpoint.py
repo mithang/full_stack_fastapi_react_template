@@ -66266,3 +66266,119 @@ async def test_account_password_reset_confirmation_nonstring_new_password_return
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+@pytest.mark.asyncio
+async def test_account_change_password_nonstring_new_password_returns_422_with_security_headers(client: AsyncClient):
+    """
+    The account authenticated change-password POST with a non-string new_password: <redacted>
+    """
+    # The change-password non-string new_password branch, not yet
+    # locked: function-name grep count 0 for
+    # change_password_nonstring_new_password (verified fresh this
+    # run); the existing change-password locks cover the success
+    # 200, the lockout 401s, and the lockout-clearing login /
+    # magic-link paths, not validation of the body's fields. The
+    # endpoint takes a JSON body (ChangePasswordRequestDto,
+    # auth_dto.py: current_password: str, new_password: str) plus
+    # the required CurrentUser dependency, so a JSON-list
+    # new_password fails FastAPI request validation before the
+    # handler body runs, and no password is verified or changed,
+    # no lockout counter moves, and no notification email is sent.
+    # The CurrentUser dependency is solved before the body error
+    # surfaces (the same ordering the POST /users/ locks rely on
+    # for their permission gate), so the caller must be genuinely
+    # authenticated: a Role row (the id get_current_user looks up
+    # from the user's role_id) and a User row are seeded, and the
+    # access token is minted through a real POST /account/login
+    # with the seeded password, mirroring the login-clears-lockout
+    # test. current_password is supplied in valid form, so
+    # validation reports exactly the body error. The loc assertion
+    # pins ["body", "new_password"]: a wrong-type body field
+    # reports that loc, mirroring the register and
+    # password-reset-confirmation non-string field locks.
+    # Deliberately no Cache-Control/Pragma assertion: a 422 is
+    # FastAPI request validation, not an ApiBaseException, so the
+    # central handler's no-store headers do not apply to it. The
+    # security headers ARE locked: the pure-ASGI middleware stamps
+    # every HTTP response, including validation errors, with no
+    # path exclusions.
+    from beanie import PydanticObjectId
+
+    from api.common.enums.gender import Gender
+    from api.common.security import hash_it, verify_password
+    from api.domain.entities.role import Role
+    from api.domain.entities.user import User
+    from api.domain.enum.permission import Permission
+
+    user_id = PydanticObjectId("68c302ef6bf7a039b7e9b3a4")
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b386"),
+        name="Admin",
+        description="Administrator role for the mocked caller",
+        permissions=[Permission.USER_READ_AND_WRITE_ONLY, Permission.FULL_ACCESS],
+    ).insert()
+    await User(
+        id=user_id,
+        first_name="ChangePassword",
+        last_name="NonString",
+        email="change-password-nonstring@example.com",
+        gender=Gender.OTHER,
+        is_active=True,
+        password=hash_it("CorrectPass123!"),
+        role_id=PydanticObjectId("68c302ef6bf7a039b7e9b386"),
+    ).insert()
+
+    login_response = await client.post(
+        "/account/login",
+        data={"username": "change-password-nonstring@example.com", "password": "CorrectPass123!"},
+    )
+    assert login_response.status_code == 200
+    access_token = login_response.json()["access_token"]
+    assert isinstance(access_token, str) and len(access_token) > 0
+
+    response = await client.post(
+        "/account/change-password",
+        json={"current_password": "CorrectPass123!", "new_password": ["NewPass456!"]},
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert isinstance(detail, list) and detail
+    assert any(
+        err.get("loc") == ["body", "new_password"]
+        for err in detail
+    )
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the password-reset-confirmation non-string lock,
+    # using substring checks so later additions to the list do not
+    # break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+
+    # Postcondition: the handler never ran, so the stored password
+    # is unchanged and no lockout counter moved.
+    stored = await User.find_one(User.email == "change-password-nonstring@example.com")
+    assert stored is not None
+    assert verify_password("CorrectPass123!", stored.password) is True
+    assert verify_password("NewPass456!", stored.password) is False
+    assert stored.failed_password_change_attempts == 0
+    assert stored.last_failed_password_change_at is None
