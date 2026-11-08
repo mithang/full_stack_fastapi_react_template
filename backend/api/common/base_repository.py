@@ -99,7 +99,13 @@ class BaseRepository(Generic[T]):
         if not doc:
             return False
         await doc.delete()
-        logger.info(f"Document with id: {id} deleted successfully.")
+        # Same premise as the "Deleting document" line above: get()
+        # strips a copy for the lookup, so a percent-decoded id with a
+        # trailing newline still finds its document — but this log
+        # uses the caller's raw id, so that newline would forge an
+        # extra log line on every successful delete. Flatten it here
+        # too; the logged copy only, the lookup already ran.
+        logger.info(f"Document with id: {_safe_log_value(id)} deleted successfully.")
         return True
 
     async def count(self, params: Optional[Any] | None = None) -> int:
