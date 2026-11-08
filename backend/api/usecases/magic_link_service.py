@@ -26,6 +26,12 @@ logger = get_logger(__name__)
 # have sent the identical link anyway).
 MAGIC_LINK_REQUEST_COOLDOWN = timedelta(minutes=5)
 
+# Validity window of a magic link. The entity's TTL index expires
+# documents 900s after expires_at; validate_magic_link enforces the
+# same window in code, so expiry does not depend on Mongo's TTL
+# monitor timing (about once a minute) or on the index existing.
+MAGIC_LINK_VALIDITY = timedelta(minutes=15)
+
 
 class EmailMagicLinkService:
     def __init__(
@@ -127,6 +133,20 @@ class EmailMagicLinkService:
         # itself, so printing it would leak a still-valid login token
         # into server stdout/logs.
         if record is None:
+            return False
+
+        # Enforce the 15-minute validity window in code as well as via
+        # the TTL index: the TTL monitor only sweeps about once a
+        # minute (and only if the index exists), so an expired link
+        # could otherwise validate for up to ~60s past its window —
+        # or indefinitely if the TTL index were ever missing.
+        # expires_at is stored by Mongo as naive UTC, so normalise it
+        # before comparing with get_utc_now()'s aware value, as in
+        # create_magic_link's cooldown check.
+        expires_at = record.expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if get_utc_now() > expires_at + MAGIC_LINK_VALIDITY:
             return False
 
         result = validate_hashed_value(value=user_id, hashed_value=token)

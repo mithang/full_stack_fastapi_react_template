@@ -13,11 +13,9 @@ class UserMagicLink(ApiBaseModel):
     # is evaluated once at class definition, so every link constructed
     # without expires_at (the only construction site, the magic-link
     # repository) shared the server-start time. The TTL index expires
-    # documents 900s after expires_at, so once the server had been up
-    # more than 15 minutes, every new magic link was immediately
-    # TTL-eligible and could vanish before it was used. Validation
-    # relies on the TTL alone (no in-code expiry check), so this
-    # default is the validity window.
+    # documents 900s after expires_at; validate_magic_link enforces
+    # the same 15-minute window in code, so expiry does not depend on
+    # the TTL monitor's sweep timing or on the index existing.
     expires_at: datetime = Field(default_factory=get_utc_now)
 
     class Settings:
