@@ -66198,3 +66198,71 @@ async def test_account_resend_activation_email_missing_body_returns_422_with_sec
     assert "magnetometer=()" in permissions_policy
     assert "xr-spatial-tracking=()" in permissions_policy
     assert "idle-detection=()" in permissions_policy
+
+
+@pytest.mark.asyncio
+async def test_account_password_reset_confirmation_nonstring_new_password_returns_422_with_security_headers(client: AsyncClient):
+    """
+        The account password reset confirmation POST with a non-string new_password:
+    """
+    # The password-reset-confirmation non-string new_password branch,
+    # not yet locked: function-name grep count 0 for
+    # password_reset_confirmation_nonstring_new_password (verified
+    # fresh this run); the existing confirmation locks cover the
+    # no-record 406, the invalid/wrong-user/wrong-type/expired
+    # token 406s, the weak new password 406, the success 200, and
+    # the missing-token / missing-user_id 422s, not validation of
+    # the body's only field. The endpoint takes a JSON body
+    # (PasswordResetConfirmRequestDto, auth_dto.py: new_password:
+    # str) plus two required Query params (token, user_id), so a
+    # JSON-list new_password fails FastAPI request validation
+    # before the handler body runs, and no reset record is looked
+    # up, no password is updated, and no notification email is
+    # sent. Both query params are supplied in valid form, so
+    # validation reports exactly the body error. This endpoint has
+    # no permission gate and no CurrentUser dependency, and its
+    # dependency (get_auth_service) merely resolves a container
+    # object, so nothing can mask the 422. The loc assertion pins
+    # ["body", "new_password"]: a wrong-type body field reports
+    # that loc, mirroring the register non-string field locks.
+    # Deliberately no Cache-Control/Pragma assertion: a 422 is
+    # FastAPI request validation, not an ApiBaseException, so the
+    # central handler's no-store headers do not apply to it. The
+    # security headers ARE locked: the pure-ASGI middleware stamps
+    # every HTTP response, including validation errors, with no
+    # path exclusions.
+    response = await client.post(
+        "/account/password_reset_confirmation?token=some-reset-token&user_id=68c302ef6bf7a039b7e9b385",
+        json={"new_password": ["NewPassword123!"]},
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert isinstance(detail, list) and detail
+    assert any(
+        err.get("loc") == ["body", "new_password"]
+        for err in detail
+    )
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the password-reset-confirmation missing-token 422
+    # lock, using substring checks so later additions to the list
+    # do not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
