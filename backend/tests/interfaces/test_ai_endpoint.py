@@ -1977,3 +1977,116 @@ async def test_post_ai_ask_nonstring_session_id_returns_422_with_security_header
     # saved.
     sessions = await AISessions.find_all().to_list()
     assert sessions == []
+
+
+@pytest.mark.asyncio
+async def test_put_ai_set_model_preference_whitespace_only_model_name_returns_406_with_cache_and_security_headers(client: AsyncClient):
+    """
+        The AI set-model-preference PUT with a whitespace-only
+        model name:
+    """
+    # The FIRST lock of the set-model-preference whitespace
+    # sweep, verified fresh this run, not assumed:
+    # function-name grep count 0 for
+    # put_ai_set_model_preference_whitespace_only_model_name
+    # before appending. No test in this file locks a 406 on
+    # PUT /ai/set_model_preference/{model_name} yet -- the
+    # existing locks cover only the feature-disabled 403,
+    # the outside-tenant-scope 403, and the /ai/ask per-field
+    # 422s. The handler (ai_endpoint.py:171-186) checks
+    # `model_name.strip() == ""` and raises
+    # InvalidOperationException("Model name cannot be empty")
+    # before any preference write, and the central
+    # ApiBaseException handler maps InvalidOperationException
+    # to 406 with {"error": ..., "code": 406} plus no-store /
+    # Pragma headers (api/__init__.py:84-134), so the blank
+    # name fails closed instead of storing a preference that
+    # could never match a model in ai-chat.tsx's exact
+    # `model.name === preferences.model_name` lookup. The
+    # %20%20 path segment decodes to two spaces before the
+    # handler runs, mirroring the %20%20%20 query-param
+    # precedent in the password-reset-confirmation locks.
+    # The AI router is feature-gated at the router level
+    # (Feature.CHAT), so the gate must pass first --
+    # otherwise its FeatureNotEnabledException 403 would
+    # mask the 406. The caller is overridden per-test with
+    # a MeResponseDto whose role carries HOST_MANAGE_TENANTS
+    # and whose tenant_id is None: the gate's host branch
+    # returns True immediately
+    # (feature_access_management.py), with no tenant
+    # lookup, mirroring the /ai/ask 422 locks. The
+    # preference-scope guard then passes too: a host caller
+    # (tenant_id None) is unaffected. The override is
+    # restored in finally. Deliberately no exact
+    # error-message assertion beyond the substring, so a
+    # wording tweak does not break the lock. The security
+    # headers ARE locked: the pure-ASGI middleware stamps
+    # every HTTP response with no path exclusions.
+    from api.domain.entities.user_preference import UserPreference
+    from api.domain.enum.permission import Permission
+
+    async def override_get_current_user_host_admin():
+        return MeResponseDto(
+            first_name="Admin",
+            last_name="User",
+            id="68c302ef6bf7a039b7e9b385",
+            email="admin@example.com",
+            gender=Gender.OTHER,
+            is_active=True,
+            role_id="68c302ef6bf7a039b7e9b386",
+            created_at="2024-10-01T00:00:00Z",
+            updated_at="2024-10-01T00:00:00Z",
+            role=RoleDto(
+                id="68c302ef6bf7a039b7e9b386",
+                name="Host AI administrator",
+                description="Role carrying HOST_MANAGE_TENANTS for the mocked caller",
+                created_at="2024-10-01T00:00:00Z",
+                updated_at="2024-10-01T00:00:00Z",
+                permissions=[Permission.HOST_MANAGE_TENANTS],
+            ),
+            subscription=None,
+        )
+
+    original_override = app.dependency_overrides.get(get_current_user)
+    app.dependency_overrides[get_current_user] = override_get_current_user_host_admin
+    try:
+        response = await client.put("/ai/set_model_preference/%20%20")
+    finally:
+        if original_override is None:
+            app.dependency_overrides.pop(get_current_user, None)
+        else:
+            app.dependency_overrides[get_current_user] = original_override
+    assert response.status_code == 406
+    body = response.json()
+    assert body["code"] == 406
+    assert "Model name cannot be empty" in body["error"]
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the /ai/ask 422 locks, using substring checks
+    # so later additions to the list do not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+    # Postcondition: the blank check raises before
+    # set_preferences runs, so no user-preference row was
+    # written for the mocked caller.
+    preferences = await UserPreference.find_all().to_list()
+    assert preferences == []
