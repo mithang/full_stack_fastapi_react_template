@@ -3012,3 +3012,120 @@ async def test_patch_branding_non_string_logo_type_returns_422_with_security_hea
     assert stored_role.permissions == [Permission.FULL_ACCESS]
     assert await Branding.find_one() is None
     await mongo_client.close()
+
+
+async def test_put_branding_logo_with_missing_file_returns_422_with_security_headers(client: AsyncClient):
+    """
+    The branding PUT /logo with no file part: `file` is a
+    required UploadFile form field of upload_logo, so a
+    multipart request carrying no file fails FastAPI request
+    validation with 422 before the handler body runs.
+    """
+    # Function-name grep count 0 for
+    # put_branding_logo_with_missing_file before appending,
+    # verified fresh this run, not assumed. This is the FIRST
+    # lock of the branding PUT /logo multipart validation
+    # sweep: the POST and PATCH per-field validation sweeps
+    # are COMPLETE (all six UpdateBrandingDto fields locked
+    # on each route), and the PUT /logo route was deferred
+    # in earlier iterations as a multipart variant -- it
+    # takes an UploadFile, not a JSON body, so the per-field
+    # locks do not apply to it; its own validation surface
+    # is the file part itself (missing file this run;
+    # empty file, unsupported content type, and oversize
+    # file remain). Verified from
+    # backend/api/interfaces/api_controllers/
+    # branding_endpoint.py (lines 91-96) that upload_logo
+    # takes `file: UploadFile` with no default, so FastAPI
+    # reports the missing form field with loc ["body",
+    # "file"] and no handler code -- size check, empty
+    # check, content-type check, branding lookup, scope
+    # guard, or storage call -- ever runs. The route
+    # carries the same router-level FULL_ACCESS permission
+    # dependency as the POST/PATCH routes (a parameter
+    # dependency, solved before the endpoint's own form is
+    # validated), so the caller role must carry FULL_ACCESS
+    # -- otherwise the permission 404 would mask the 422,
+    # exactly as in the POST/PATCH 422 locks. The Role row
+    # (id 68c302ef6bf7a039b7e9b386) is seeded for that
+    # dependency, mirroring the PUT /logo 404/406/502 locks:
+    # the dependency looks the role up by the mocked
+    # caller's role_id, so the default host caller needs no
+    # override. No StorageSettings or Branding row is
+    # seeded: validation fails before the handler runs, so
+    # no storage backend is constructed and no branding
+    # record is created or updated. Deliberately no exact
+    # error-type assertion, mirroring the POST/PATCH
+    # non-string-field 422 locks. Deliberately no
+    # Cache-Control / Pragma assertion: a 422 is FastAPI
+    # request validation, not an ApiBaseException, so the
+    # central handler's no-store headers do not apply to
+    # it, mirroring the POST/PATCH 422 locks. The security
+    # headers ARE locked: the pure-ASGI middleware stamps
+    # every HTTP response, including validation errors,
+    # with no path exclusions.
+    from beanie import PydanticObjectId, init_beanie
+    from pymongo import AsyncMongoClient
+
+    from api.domain.entities.branding import Branding
+    from api.domain.entities.role import Role
+    from api.domain.enum.permission import Permission
+
+    mongo_client = AsyncMongoClient("mongodb://localhost:27012/test_db")
+    await init_beanie(
+        mongo_client["api_test_db"], document_models=[Branding]
+    )
+
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b386"),
+        name="Branding administrator",
+        description="Role carrying FULL_ACCESS for the mocked caller",
+        permissions=[Permission.FULL_ACCESS],
+    ).insert()
+
+    response = await client.put("/brandings/logo")
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert any(
+        "file" in [str(part) for part in err.get("loc", [])]
+        for err in detail
+    )
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the branding POST/PATCH 422 locks, using
+    # substring checks so later additions to the list do not
+    # break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+    # Postconditions: validation fails before the handler
+    # runs, so no file reaches storage and no branding
+    # record is created -- the seeded role is still there
+    # with FULL_ACCESS and no branding record exists in
+    # the test DB, mirroring the branding PATCH 422 locks
+    # (the init_beanie call above registers Branding, which
+    # is not in the conftest model set, so the row can be
+    # queried here).
+    stored_role = await Role.find_one(
+        Role.id == PydanticObjectId("68c302ef6bf7a039b7e9b386")
+    )
+    assert stored_role is not None
+    assert stored_role.permissions == [Permission.FULL_ACCESS]
+    assert await Branding.find_one() is None
+    await mongo_client.close()
