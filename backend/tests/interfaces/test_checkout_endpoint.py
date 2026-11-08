@@ -1699,3 +1699,148 @@ async def test_create_tenant_checkout_session_non_string_price_id_returns_422_wi
     )
     assert stored_tenant is not None
     assert stored_tenant.features == [Feature(name=FeatureEnum.STRIPE, enabled=True)]
+
+
+@pytest.mark.asyncio
+async def test_create_tenant_checkout_session_non_string_tenant_id_returns_422_with_security_headers(client: AsyncClient):
+    """
+    The tenant checkout POST with a non-string `tenant_id` (a
+    JSON list): `tenant_id` is an optional `str | None` field of
+    CheckoutRequestDto, and Pydantic v2 does not coerce lists
+    to str, so request validation rejects the body with 422
+    before the handler body runs.
+    """
+    # Function-name grep count 0 for
+    # create_tenant_checkout_session_non_string_tenant_id
+    # before appending, verified fresh this run, not assumed.
+    # This is the SECOND lock of the checkout per-field
+    # validation sweep: price_id was locked in the previous
+    # run; tenant_id is locked here. Remaining
+    # CheckoutRequestDto fields -- mode, email -- have no
+    # locks yet; they are separate runs, one small fix per
+    # run. The other fields are sent valid alongside the bad
+    # tenant_id: price_id is a real-looking price id, mode is
+    # "subscription", and email matches the caller's email
+    # (so the handler's email-mismatch check would pass) --
+    # nothing else can mask the 422. A list is used as the
+    # non-string payload since a plain string would pass as
+    # a (mismatched) tenant id and a whitespace-only string
+    # is stripped by the model validator (which only runs
+    # after field validation, so it cannot mask this 422
+    # either). The endpoint is feature-gated (STRIPE) at the
+    # router level and carries no permission gate, and
+    # FastAPI solves sub-dependencies before validating the
+    # endpoint's own body, so the tenant must be seeded with
+    # the STRIPE feature enabled -- otherwise the feature
+    # gate's 403 would mask the 422, exactly as in the
+    # price-create locks. The tenant id
+    # (68c302ef6bf7a039b7e9b388) is both the X-Tenant-ID header
+    # value and the caller's tenant_id, so the middleware
+    # resolves request.state.tenant_id to the seeded tenant
+    # for the feature check. FastAPI request validation fails
+    # before the handler body runs: the billing service never
+    # runs, so no Stripe call is made and no checkout session
+    # or billing record is created. Deliberately no exact
+    # error-type assertion, mirroring the price-create
+    # non-bool active 422 lock. Deliberately no
+    # Cache-Control/Pragma assertion: a 422 is FastAPI request
+    # validation, not an ApiBaseException, so the central
+    # handler's no-store headers do not apply to it, mirroring
+    # the price-create 422 locks. The security headers ARE
+    # locked: the pure-ASGI middleware stamps every HTTP
+    # response, including validation errors, with no path
+    # exclusions.
+    from beanie import PydanticObjectId
+
+    from api.domain.entities.tenant import Feature, Tenant
+    from api.domain.enum.feature import Feature as FeatureEnum
+
+    await Tenant(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b388"),
+        name="checkout-validation-tenant",
+        subdomain="checkout-validation.fsrapp.com",
+        features=[Feature(name=FeatureEnum.STRIPE, enabled=True)],
+    ).insert()
+
+    async def override_get_current_user_tenant_scoped():
+        return MeResponseDto(
+            first_name="Admin",
+            last_name="User",
+            id="68c302ef6bf7a039b7e9b385",
+            email="admin@example.com",
+            gender=Gender.OTHER,
+            is_active=True,
+            role_id="68c302ef6bf7a039b7e9b386",
+            tenant_id="68c302ef6bf7a039b7e9b388",
+            created_at="2024-10-01T00:00:00Z",
+            updated_at="2024-10-01T00:00:00Z",
+            role=RoleDto(
+                id="68c302ef6bf7a039b7e9b386",
+                name="No permissions",
+                description="Role with no permissions for the mocked caller",
+                created_at="2024-10-01T00:00:00Z",
+                updated_at="2024-10-01T00:00:00Z",
+                permissions=[],
+            ),
+            subscription=None,
+        )
+
+    original_override = app.dependency_overrides.get(get_current_user)
+    app.dependency_overrides[get_current_user] = override_get_current_user_tenant_scoped
+    try:
+        response = await client.post(
+            "/checkouts/tenant/subscription",
+            headers={"X-Tenant-ID": "68c302ef6bf7a039b7e9b388"},
+            json={
+                "price_id": "price_test123",
+                "tenant_id": ["not-a-string"],
+                "mode": "subscription",
+                "email": "admin@example.com",
+            },
+        )
+    finally:
+        if original_override is None:
+            app.dependency_overrides.pop(get_current_user, None)
+        else:
+            app.dependency_overrides[get_current_user] = original_override
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert any(
+        "tenant_id" in [str(part) for part in err.get("loc", [])]
+        for err in detail
+    )
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the checkout 403 locks, using substring checks
+    # so later additions to the list do not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+    # Postconditions: validation fails before the handler
+    # runs, so no Stripe call is made and no checkout session
+    # or billing record is created -- the seeded tenant is
+    # still there with the STRIPE feature enabled. Billing
+    # records are Stripe objects / service writes, not DB rows
+    # in the conftest model set, so the tenant row is the
+    # observable postcondition, as in the checkout scope locks.
+    stored_tenant = await Tenant.find_one(
+        Tenant.id == PydanticObjectId("68c302ef6bf7a039b7e9b388")
+    )
+    assert stored_tenant is not None
+    assert stored_tenant.features == [Feature(name=FeatureEnum.STRIPE, enabled=True)]
