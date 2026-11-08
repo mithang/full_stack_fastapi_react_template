@@ -1028,3 +1028,158 @@ async def test_create_pricing_non_string_currency_returns_422_with_security_head
     )
     assert stored_tenant is not None
     assert stored_tenant.features == [Feature(name=FeatureEnum.STRIPE, enabled=True)]
+
+
+async def test_create_pricing_non_int_unit_amount_returns_422_with_security_headers(client: AsyncClient):
+    """
+    The price-create POST with a non-int `unit_amount` (a JSON
+    list): `unit_amount` is a required `int` field (ge=0), and
+    Pydantic v2 does not coerce lists to ints, so request
+    validation rejects the body with 422 before the handler
+    body runs.
+    """
+    # Function-name grep count 0 for
+    # create_pricing_non_int_unit_amount before appending,
+    # verified fresh this run, not assumed. The price-create
+    # per-field sweep so far: currency locked (2837);
+    # unit_amount is next, product/active/recurring remain.
+    # The other fields sent are valid, so none can mask the
+    # 422: currency "eur" (exactly 3 chars, non-blank after
+    # strip), product "prod_test123" (min_length=1, non-blank
+    # after strip), recurring {} (all RecurringDto fields
+    # defaulted, so {} is valid); active is not sent and
+    # defaults to True. The DTO's mode="after"
+    # normalize_product validator only runs after valid field
+    # parsing and only touches product/currency strings, so
+    # it cannot mask the 422. The endpoint is feature-gated
+    # (STRIPE) and permission-gated
+    # (MANAGE_PRODUCTS_AND_PRICING) at the router level, and
+    # FastAPI solves sub-dependencies before validating the
+    # endpoint's own body, so the tenant must be seeded with
+    # the STRIPE feature enabled and the mocked caller's role
+    # must be seeded with the permission first -- otherwise
+    # the feature gate's 403 or the permission gate's
+    # RoleNotFoundException 404 would mask the 422, exactly
+    # as in the product-create locks. The tenant id
+    # (68c302ef6bf7a039b7e9b388) is both the X-Tenant-ID
+    # header value and the caller's tenant_id, so the
+    # handler's _assert_create_scope check would also pass;
+    # the 422 comes from validation, before the handler runs
+    # at all. FastAPI request validation fails before the
+    # handler body runs: PricingService.create_price never
+    # runs, so no Stripe call is made. Deliberately no exact
+    # error-type assertion, mirroring the product non-string
+    # -field 422 locks. Deliberately no Cache-Control/Pragma
+    # assertion: a 422 is FastAPI request validation, not an
+    # ApiBaseException, so the central handler's no-store
+    # headers do not apply to it, mirroring the product 422
+    # locks. The security headers ARE locked: the pure-ASGI
+    # middleware stamps every HTTP response, including
+    # validation errors, with no path exclusions.
+    from beanie import PydanticObjectId
+
+    from api.domain.entities.role import Role
+    from api.domain.entities.tenant import Feature, Tenant
+    from api.domain.enum.feature import Feature as FeatureEnum
+    from api.domain.enum.permission import Permission
+
+    await Tenant(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b388"),
+        name="prices-validation-tenant",
+        subdomain="prices-validation.fsrapp.com",
+        features=[Feature(name=FeatureEnum.STRIPE, enabled=True)],
+    ).insert()
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b386"),
+        name="Tenant price manager",
+        description="Role carrying MANAGE_PRODUCTS_AND_PRICING for the mocked caller",
+        permissions=[Permission.MANAGE_PRODUCTS_AND_PRICING],
+    ).insert()
+
+    async def override_get_current_user_tenant_scoped():
+        return MeResponseDto(
+            first_name="Admin",
+            last_name="User",
+            id="68c302ef6bf7a039b7e9b385",
+            email="admin@example.com",
+            gender=Gender.OTHER,
+            is_active=True,
+            role_id="68c302ef6bf7a039b7e9b386",
+            tenant_id="68c302ef6bf7a039b7e9b388",
+            created_at="2024-10-01T00:00:00Z",
+            updated_at="2024-10-01T00:00:00Z",
+            role=RoleDto(
+                id="68c302ef6bf7a039b7e9b386",
+                name="Tenant price manager",
+                description="Role carrying MANAGE_PRODUCTS_AND_PRICING for the mocked caller",
+                created_at="2024-10-01T00:00:00Z",
+                updated_at="2024-10-01T00:00:00Z",
+                permissions=[Permission.MANAGE_PRODUCTS_AND_PRICING],
+            ),
+            subscription=None,
+        )
+
+    original_override = app.dependency_overrides.get(get_current_user)
+    app.dependency_overrides[get_current_user] = override_get_current_user_tenant_scoped
+    try:
+        response = await client.post(
+            "/prices/",
+            headers={"X-Tenant-ID": "68c302ef6bf7a039b7e9b388"},
+            json={
+                "currency": "eur",
+                "unit_amount": ["not-an-int"],
+                "product": "prod_test123",
+                "recurring": {},
+            },
+        )
+    finally:
+        if original_override is None:
+            app.dependency_overrides.pop(get_current_user, None)
+        else:
+            app.dependency_overrides[get_current_user] = original_override
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert any(
+        "unit_amount" in [str(part) for part in err.get("loc", [])]
+        for err in detail
+    )
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the product locks, using substring checks so
+    # later additions to the list do not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+    # Postconditions: validation fails before the handler
+    # runs, so no Stripe call is made and nothing is created
+    # -- the seeded role is still there with
+    # MANAGE_PRODUCTS_AND_PRICING and the seeded tenant is
+    # still there with the STRIPE feature enabled. Prices
+    # are Stripe objects, not DB rows, so the tenant row is
+    # the observable postcondition.
+    stored_role = await Role.find_one(
+        Role.id == PydanticObjectId("68c302ef6bf7a039b7e9b386")
+    )
+    assert stored_role is not None
+    assert stored_role.permissions == [Permission.MANAGE_PRODUCTS_AND_PRICING]
+    stored_tenant = await Tenant.find_one(
+        Tenant.id == PydanticObjectId("68c302ef6bf7a039b7e9b388")
+    )
+    assert stored_tenant is not None
+    assert stored_tenant.features == [Feature(name=FeatureEnum.STRIPE, enabled=True)]
