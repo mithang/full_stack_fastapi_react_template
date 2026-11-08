@@ -5055,3 +5055,118 @@ async def test_update_role_nonstring_description_returns_422_with_security_heade
     assert stored.name == "Host administrator"
     assert stored.description == "Role carrying ROLE_READ_AND_WRITE_ONLY for the mocked caller"
     assert stored.permissions == [Permission.ROLE_READ_AND_WRITE_ONLY]
+
+
+async def test_update_role_nonstring_tenant_id_returns_422_with_security_headers(client: AsyncClient):
+    """
+        The role-update PUT with a non-string `tenant_id`:
+    """
+    # The third per-field validation branch of the role-update
+    # sweep, verified fresh this run, not assumed:
+    # function-name grep count 0 for
+    # update_role_nonstring_tenant_id before appending. The
+    # role-create per-field sweep already locks non-string
+    # name and description, and the update endpoint (PUT
+    # /roles/{role_id}) gained per-field locks for non-string
+    # name in iteration 2814 and non-string description in
+    # iteration 2815, but had no tenant_id lock -- only
+    # success, scope-403, and duplicate-409 tests besides
+    # them. The endpoint takes a required `data:
+    # UpdateRoleDto` body parameter
+    # (role_endpoint.py:230-238) whose tenant_id field is a
+    # PydanticObjectId or None, default None, inherited from
+    # CreateRoleDto (role_dto.py:29), so a JSON-list value
+    # cannot be coerced to an ObjectId under any Pydantic
+    # version and fails FastAPI request validation before the
+    # handler body runs: the scope guard, the role lookup,
+    # and RoleService.update_role never run, so no role
+    # record is read or written and no path role_id needs to
+    # exist (the seeded role's id is used as the path value
+    # anyway). The DTO's mode="after"
+    # normalize_name_and_description validator only runs
+    # after valid field parsing, so it cannot mask the 422.
+    # The name sent is a valid 9-character string and the
+    # description a valid 21-character string, so neither
+    # can mask the 422, and permissions defaults to an empty
+    # list. The endpoint is permission-gated
+    # (ROLE_READ_AND_WRITE_ONLY), and FastAPI solves
+    # sub-dependencies before validating the endpoint's own
+    # body, so the mocked caller's role must be seeded first
+    # -- otherwise the permission gate's RoleNotFoundException
+    # 404 would mask the 422, exactly as in the create-role
+    # non-string locks. The role is seeded with the mocked
+    # user's exact role_id (68c302ef6bf7a039b7e9b386,
+    # conftest.py) and the route's ROLE_READ_AND_WRITE_ONLY
+    # permission, mirroring the update-role non-string name
+    # and description locks in this file. The default
+    # conftest mock is a host caller (tenant_id None), so
+    # the handler's _assert_update_scope check cannot fire.
+    # Deliberately no exact error-type assertion, mirroring
+    # the create-role non-string locks in this file: an
+    # ObjectId-type error type has no precedent here.
+    # Deliberately no Cache-Control / Pragma assertion: a
+    # 422 is FastAPI request validation, not an
+    # ApiBaseException, so the central handler's no-store
+    # headers do not apply to it. The security headers ARE
+    # locked: the pure-ASGI middleware stamps every HTTP
+    # response, including validation errors, with no path
+    # exclusions.
+    from beanie import PydanticObjectId
+
+    from api.domain.entities.role import Role
+    from api.domain.enum.permission import Permission
+
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b386"),
+        name="Host administrator",
+        description="Role carrying ROLE_READ_AND_WRITE_ONLY for the mocked caller",
+        permissions=[Permission.ROLE_READ_AND_WRITE_ONLY],
+    ).insert()
+    response = await client.put(
+        "/roles/68c302ef6bf7a039b7e9b386",
+        json={
+            "name": "Test Role",
+            "description": "A valid description",
+            "tenant_id": ["not", "an", "objectid"],
+        },
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert any(
+        "tenant_id" in [str(part) for part in err.get("loc", [])]
+        for err in detail
+    )
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the other role locks in this file, using
+    # substring checks so later additions to the list do not
+    # break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+    # Postcondition: the handler never ran, so no role was
+    # read or written and the seeded role is still there with
+    # its permission and original name and description.
+    stored = await Role.find_one(
+        Role.id == PydanticObjectId("68c302ef6bf7a039b7e9b386")
+    )
+    assert stored is not None
+    assert stored.name == "Host administrator"
+    assert stored.description == "Role carrying ROLE_READ_AND_WRITE_ONLY for the mocked caller"
+    assert stored.permissions == [Permission.ROLE_READ_AND_WRITE_ONLY]
