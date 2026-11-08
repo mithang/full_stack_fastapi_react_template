@@ -67310,3 +67310,112 @@ async def test_update_user_non_string_email_returns_422_with_security_headers(cl
     assert stored is not None
     assert stored.name == "Host user creator"
     assert stored.permissions == [Permission.USER_READ_AND_WRITE_ONLY]
+
+async def test_update_user_non_string_gender_returns_422_with_security_headers(client: AsyncClient):
+    """
+        The user-update PUT with gender sent as a non-string (a JSON list):
+    """
+    # The fourth branch of the user-update per-field sweep, verified
+    # fresh this run, not assumed: function-name grep count 0 for
+    # update_user_non_string_gender in this file before appending
+    # (the first three branches, first_name, last_name, and email,
+    # landed in iterations 2818, 2819, and 2820). The endpoint
+    # takes a required `data: UpdateUserDto` body parameter
+    # (user_endpoint.py:192-193) whose gender is an
+    # Optional[Gender] (user_dto.py:89), where Gender is a str
+    # Enum with values male/female/other/prefer_not_to_say
+    # (gender.py). Pydantic v2 does not coerce a list to a str
+    # Enum, so a JSON-list gender fails FastAPI request validation
+    # as an enum field error at ["body", "gender"] before the
+    # handler body runs: no scope check, no user lookup, no
+    # repository write. The DTO's mode="after" normalize_names
+    # validator only runs after valid field parsing (and only
+    # touches first_name/last_name/role_id), so it cannot mask the
+    # 422. The endpoint is permission-gated
+    # (USER_READ_AND_WRITE_ONLY, with
+    # USER_SELF_READ_AND_WRITE_ONLY as a self-only alternative),
+    # and FastAPI solves sub-dependencies before validating the
+    # endpoint's own body, so the mocked caller's role must be
+    # seeded first -- otherwise the permission gate's
+    # RoleNotFoundException 404 would mask the 422, exactly as in
+    # the create-user non-string locks. The role is seeded with
+    # the mocked user's exact role_id (68c302ef6bf7a039b7e9b386,
+    # conftest.py) and the route's USER_READ_AND_WRITE_ONLY
+    # permission: the factory passes any_permission=False, so all
+    # general permissions are required, but allow_self_access
+    # strips USER_SELF_READ_AND_WRITE_ONLY from the general list,
+    # leaving just USER_READ_AND_WRITE_ONLY, which the seeded role
+    # carries. The default conftest mock is a host caller
+    # (tenant_id None), so _assert_update_scope cannot fire -- and
+    # it runs inside the handler, after body validation, in any
+    # case. The user_id path value is the seeded role's id as a
+    # plausible ObjectId string; the handler never runs, so no user
+    # lookup happens. The other body field is valid (first_name
+    # "Test") so no other 422 can mask it.
+    # Deliberately no exact error-type assertion, mirroring the
+    # create-user non-string locks in this file. Deliberately no
+    # Cache-Control/Pragma assertion: a 422 is FastAPI request
+    # validation, not an ApiBaseException, so the central
+    # handler's no-store headers do not apply to it, mirroring
+    # the create-user non-string locks. The security headers ARE
+    # locked: the pure-ASGI middleware stamps every HTTP
+    # response, including validation errors, with no path
+    # exclusions.
+    from beanie import PydanticObjectId
+
+    from api.domain.entities.role import Role
+    from api.domain.enum.permission import Permission
+
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b386"),
+        name="Host user creator",
+        description="Role carrying USER_READ_AND_WRITE_ONLY for the mocked caller",
+        permissions=[Permission.USER_READ_AND_WRITE_ONLY],
+    ).insert()
+    response = await client.put(
+        "/users/68c302ef6bf7a039b7e9b386",
+        json={
+            "first_name": "Test",
+            "gender": ["not", "a", "gender"],
+        },
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert any(
+        err.get("loc") == ["body", "gender"]
+        for err in detail
+    )
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the other user locks in this file, using
+    # substring checks so later additions to the list do not
+    # break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+    # Postcondition: the handler never ran, so no user was read
+    # or written and the seeded role is still there with its
+    # permission and original name, mirroring the role-update
+    # non-string locks.
+    stored = await Role.find_one(
+        Role.id == PydanticObjectId("68c302ef6bf7a039b7e9b386")
+    )
+    assert stored is not None
+    assert stored.name == "Host user creator"
+    assert stored.permissions == [Permission.USER_READ_AND_WRITE_ONLY]
