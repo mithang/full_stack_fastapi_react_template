@@ -6508,3 +6508,102 @@ async def test_update_tenant_nonstring_subscription_id_returns_422_with_security
     )
     assert stored is not None
     assert stored.permissions == [Permission.HOST_MANAGE_TENANTS]
+
+async def test_update_tenant_nonstring_is_active_returns_422_with_security_headers(client: AsyncClient):
+    """
+        The tenant-update PUT with a non-string is_active:
+    """
+    # The second per-field validation branch of the tenant-update
+    # sweep, verified fresh this run, not assumed:
+    # function-name grep count 0 for
+    # update_tenant_nonstring_is_active before appending.
+    # The first branch (subscription_id) was locked in the
+    # previous run; this run covers is_active, leaving only
+    # custom_domain of UpdateTenantDto's three fields. The
+    # endpoint takes a required `data: UpdateTenantDto` body
+    # parameter (tenant_endpoint.py:534-542) whose is_active is
+    # an Optional[bool] field (tenant_dto.py:109-113), so a JSON
+    # list value cannot be coerced to a bool under any Pydantic
+    # version and fails FastAPI request validation before the
+    # handler body runs: the scope guard, the tenant lookup,
+    # and TenantService.update_tenant never run, so no tenant
+    # record is read or written and no path tenant_id needs to
+    # exist. The normalize_subscription_id model validator
+    # cannot mask the error either, since it runs only after
+    # field validation passes. The remaining body field is
+    # valid (subscription_id "sub_123"), so no other 422 can
+    # mask the is_active error. The endpoint is
+    # permission-gated (HOST_MANAGE_TENANTS), and FastAPI
+    # solves sub-dependencies before validating the endpoint's
+    # own body, so the mocked caller's role must be seeded
+    # first -- otherwise the permission gate's
+    # RoleNotFoundException 404 would mask the 422, exactly as
+    # in the create-tenant non-string locks. The role is seeded
+    # with the mocked user's exact role_id
+    # (68c302ef6bf7a039b7e9b386, conftest.py) and the route's
+    # HOST_MANAGE_TENANTS permission, mirroring the
+    # subscription_id lock in this file. The default conftest
+    # mock is a host caller (tenant_id None), so the handler's
+    # scope guard cannot fire. Deliberately no exact
+    # error-type assertion, mirroring the create-tenant
+    # non-string locks in this file: a bool-type error type
+    # has no precedent here. Deliberately no Cache-Control /
+    # Pragma assertion: a 422 is FastAPI request validation,
+    # not an ApiBaseException, so the central handler's
+    # no-store headers do not apply to it. The security
+    # headers ARE locked: the pure-ASGI middleware stamps
+    # every HTTP response, including validation errors, with
+    # no path exclusions.
+    from beanie import PydanticObjectId
+
+    from api.domain.entities.role import Role
+    from api.domain.enum.permission import Permission
+
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b386"),
+        name="Host administrator",
+        description="Role carrying HOST_MANAGE_TENANTS for the mocked caller",
+        permissions=[Permission.HOST_MANAGE_TENANTS],
+    ).insert()
+    response = await client.put(
+        "/tenants/68c302ef6bf7a039b7e9b385",
+        json={"is_active": ["true"], "subscription_id": "sub_123"},
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert any(
+        "is_active" in [str(part) for part in err.get("loc", [])]
+        for err in detail
+    )
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the other tenant locks in this file, using
+    # substring checks so later additions to the list do not
+    # break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+    # Postcondition: the handler never ran, so no tenant was
+    # read or written and the seeded role is still there with
+    # its permission.
+    stored = await Role.find_one(
+        Role.id == PydanticObjectId("68c302ef6bf7a039b7e9b386")
+    )
+    assert stored is not None
+    assert stored.permissions == [Permission.HOST_MANAGE_TENANTS]
