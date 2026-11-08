@@ -819,3 +819,175 @@ async def test_create_notification_banner_non_bool_is_enabled_returns_422_with_s
     assert stored_role.permissions == [Permission.FULL_ACCESS]
     assert await NotificationBannerSetting.find_one() is None
     await mongo_client.close()
+
+
+@pytest.mark.asyncio
+async def test_create_notification_banner_non_string_message_returns_422_with_security_headers(client: AsyncClient):
+    """
+    The notification banner create POST with a non-string
+    `message` (a JSON list):
+    `message` is an `str | None` field of
+    CreateNotificationBannerSettingDto, and Pydantic v2
+    does not coerce lists to str, so request validation
+    rejects the body with 422 before the handler body
+    runs.
+    """
+    # Function-name grep count 0 for
+    # create_notification_banner_non_string_message
+    # before appending, verified fresh this run, not
+    # assumed. This is the SECOND and FINAL lock of the
+    # notification banner create per-field validation
+    # sweep: CreateNotificationBannerSettingDto has two
+    # fields (is_enabled, message); is_enabled was
+    # locked in the previous run and this run locks
+    # message, so the sweep is now COMPLETE. The other
+    # field is sent valid alongside the bad value:
+    # is_enabled True (a bool) -- nothing else can
+    # mask the 422. A list is used as the non-string
+    # payload because a blank string would also 422
+    # but would pin the blank-value class (the
+    # normalize_message validator rejects a blank
+    # message on an enabled banner), not the
+    # non-string class, and Pydantic v2 lax mode has
+    # no list-to-str coercion path, exactly as in the
+    # SSO create client_secret lock. The
+    # normalize_message model_validator runs only
+    # after field validation and only touches message
+    # when already str, so it cannot mask the 422.
+    # The notifications POST carries a FULL_ACCESS
+    # permission dependency (a parameter dependency,
+    # solved before the endpoint's own body is
+    # validated), so the caller role must carry
+    # FULL_ACCESS -- otherwise the permission 403/404
+    # would mask the 422, exactly as in the SSO create
+    # locks and the is_enabled lock. The Role row (id
+    # 68c302ef6bf7a039b7e9b386) is seeded for that
+    # dependency, mirroring the notification 403 scope
+    # locks, and the override's RoleDto carries the
+    # same permission. The _assert_create_scope guard
+    # runs inside the handler body, after validation,
+    # so it cannot mask the 422 either; the caller
+    # tenant_id still matches the X-Tenant-ID header
+    # (68c302ef6bf7a039b7e9b388) so the request is
+    # otherwise legitimate, and no tenant row needs
+    # seeding -- the notifications router has no
+    # feature gate and the TenantMiddleware only sets
+    # request.state.tenant_id from the header, as in
+    # the SSO scope locks. Deliberately no exact
+    # error-type assertion, mirroring the checkout
+    # non-string email 422 lock. Deliberately no
+    # Cache-Control/Pragma assertion: a 422 is FastAPI
+    # request validation, not an ApiBaseException, so
+    # the central handler's no-store headers do not
+    # apply to it, mirroring the billing 422 locks.
+    # The security headers ARE locked: the pure-ASGI
+    # middleware stamps every HTTP response, including
+    # validation errors, with no path exclusions.
+    from beanie import PydanticObjectId, init_beanie
+    from pymongo import AsyncMongoClient
+
+    from api import app
+    from api.common.enums.gender import Gender
+    from api.domain.dtos.auth_dto import MeResponseDto
+    from api.domain.dtos.role_dto import RoleDto
+    from api.domain.entities.notification_settings import NotificationBannerSetting
+    from api.domain.entities.role import Role
+    from api.domain.enum.permission import Permission
+    from api.infrastructure.security.current_user import get_current_user
+
+    mongo_client = AsyncMongoClient("mongodb://localhost:27012/test_db")
+    await init_beanie(
+        mongo_client["api_test_db"], document_models=[NotificationBannerSetting]
+    )
+
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b386"),
+        name="Tenant notification administrator",
+        description="Role carrying FULL_ACCESS for the mocked caller",
+        permissions=[Permission.FULL_ACCESS],
+    ).insert()
+
+    async def override_get_current_user_tenant_scoped():
+        return MeResponseDto(
+            first_name="Admin",
+            last_name="User",
+            id="68c302ef6bf7a039b7e9b385",
+            email="admin@example.com",
+            gender=Gender.OTHER,
+            is_active=True,
+            role_id="68c302ef6bf7a039b7e9b386",
+            tenant_id="68c302ef6bf7a039b7e9b388",
+            created_at="2024-10-01T00:00:00Z",
+            updated_at="2024-10-01T00:00:00Z",
+            role=RoleDto(
+                id="68c302ef6bf7a039b7e9b386",
+                name="Tenant notification administrator",
+                description="Role carrying FULL_ACCESS for the mocked caller",
+                created_at="2024-10-01T00:00:00Z",
+                updated_at="2024-10-01T00:00:00Z",
+                permissions=[Permission.FULL_ACCESS],
+            ),
+            subscription=None,
+        )
+
+    original_override = app.dependency_overrides.get(get_current_user)
+    app.dependency_overrides[get_current_user] = override_get_current_user_tenant_scoped
+    try:
+        response = await client.post(
+            "/notifications/banner",
+            headers={"X-Tenant-ID": "68c302ef6bf7a039b7e9b388"},
+            json={
+                "is_enabled": True,
+                "message": ["Scheduled maintenance"],
+            },
+        )
+    finally:
+        if original_override is None:
+            app.dependency_overrides.pop(get_current_user, None)
+        else:
+            app.dependency_overrides[get_current_user] = original_override
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert any(
+        "message" in [str(part) for part in err.get("loc", [])]
+        for err in detail
+    )
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the notification banner GET lock, using
+    # substring checks so later additions to the list do not
+    # break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+    # Postconditions: validation fails before the handler
+    # runs, so no banner service call is made and no record
+    # is created -- the seeded role is still there with
+    # FULL_ACCESS and no banner record exists in the test
+    # DB, mirroring the notification 403 scope lock (the
+    # init_beanie call above registers
+    # NotificationBannerSetting, which is not in the
+    # conftest model set, so the row can be queried here).
+    stored_role = await Role.find_one(
+        Role.id == PydanticObjectId("68c302ef6bf7a039b7e9b386")
+    )
+    assert stored_role is not None
+    assert stored_role.permissions == [Permission.FULL_ACCESS]
+    assert await NotificationBannerSetting.find_one() is None
+    await mongo_client.close()
