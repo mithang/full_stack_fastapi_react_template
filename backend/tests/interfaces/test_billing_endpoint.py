@@ -1382,3 +1382,152 @@ async def test_create_billing_plan_non_string_interval_returns_422_with_security
     )
     assert stored_tenant is not None
     assert stored_tenant.features == [Feature(name=FeatureEnum.STRIPE, enabled=True)]
+
+
+@pytest.mark.asyncio
+async def test_create_billing_plan_non_string_product_id_returns_422_with_security_headers(client: AsyncClient):
+    """
+    The billing plan-create POST with a non-string `product_id` (a
+    JSON list): `product_id` is a required `str` field of
+    CreatePlanDto (min_length=1), and Pydantic v2 does not coerce
+    lists to str, so request validation rejects the body with 422
+    before the handler body runs.
+    """
+    # Function-name grep count 0 for
+    # create_billing_plan_non_string_product_id before
+    # appending, verified fresh this run, not assumed.
+    # This is the THIRD lock of the billing plan-create
+    # per-field validation sweep: CreatePlanDto has four
+    # fields (currency, interval, product_id, amount) and
+    # currency and interval were locked in the previous
+    # runs. The other fields are sent valid alongside the
+    # bad product_id: currency "eur" (3 chars), interval
+    # "month" (a valid Literal member), amount 1000 (ge=1)
+    # -- nothing else can mask the 422. A list is used as
+    # the non-string payload since a plain string outside
+    # the field's constraints would also 422 but would not
+    # pin the non-string class. The normalize_product_id
+    # model_validator runs only after field validation and
+    # only touches product_id when it is already a str, so
+    # it cannot mask this 422 either. The endpoint is
+    # feature-gated (STRIPE) at the router level and carries
+    # a MANAGE_BILLING permission dependency; FastAPI
+    # solves sub-dependencies before validating the
+    # endpoint's own body, so the tenant must be seeded
+    # with the STRIPE feature enabled -- otherwise the
+    # feature gate's 403 would mask the 422, exactly as in
+    # the checkout locks -- and the caller role must carry
+    # MANAGE_BILLING, otherwise the permission 403 would
+    # mask it, exactly as in the billing scope locks. The
+    # tenant id (68c302ef6bf7a039b7e9b388) is both the
+    # X-Tenant-ID header value and the caller's tenant_id,
+    # so the middleware resolves request.state.tenant_id to
+    # the seeded tenant for the feature check and the
+    # _assert_create_scope guard would pass too. FastAPI
+    # request validation fails before the handler body runs:
+    # the billing service never runs, so no Stripe call is
+    # made and no plan is created. Deliberately no exact
+    # error-type assertion, mirroring the checkout
+    # non-string email 422 lock. Deliberately no
+    # Cache-Control/Pragma assertion: a 422 is FastAPI
+    # request validation, not an ApiBaseException, so the
+    # central handler's no-store headers do not apply to
+    # it, mirroring the checkout 422 locks. The security
+    # headers ARE locked: the pure-ASGI middleware stamps
+    # every HTTP response, including validation errors,
+    # with no path exclusions.
+    from beanie import PydanticObjectId
+
+    from api.domain.entities.tenant import Feature, Tenant
+    from api.domain.enum.feature import Feature as FeatureEnum
+    from api.domain.enum.permission import Permission
+
+    await Tenant(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b388"),
+        name="billing-validation-tenant",
+        subdomain="billing-validation.fsrapp.com",
+        features=[Feature(name=FeatureEnum.STRIPE, enabled=True)],
+    ).insert()
+
+    async def override_get_current_user_tenant_scoped():
+        return MeResponseDto(
+            first_name="Admin",
+            last_name="User",
+            id="68c302ef6bf7a039b7e9b385",
+            email="admin@example.com",
+            gender=Gender.OTHER,
+            is_active=True,
+            role_id="68c302ef6bf7a039b7e9b386",
+            tenant_id="68c302ef6bf7a039b7e9b388",
+            created_at="2024-10-01T00:00:00Z",
+            updated_at="2024-10-01T00:00:00Z",
+            role=RoleDto(
+                id="68c302ef6bf7a039b7e9b386",
+                name="Tenant billing caller",
+                description="Role with MANAGE_BILLING for the billing plan-create caller",
+                created_at="2024-10-01T00:00:00Z",
+                updated_at="2024-10-01T00:00:00Z",
+                permissions=[Permission.MANAGE_BILLING],
+            ),
+            subscription=None,
+        )
+
+    original_override = app.dependency_overrides.get(get_current_user)
+    app.dependency_overrides[get_current_user] = override_get_current_user_tenant_scoped
+    try:
+        response = await client.post(
+            "/billing/plans",
+            headers={"X-Tenant-ID": "68c302ef6bf7a039b7e9b388"},
+            json={
+                "currency": "eur",
+                "interval": "month",
+                "product_id": ["prod_test123"],
+                "amount": 1000,
+            },
+        )
+    finally:
+        if original_override is None:
+            app.dependency_overrides.pop(get_current_user, None)
+        else:
+            app.dependency_overrides[get_current_user] = original_override
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert any(
+        "product_id" in [str(part) for part in err.get("loc", [])]
+        for err in detail
+    )
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the billing 403 locks, using substring checks
+    # so later additions to the list do not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+    # Postconditions: validation fails before the handler
+    # runs, so no Stripe call is made and no plan is
+    # created -- the seeded tenant is still there with the
+    # STRIPE feature enabled. Plans are Stripe objects /
+    # service writes, not DB rows in the conftest model
+    # set, so the tenant row is the observable
+    # postcondition, as in the billing scope locks.
+    stored_tenant = await Tenant.find_one(
+        Tenant.id == PydanticObjectId("68c302ef6bf7a039b7e9b388")
+    )
+    assert stored_tenant is not None
+    assert stored_tenant.features == [Feature(name=FeatureEnum.STRIPE, enabled=True)]
