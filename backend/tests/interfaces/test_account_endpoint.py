@@ -66497,3 +66497,68 @@ async def test_account_change_password_nonstring_current_password_returns_422_wi
     assert verify_password("NewPass456!", stored.password) is False
     assert stored.failed_password_change_attempts == 0
     assert stored.last_failed_password_change_at is None
+
+
+@pytest.mark.asyncio
+async def test_account_password_reset_request_non_string_email_returns_422_with_security_headers(client: AsyncClient):
+    """
+        The account password reset request POST with a non-string
+        email (a JSON list):
+    """
+    # The first lock of the password-reset-request per-field
+    # validation sweep: function-name grep count 0 for
+    # test_account_password_reset_request_non_string_email_returns_422_with_security_headers
+    # (verified fresh this run). PasswordResetRequestDto has a
+    # single field, email: EmailStr (auth_dto.py line 11), and
+    # Pydantic v2 does not coerce a list to an email string, so
+    # FastAPI body validation rejects the request with 422 before
+    # the handler body runs: the blanket try/except in
+    # password_reset_request (account_endpoint.py lines 237-250)
+    # never executes, no reset record is written, no token is
+    # minted, and no email is sent. This is distinct from the
+    # unknown-email generic-200 lock (a valid string reaching the
+    # handler) and from the missing-email 422, which FastAPI also
+    # produces but for a different field error. No seeded row, no
+    # authenticated user, and no permission dependency are needed:
+    # the route carries none, and the FrontendHost dependency only
+    # reads request state. Deliberately no Cache-Control/Pragma
+    # assertion: a 422 is FastAPI validation, not an
+    # ApiBaseException, so the central handler's no-store headers
+    # do not apply to it, mirroring the login missing-password
+    # 422 lock. The security headers ARE locked: the pure-ASGI
+    # middleware stamps every HTTP response, including validation
+    # errors, with no path exclusions.
+    response = await client.post(
+        "/account/password_reset_request",
+        json={"email": ["not-an-email@example.com"]},
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert any(
+        "email" in [str(part) for part in err.get("loc", [])]
+        for err in detail
+    )
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the password-reset-request unknown-email lock,
+    # using substring checks so later additions to the list do not
+    # break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
