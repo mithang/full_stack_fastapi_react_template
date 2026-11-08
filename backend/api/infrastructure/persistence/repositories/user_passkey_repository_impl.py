@@ -1,14 +1,21 @@
+from datetime import timedelta, timezone
 from typing import Literal, Optional
 
 from beanie import PydanticObjectId
 from api.common.audit_logs_repository import AuditLogRepository
 from api.common.base_repository import BaseRepository
-from api.common.utils import get_logger
+from api.common.utils import get_logger, get_utc_now
 from api.domain.dtos.audit_logs_dto import AuditLogDto
 from api.domain.entities.user_passkey import Challenges, UserPasskey
 import base64
 
 logger = get_logger(__name__)
+
+# Validity window of a passkey challenge. The entity's TTL index expires
+# documents 300s after expires_at; get_challenge enforces the same
+# window in code, so expiry does not depend on Mongo's TTL monitor
+# timing (about once a minute) or on the index existing.
+PASSKEY_CHALLENGE_VALIDITY = timedelta(minutes=5)
 
 class UserPasskeyRepository(BaseRepository[UserPasskey], AuditLogRepository):
     def __init__(self):
@@ -57,9 +64,27 @@ class UserPasskeyChallengesRepository(BaseRepository[Challenges], AuditLogReposi
 
     async def get_challenge(self, email: str, type: Literal["registration", "authentication"]) -> Optional[Challenges]:
         """
-            Returns current challenge for the given email if found otherwise, None
+            Returns current challenge for the given email if found and still
+            within its validity window, otherwise None
         """
-        return await self.single_or_none(email=email, type=type)
+        challenge = await self.single_or_none(email=email, type=type)
+        if challenge is None:
+            return None
+
+        # Enforce the 5-minute validity window in code as well as via
+        # the TTL index: the TTL monitor only sweeps about once a
+        # minute (and only if the index exists), so an expired challenge
+        # could otherwise verify for up to ~60s past its window — or
+        # indefinitely if the TTL index were ever missing. expires_at
+        # is stored by Mongo as naive UTC, so normalise it before
+        # comparing with get_utc_now()'s aware value, as the
+        # magic-link service does for its own window.
+        expires_at = challenge.expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if get_utc_now() > expires_at + PASSKEY_CHALLENGE_VALIDITY:
+            return None
+        return challenge
 
 
     async def delete_challenge(self, email: str, type: Literal["registration", "authentication"]) -> bool:

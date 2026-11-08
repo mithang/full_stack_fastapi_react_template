@@ -34,9 +34,9 @@ class Challenges(ApiBaseModel):
     # is evaluated once at class definition, so every challenge constructed
     # without expires_at (the only construction site, save_challenge in the
     # passkey repository) shared the server-start time. The TTL index expires
-    # documents 300s after expires_at, so once the server had been up more
-    # than 5 minutes, every new challenge was immediately TTL-eligible and
-    # could vanish before it was used, surfacing as "challenge expired".
+    # documents 300s after expires_at; get_challenge enforces the same
+    # 5-minute window in code, so expiry does not depend on the TTL
+    # monitor's sweep timing or on the index existing.
     expires_at: datetime = Field(default_factory=get_utc_now)
 
     class Settings:
