@@ -1322,3 +1322,140 @@ async def test_configure_storage_non_string_region_returns_422_with_security_hea
     assert stored_role is not None
     assert stored_role.permissions == [Permission.MANAGE_STORAGE_SETTINGS]
     assert await StorageSettings.find_one() is None
+
+
+async def test_configure_storage_non_string_aws_access_key_returns_422_with_security_headers(client: AsyncClient):
+    """
+    The storage configure POST with a non-string `aws_access_key`
+    (a JSON list): `aws_access_key` is an `Optional[str]` field
+    of ConfigureStorageSettingsDto, which the POST
+    /storage/configure endpoint takes as its body, and Pydantic
+    v2 does not coerce lists to str, so request validation
+    rejects the body with 422 before the handler body runs.
+    """
+    # Function-name grep count 0 for
+    # configure_storage_non_string_aws_access_key before
+    # appending, verified fresh this run, not assumed. This is
+    # the FOURTH lock of the storage configure per-field
+    # validation sweep: ConfigureStorageSettingsDto has nine
+    # fields (provider, is_enabled, region, aws_access_key,
+    # aws_secret_key, aws_bucket_name, azure_connection_string,
+    # azure_container_name, updated_by_user_id); provider,
+    # is_enabled, and region were locked in the previous three
+    # runs and this run locks aws_access_key, so five locks
+    # remain for future runs. The other fields are sent valid --
+    # a disabled s3 config, for which the enabled-provider
+    # model_validator requires no region, bucket, or keys
+    # (mirroring the configure 404 lock's valid body), so
+    # nothing else can mask the 422. A list is used as the
+    # non-string payload because Pydantic v2 lax mode has no
+    # list-to-str coercion path. Note the model_validator runs
+    # only after field validation, so it cannot mask the 422
+    # for a list payload either, and the field_serializer that
+    # masks aws_access_key on output runs on serialization,
+    # not validation. Verified from
+    # backend/api/domain/dtos/storage_settings_dto.py that
+    # aws_access_key is Optional[str] (line 9) and that the
+    # validator only raises for enabled configs with blank
+    # required fields; verified from
+    # backend/api/interfaces/api_controllers/storage_endpoint.py
+    # that the POST takes ConfigureStorageSettingsDto as its
+    # body (line 109) under the router-level
+    # MANAGE_STORAGE_SETTINGS dependency (line 24), and that
+    # the _assert_create_scope guard and the tenant check both
+    # run inside the handler body, after validation, so neither
+    # can mask the 422. The POST carries a router-level
+    # MANAGE_STORAGE_SETTINGS permission dependency (a
+    # parameter dependency, solved before the endpoint's own
+    # body is validated), so the caller role must carry
+    # MANAGE_STORAGE_SETTINGS -- otherwise the permission 404
+    # would mask the 422, exactly as in the branding
+    # FULL_ACCESS locks. The Role row (id
+    # 68c302ef6bf7a039b7e9b386) is seeded for that dependency,
+    # mirroring the branding scope locks: the dependency looks
+    # the role up by the mocked caller's role_id
+    # (user_access_management.py get_role_detail), so the
+    # default host caller needs no override -- the host scope
+    # (no X-Tenant-ID header) is legitimate here because
+    # validation fails before the handler's create-scope guard
+    # ever runs. Deliberately no exact error-type assertion,
+    # mirroring the checkout non-string email 422 lock.
+    # Deliberately no Cache-Control/Pragma assertion: a 422 is
+    # FastAPI request validation, not an ApiBaseException, so
+    # the central handler's no-store headers do not apply to
+    # it, mirroring the billing 422 locks. The security headers
+    # ARE locked: the pure-ASGI middleware stamps every HTTP
+    # response, including validation errors, with no path
+    # exclusions.
+    from beanie import PydanticObjectId, init_beanie
+    from pymongo import AsyncMongoClient
+
+    from api.domain.entities.role import Role
+    from api.domain.entities.storage_settings import StorageSettings
+    from api.domain.enum.permission import Permission
+
+    mongo_client = AsyncMongoClient("mongodb://localhost:27012/test_db")
+    await init_beanie(
+        mongo_client["api_test_db"], document_models=[StorageSettings]
+    )
+
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b386"),
+        name="Storage administrator",
+        description="Role carrying MANAGE_STORAGE_SETTINGS for the mocked caller",
+        permissions=[Permission.MANAGE_STORAGE_SETTINGS],
+    ).insert()
+
+    response = await client.post(
+        "/storage/configure",
+        json={
+            "provider": "s3",
+            "is_enabled": False,
+            "region": "",
+            "aws_access_key": ["AKIAIOSFODNN7EXAMPLE"],
+        },
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert any(
+        "aws_access_key" in [str(part) for part in err.get("loc", [])]
+        for err in detail
+    )
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the storage POST 404 lock, using substring
+    # checks so later additions to the list do not break
+    # this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+    # Postconditions: validation fails before the handler
+    # runs, so no storage service call is made and no record
+    # is created -- the seeded role is still there with
+    # MANAGE_STORAGE_SETTINGS and no storage settings record
+    # exists in the test DB, mirroring the branding scope
+    # locks (the init_beanie call above registers
+    # StorageSettings, which is not in the conftest model set,
+    # so the row can be queried here).
+    stored_role = await Role.find_one(
+        Role.id == PydanticObjectId("68c302ef6bf7a039b7e9b386")
+    )
+    assert stored_role is not None
+    assert stored_role.permissions == [Permission.MANAGE_STORAGE_SETTINGS]
+    assert await StorageSettings.find_one() is None
