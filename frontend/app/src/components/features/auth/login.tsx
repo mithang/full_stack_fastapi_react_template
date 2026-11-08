@@ -13,7 +13,7 @@ import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { NavLink } from "react-router";
+import { NavLink, useSearchParams } from "react-router";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Logo } from "@/components/shared/logo";
 import { useAppConfig } from "@/components/providers/app-config-provider";
@@ -53,6 +53,24 @@ export function Login() {
     const [error, setError] = useState<string | null>(null);
     const { login } = useAuthContext();
     const appConfig = useAppConfig();
+
+    const [searchParams, setSearchParams] = useSearchParams();
+
+    useEffect(() => {
+        // The backend SSO callback redirects here with ?sso_error=1 when
+        // the provider exchange fails (denied consent, expired code,
+        // ...), instead of stranding the user on a raw JSON error page.
+        // Show a fixed message — the flag carries no provider detail —
+        // and drop it from the URL so a refresh does not re-show it.
+        // Re-runs once after the removal; the flag is then absent and
+        // the effect is a no-op.
+        if (searchParams.get("sso_error")) {
+            setError("Single sign-on failed. Please try again or log in with your email and password.");
+            const next = new URLSearchParams(searchParams);
+            next.delete("sso_error");
+            setSearchParams(next, { replace: true });
+        }
+    }, [searchParams, setSearchParams]);
 
     const form = useForm<LoginFormInputs>({
         resolver: zodResolver(loginSchema),

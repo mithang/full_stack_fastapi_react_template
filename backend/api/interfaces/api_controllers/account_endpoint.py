@@ -9,7 +9,7 @@ from api.common.dtos.passkey_rep_dto import HasPasskeysDto
 from api.common.dtos.token_dto import TokenRefreshRequestDto, TokenSetDto
 from api.common.dtos.worker_dto import WorkerPayloadDto
 from api.common.exceptions import ApiBaseException, ForbiddenException, InvalidOperationException
-from api.common.utils import get_logger, is_tenancy_enabled, validate_password
+from api.common.utils import get_host_main_domain_name, get_logger, is_tenancy_enabled, validate_password
 from api.core.container import get_auth_service, get_email_magic_link_service, get_passkey_service, get_role_service, get_sso_auth_provider
 from api.core.exceptions import PassKeyException, UserNotFoundException
 from api.domain.dtos.auth_dto import ChangeEmailConfirmRequestDto, ChangeEmailRequestDto, ChangeEmailResponseDto, ChangePasswordRequestDto, MagicLinkResponseDto, MeResponseDto, PasswordResetConfirmRequestDto, PasswordResetRequestDto, PasswordResetResponseDto
@@ -583,8 +583,33 @@ async def sso_provider_callback(
     auth_service: AuthService = Depends(get_auth_service)
 
 ):
-    user = await sso_auth_provider.callback(provider_name, req)
-    token_set = await auth_service.login_with_sso(provider_name=provider_name, user_info=user , tenant_id=tenant_id)
+    # The callback is a browser navigation, not an API call: on a
+    # failed exchange (user denied consent at the provider, expired
+    # code, provider returning no email, missing GUEST role, ...)
+    # the central exception handler's JSON error page stranded the
+    # user on a raw {"error": ...} document with no way back to the
+    # app. Redirect to /login with a generic flag instead; the login
+    # page shows a fixed message, and the flag carries no provider
+    # error text, so nothing from the IdP leaks into the URL. The
+    # 422 for an unknown provider is unaffected: FastAPI validation
+    # runs before this handler, and no refresh cookie is set here.
+    try:
+        user = await sso_auth_provider.callback(provider_name, req)
+        token_set = await auth_service.login_with_sso(provider_name=provider_name, user_info=user , tenant_id=tenant_id)
+    except Exception as e:
+        logger.error(f"SSO callback failed for provider: {provider_name}: {e}")
+        try:
+            app_origin = sso_auth_provider.get_redirect_uri_to_app()
+        except InvalidOperationException:
+            # _provider_instance never ran (the settings lookup failed
+            # before it), so no origin was recorded; fall back to the
+            # main domain with the same scheme logic it uses.
+            domain = get_host_main_domain_name()
+            app_origin = f"https://{domain}" if settings.fastapi_env == "production" else f"http://{domain}:3000"
+        response = RedirectResponse(url=f"{app_origin}/login?sso_error=1", status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Pragma"] = "no-cache"
+        return response
     response = RedirectResponse(url=f"{sso_auth_provider.get_redirect_uri_to_app()}/dashboard", status_code=status.HTTP_307_TEMPORARY_REDIRECT)
     # This callback exchanges a one-time provider code and sets the
     # refresh cookie, so it must not be a permanent redirect: a 308
