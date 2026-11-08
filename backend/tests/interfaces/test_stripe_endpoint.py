@@ -1705,3 +1705,185 @@ async def test_post_stripe_settings_non_string_stripe_secret_key_returns_422_wit
     assert stored_tenant is not None
     assert stored_tenant.features == [Feature(name=FeatureEnum.STRIPE, enabled=True)]
     assert await StripeSettings.find_one() is None
+
+
+async def test_post_stripe_settings_non_string_tenant_id_returns_422_with_security_headers(client: AsyncClient):
+    """
+        The Stripe settings POST with a non-string
+        tenant_id:
+    """
+    # This is the SIXTH and FINAL lock of the Stripe
+    # settings configure per-field validation sweep:
+    # CreateStripeSettingDto has six fields
+    # (default_currency, stripe_webhook_secret, mode,
+    # trial_period_days, stripe_secret_key, tenant_id)
+    # and only the other five had non-string locks, so a
+    # regression that loosened validation on this
+    # payment-configuration endpoint would previously
+    # have gone uncaught for this field. This run locks
+    # tenant_id; with it the sweep is COMPLETE.
+    # tenant_id is a plain required str on
+    # CreateStripeSettingDto (stripe_setting_dto.py line
+    # 65), so a JSON list fails field validation with loc
+    # ["body", "tenant_id"] before the model_validator
+    # runs (it runs after field validation, so the secret
+    # normalization cannot mask the 422 -- and the
+    # normalizer only touches the secrets and currency
+    # anyway, via its isinstance checks) and before the
+    # handler body runs (so the tenant-context check, the
+    # create-scope guard, and the stripe-setting service
+    # are never reached, no secret key is stored, and no
+    # live external call is made). Pydantic v2 does not
+    # coerce lists to str, so the 422 is exact for this
+    # payload.
+    # The other five fields are valid on purpose (dummy
+    # placeholder secrets, never persisted; a 3-letter
+    # currency, a recurring mode, and an in-range trial
+    # period), so no other 422 can mask the loc.
+    # The router dependencies run before body validation, so
+    # they must pass for the 422 to be reached: the seeded
+    # role (id 68c302ef6bf7a039b7e9b386) carries
+    # MANAGE_PAYMENTS_SETTINGS, the seeded tenant (id
+    # 68c302ef6bf7a039b7e9b388) has the STRIPE feature
+    # enabled, and the caller override is tenant-scoped to
+    # the same tenant the X-Tenant-ID header carries, so
+    # the feature gate passes and the create-scope guard
+    # would pass too if validation passed -- mirroring the
+    # stripe_secret_key lock in this file, which uses the
+    # same seeding.
+    # Deliberately no exact error-type assertion,
+    # mirroring the checkout non-string email 422 lock.
+    # Deliberately no Cache-Control/Pragma assertion: a
+    # 422 is a FastAPI validation error, not an error
+    # response produced by the central ApiBaseException
+    # handler, so it carries no no-store headers --
+    # mirroring the billing 422 locks. The security
+    # headers ARE locked: the pure-ASGI middleware stamps
+    # every HTTP response with no path exclusions, so this
+    # authenticated settings 422 must carry the same
+    # headers as the other interface locks.
+    from beanie import PydanticObjectId, init_beanie
+    from pymongo import AsyncMongoClient
+
+    from api import app
+    from api.common.enums.gender import Gender
+    from api.domain.dtos.auth_dto import MeResponseDto
+    from api.domain.dtos.role_dto import RoleDto
+    from api.domain.entities.role import Role
+    from api.domain.entities.stripe_settings import StripeSettings
+    from api.domain.entities.tenant import Feature, Tenant
+    from api.domain.enum.feature import Feature as FeatureEnum
+    from api.domain.enum.permission import Permission
+    from api.infrastructure.security.current_user import get_current_user
+
+    mongo_client = AsyncMongoClient("mongodb://localhost:27012/test_db")
+    await init_beanie(
+        mongo_client["api_test_db"], document_models=[StripeSettings]
+    )
+
+    await Tenant(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b388"),
+        name="stripe-422-tenant",
+        subdomain="stripe-422.fsrapp.com",
+        features=[Feature(name=FeatureEnum.STRIPE, enabled=True)],
+    ).insert()
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b386"),
+        name="Tenant stripe administrator",
+        description="Role carrying MANAGE_PAYMENTS_SETTINGS for the mocked caller",
+        permissions=[Permission.MANAGE_PAYMENTS_SETTINGS],
+    ).insert()
+
+    async def override_get_current_user_tenant_scoped():
+        return MeResponseDto(
+            first_name="Admin",
+            last_name="User",
+            id="68c302ef6bf7a039b7e9b385",
+            email="admin@example.com",
+            gender=Gender.OTHER,
+            is_active=True,
+            role_id="68c302ef6bf7a039b7e9b386",
+            tenant_id="68c302ef6bf7a039b7e9b388",
+            created_at="2024-10-01T00:00:00Z",
+            updated_at="2024-10-01T00:00:00Z",
+            role=RoleDto(
+                id="68c302ef6bf7a039b7e9b386",
+                name="Tenant stripe administrator",
+                description="Role carrying MANAGE_PAYMENTS_SETTINGS for the mocked caller",
+                created_at="2024-10-01T00:00:00Z",
+                updated_at="2024-10-01T00:00:00Z",
+                permissions=[Permission.MANAGE_PAYMENTS_SETTINGS],
+            ),
+            subscription=None,
+        )
+
+    original_override = app.dependency_overrides.get(get_current_user)
+    app.dependency_overrides[get_current_user] = override_get_current_user_tenant_scoped
+    try:
+        response = await client.post(
+            "/configurations/stripe",
+            headers={"X-Tenant-ID": "68c302ef6bf7a039b7e9b388"},
+            json={
+                "default_currency": "eur",
+                "stripe_secret_key": "sk_test_dummy_not_a_real_key",
+                "stripe_webhook_secret": "whsec_test_dummy_not_a_real_secret",
+                "mode": "recurring",
+                "trial_period_days": 14,
+                "tenant_id": ["test-tenant"],
+            },
+        )
+    finally:
+        if original_override is None:
+            app.dependency_overrides.pop(get_current_user, None)
+        else:
+            app.dependency_overrides[get_current_user] = original_override
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert any(
+        "tenant_id" in [str(part) for part in err.get("loc", [])]
+        for err in detail
+    )
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the other interface locks, using substring
+    # checks so later additions to the list do not break
+    # this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+    # Postconditions: validation fails before the handler
+    # runs, so no stripe-setting service call is made and no
+    # record is created -- the seeded role is still there
+    # with MANAGE_PAYMENTS_SETTINGS, the seeded tenant is
+    # still there with the STRIPE feature enabled, and no
+    # StripeSettings row exists in the test DB, mirroring
+    # the stripe_secret_key lock (the init_beanie call above
+    # registers StripeSettings, which is not in the conftest
+    # model set, so the row can be queried here).
+    stored_role = await Role.find_one(
+        Role.id == PydanticObjectId("68c302ef6bf7a039b7e9b386")
+    )
+    assert stored_role is not None
+    assert stored_role.permissions == [Permission.MANAGE_PAYMENTS_SETTINGS]
+    stored_tenant = await Tenant.find_one(
+        Tenant.id == PydanticObjectId("68c302ef6bf7a039b7e9b388")
+    )
+    assert stored_tenant is not None
+    assert stored_tenant.features == [Feature(name=FeatureEnum.STRIPE, enabled=True)]
+    assert await StripeSettings.find_one() is None
