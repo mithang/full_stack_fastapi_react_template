@@ -3129,3 +3129,129 @@ async def test_put_branding_logo_with_missing_file_returns_422_with_security_hea
     assert stored_role.permissions == [Permission.FULL_ACCESS]
     assert await Branding.find_one() is None
     await mongo_client.close()
+
+
+@pytest.mark.asyncio
+async def test_put_branding_logo_with_empty_file_returns_406_with_cache_and_security_headers(client: AsyncClient):
+    """
+    The branding PUT /logo with an empty file part: upload_logo
+    counts the uploaded bytes before any storage write and
+    raises BrandingException ("Uploaded file is empty.") when
+    the total is zero, so a zero-byte upload must fail with 406
+    instead of writing an empty object to storage.
+    """
+    # Function-name grep count 0 for
+    # put_branding_logo_with_empty_file before appending,
+    # verified fresh this run, not assumed. This is the SECOND
+    # lock of the branding PUT /logo multipart validation
+    # sweep (missing file locked in the previous iteration;
+    # unsupported content type and oversize file remain).
+    # Verified from
+    # backend/api/interfaces/api_controllers/
+    # branding_endpoint.py (lines 103-119) that upload_logo
+    # reads the file in 1 MB chunks, counts the bytes, rewinds
+    # the stream, and raises BrandingException("Uploaded file
+    # is empty.") when size == 0 -- before the content-type
+    # check, before the branding lookup, before the scope
+    # guard, and before any storage call. The route carries
+    # the same router-level FULL_ACCESS permission dependency
+    # as the POST/PATCH routes (a parameter dependency,
+    # solved before the handler body runs), so the caller
+    # role must carry FULL_ACCESS -- otherwise the
+    # permission 404 would mask the 406, exactly as in the
+    # POST/PATCH 422 locks and the missing-file 422 lock.
+    # The Role row (id 68c302ef6bf7a039b7e9b386) is seeded
+    # for that dependency, mirroring the missing-file lock:
+    # the dependency looks the role up by the mocked
+    # caller's role_id, so the default host caller needs no
+    # override. No StorageSettings or Branding row is
+    # seeded: the empty check fires before the branding
+    # lookup, so no storage backend is constructed and no
+    # branding record is created or updated. The request
+    # carries a zero-byte PNG part on purpose: the empty
+    # check runs before the content-type check, so the type
+    # is irrelevant to the outcome, and a valid PNG type
+    # keeps the request unambiguous. Note the status is 406,
+    # not 400 or 422: BrandingException subclasses
+    # InvalidOperationException (exceptions.py:140-143),
+    # which the central ApiBaseException handler maps to
+    # 406 (api/__init__.py:108-109), with {"error": ...,
+    # "code": 406} and the no-store/Pragma error headers;
+    # the message keeps the "Branding Error: " prefix, so
+    # the assertion is a substring match, mirroring the
+    # PUT /logo 406 scope lock. The security headers ARE
+    # locked: the pure-ASGI middleware stamps every HTTP
+    # response, including exception-handler responses,
+    # with no path exclusions.
+    from beanie import PydanticObjectId, init_beanie
+    from pymongo import AsyncMongoClient
+
+    from api.domain.entities.branding import Branding
+    from api.domain.entities.role import Role
+    from api.domain.enum.permission import Permission
+
+    mongo_client = AsyncMongoClient("mongodb://localhost:27012/test_db")
+    await init_beanie(
+        mongo_client["api_test_db"], document_models=[Branding]
+    )
+
+    await Role(
+        id=PydanticObjectId("68c302ef6bf7a039b7e9b386"),
+        name="Branding administrator",
+        description="Role carrying FULL_ACCESS for the mocked caller",
+        permissions=[Permission.FULL_ACCESS],
+    ).insert()
+
+    response = await client.put(
+        "/brandings/logo",
+        files={"file": ("logo.png", b"", "image/png")},
+    )
+    assert response.status_code == 406
+    body = response.json()
+    assert body["code"] == 406
+    assert "Uploaded file is empty." in body["error"]
+    assert "refresh_token" not in response.headers.get("set-cookie", "")
+    # The 406 must still carry the error-response headers: the
+    # handler sets no-store only on the success path, so on this
+    # path they come from the central ApiBaseException handler,
+    # and a cached 406 could otherwise be served to a different
+    # user after an account switch on a shared machine.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["cross-origin-opener-policy"] == "same-origin-allow-popups"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "permissions-policy" in response.headers
+    # Lock the twelve most sensitive directives as disabled,
+    # mirroring the branding POST/PATCH 422 locks and the PUT
+    # /logo 406 scope lock, using substring checks so later
+    # additions to the list do not break this test.
+    permissions_policy = response.headers["permissions-policy"]
+    assert "camera=()" in permissions_policy
+    assert "microphone=()" in permissions_policy
+    assert "geolocation=()" in permissions_policy
+    assert "payment=()" in permissions_policy
+    assert "clipboard-read=()" in permissions_policy
+    assert "display-capture=()" in permissions_policy
+    assert "fullscreen=()" in permissions_policy
+    assert "accelerometer=()" in permissions_policy
+    assert "gyroscope=()" in permissions_policy
+    assert "magnetometer=()" in permissions_policy
+    assert "xr-spatial-tracking=()" in permissions_policy
+    assert "idle-detection=()" in permissions_policy
+    # Postconditions: the empty check fires before any
+    # upload, so the request is side-effect free -- the
+    # seeded role is still there with FULL_ACCESS and no
+    # branding record exists in the test DB, mirroring the
+    # missing-file 422 lock (the init_beanie call above
+    # registers Branding, which is not in the conftest
+    # model set, so the row can be queried here).
+    stored_role = await Role.find_one(
+        Role.id == PydanticObjectId("68c302ef6bf7a039b7e9b386")
+    )
+    assert stored_role is not None
+    assert stored_role.permissions == [Permission.FULL_ACCESS]
+    assert await Branding.find_one() is None
+    await mongo_client.close()
